@@ -1,0 +1,22 @@
+[package]
+name = "gsm-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_bw = { version = "2.4.1" }
+handlebars = "6.3.2"
+regex = "1.12.2"
+uuid = { workspace = true }
+reqwest = { workspace = true }
+time = { workspace = true }
+gsm-core = { path = "../../libs/core" }
+futures = "0.3.31"
+rand = "0.9.2"

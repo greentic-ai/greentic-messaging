@@ -1,0 +1,13 @@
+[package]
+name = "nats-demo"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+gsm-core = { path = "../../libs/core" }
+futures = "0.3"

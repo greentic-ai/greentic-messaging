@@ -1,0 +1,45 @@
+[workspace]
+members = [
+  "apps/runner",
+  "apps/ingress-common",
+  "apps/ingress-telegram",
+  "apps/egress-telegram",
+  "apps/subscriptions-teams",
+  "apps/mock-telegram",
+  "apps/mock-slack",
+  "apps/ingress-webchat",
+  "apps/egress-webchat",
+  "apps/ingress-teams",
+  "apps/subscriptions-teams",
+  "apps/egress-teams",
+  "apps/egress-slack",
+  "apps/ingress-slack",
+  "apps/ingress-whatsapp",
+  "apps/egress-whatsapp",
+  "libs/core",
+  "libs/translator",
+  "libs/security",
+  "tools/nats-demo",
+  "tools/mock-weather-tool",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Greentic AI"]
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["fmt","env-filter"] }
+async-nats = "0.44.2"
+axum = "0.8.6"
+hyper = { version = "1.7.0", features = ["full"] }
+reqwest = { version = "0.12.24", features = ["json"] }
+jsonwebtoken = { version = "10.0.0", features = ["rust_crypto"] }
+time = { version = "0.3.44", features = ["macros","parsing"] }
+uuid = { version = "1.18.1", features = ["v4","serde"] }

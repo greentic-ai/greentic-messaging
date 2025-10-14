@@ -1,0 +1,32 @@
+---
+source: libs/translator/tests/snapshots.rs
+expression: "&payloads"
+---
+[
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "text": "<b>Weather</b>\nDay 1\n• <b>High</b>: 20°C"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "Open",
+            "url": "https://app.greentic.ai"
+          }
+        ],
+        [
+          {
+            "callback_data": "{\"a\":\"b\"}",
+            "text": "Refresh"
+          }
+        ]
+      ]
+    },
+    "text": "Actions:"
+  }
+]

@@ -1,0 +1,16 @@
+[package]
+name = "gsm-translator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+gsm-core = { path = "../core" }
+jsonwebtoken = { workspace = true }
+time = { workspace = true }
+unicode-segmentation = "1.12.0"
+
+[dev-dependencies]
+insta = { version = "1.43.2", features = ["json"] }

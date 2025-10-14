@@ -1,0 +1,20 @@
+---
+source: libs/translator/tests/snapshots.rs
+expression: "&payloads"
+---
+[
+  {
+    "card": {
+      "actions": [],
+      "body": [
+        {
+          "markdown": true,
+          "text": "Hi",
+          "type": "text"
+        }
+      ],
+      "title": "Weather"
+    },
+    "kind": "card"
+  }
+]

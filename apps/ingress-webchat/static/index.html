@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>WebChat Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    .card { padding: 1rem; border: 1px solid #eee; border-radius: 12px; max-width: 520px; }
+    label { display: block; margin-top: 0.5rem; }
+    input, textarea { width: 100%; padding: 0.5rem; margin-top: 0.25rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; }
+    .ok { color: green; }
+    .err { color: red; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3>WebChat → NATS</h3>
+    <label>Chat ID <input id="chat" value="demo-webchat"/></label>
+    <label>User ID <input id="user" value="tester-1"/></label>
+    <label>Message <textarea id="text" rows="3">Hello from WebChat</textarea></label>
+    <button onclick="send()">Send</button>
+    <p id="status"></p>
+  </div>
+  <script>
+    async function send() {
+      const chat_id = document.getElementById('chat').value;
+      const user_id = document.getElementById('user').value;
+      const text = document.getElementById('text').value;
+      const res = await fetch('/webhook', {
+        method: 'POST',
+        headers: {'content-type':'application/json'},
+        body: JSON.stringify({ chat_id, user_id, text })
+      });
+      const p = document.getElementById('status');
+      if (res.ok) { p.textContent = 'Sent ✓'; p.className='ok'; }
+      else { p.textContent = 'Error ✗'; p.className='err'; }
+    }
+  </script>
+</body>
+</html>

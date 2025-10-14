@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>WebChat Egress</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    .msg { border:1px solid #eee; border-radius:12px; padding:1rem; margin-bottom:1rem; max-width:640px; }
+    .title { font-weight: bold; margin-bottom: 0.5rem; }
+    .fact { opacity: 0.75; }
+    button { margin-right: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h2>WebChat Egress</h2>
+  <div id="log"></div>
+
+  <script>
+    function el(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text) e.textContent = text;
+      return e;
+    }
+    function render(payload) {
+      const box = el('div', 'msg');
+      if (payload.kind === 'text') {
+        box.append(el('div', null, payload.text));
+      } else if (payload.kind === 'card') {
+        const c = payload.card || {};
+        if (c.title) box.append(el('div', 'title', c.title));
+        (c.body || []).forEach(b => {
+          if (b.type === 'text') box.append(el('div', null, b.text));
+          if (b.type === 'fact') box.append(el('div', 'fact', `${b.label}: ${b.value}`));
+          if (b.type === 'image') {
+            const img = document.createElement('img'); img.src = b.url; img.width=320; box.append(img);
+          }
+        });
+        const actions = el('div');
+        (c.actions || []).forEach(a => {
+          if (a.type === 'openUrl') {
+            const btn = el('button', null, a.title); btn.onclick = () => window.open(a.url, '_blank'); actions.append(btn);
+          } else if (a.type === 'postback') {
+            const btn = el('button', null, a.title); btn.onclick = () => alert(JSON.stringify(a.data)); actions.append(btn);
+          }
+        });
+        box.append(actions);
+      }
+      return box;
+    }
+    const log = document.getElementById('log');
+    const es = new EventSource('/events');
+    es.onmessage = (e) => {
+      const payload = JSON.parse(e.data);
+      log.prepend(render(payload));
+    };
+  </script>
+</body>
+</html>

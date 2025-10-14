@@ -1,0 +1,11 @@
+---
+source: libs/translator/tests/snapshots.rs
+expression: "&payloads"
+---
+[
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "text": "Hello &lt;Greentic&gt;"
+  }
+]

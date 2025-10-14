@@ -1,0 +1,47 @@
+id: telegram.weather_with_ollama
+title: Telegram → Weather (with Ollama extraction)
+description: Ask location + days, call weather API, reply as card.
+type: messaging
+in: ask_location_and_days
+nodes:
+  ask_location_and_days:
+    qa:
+      welcome: "Hi there! Let's get your weather forecast."
+      questions:
+        - id: location
+          prompt: "👉 What location would you like a forecast for?"
+          answer_type: text
+          max_words: 3
+        - id: days
+          prompt: "👉 Over how many days? (3 max)"
+          answer_type: number
+          default: 3
+          validate: { range: [1, 3] }
+    routes:
+      - forecast_weather
+  forecast_weather:
+    tool:
+      tool: weather_api
+      action: forecast_weather
+      input:
+        q: "{{state.location}}"
+        days: "{{state.days}}"
+    routes:
+      - weather_card
+  weather_card:
+    card:
+      title: "🌤️ Weather for {{payload.location.name}}"
+      body:
+        - type: text
+          text: "Here’s the {{state.days}}-day forecast"
+        - type: fact
+          label: "High"
+          value: "{{payload.forecast.forecastday.[0].day.maxtemp_c}}°C"
+        - type: fact
+          label: "Low"
+          value: "{{payload.forecast.forecastday.[0].day.mintemp_c}}°C"
+        - type: fact
+          label: "Conditions"
+          value: "{{payload.forecast.forecastday.[0].day.condition.text}}"
+    routes:
+      - end
