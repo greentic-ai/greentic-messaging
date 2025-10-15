@@ -1,7 +1,7 @@
 //! Helpers for rendering Teams-specific Adaptive Cards.
 
 use anyhow::Result;
-use gsm_core::{CardAction, CardBlock, MessageCard};
+use gsm_core::{CardAction, CardBlock, MessageCard, OutMessage};
 use serde_json::{json, Value};
 
 /// Converts a [`MessageCard`](gsm_core::MessageCard) into a Teams Adaptive Card payload.
@@ -25,11 +25,21 @@ use serde_json::{json, Value};
 ///     ],
 /// };
 ///
-/// let card_payload = to_teams_adaptive(&card).unwrap();
+/// let out = gsm_core::OutMessage {
+///     tenant: "acme".into(),
+///     platform: gsm_core::Platform::Teams,
+///     chat_id: "chat-1".into(),
+///     thread_id: None,
+///     kind: gsm_core::OutKind::Card,
+///     text: None,
+///     message_card: None,
+///     meta: Default::default(),
+/// };
+/// let card_payload = to_teams_adaptive(&card, &out).unwrap();
 /// assert_eq!(card_payload["type"], "AdaptiveCard");
 /// assert_eq!(card_payload["body"][0]["text"], "Weather");
 /// ```
-pub fn to_teams_adaptive(card: &MessageCard) -> Result<Value> {
+pub fn to_teams_adaptive(card: &MessageCard, out: &OutMessage) -> Result<Value> {
     let mut body: Vec<Value> = vec![];
     if let Some(t) = &card.title {
         body.push(json!({"type":"TextBlock","weight":"Bolder","size":"Medium","text":t}));
@@ -60,8 +70,8 @@ pub fn to_teams_adaptive(card: &MessageCard) -> Result<Value> {
     let mut actions: Vec<Value> = vec![];
     for a in &card.actions {
         match a {
-            CardAction::OpenUrl { title, url, jwt } => {
-                let href = crate::sign_url_if_needed(url, *jwt);
+            CardAction::OpenUrl { title, url, .. } => {
+                let href = crate::secure_action_url(out, title, url);
                 actions.push(json!({
                   "type":"Action.OpenUrl",
                   "title": title,

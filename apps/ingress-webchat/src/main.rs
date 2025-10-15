@@ -16,8 +16,11 @@ use axum::{
     Json, Router,
 };
 use gsm_core::*;
-use gsm_ingress_common::{ack202, verify_bearer, with_request_id};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
+use gsm_ingress_common::{ack202, init_guard, verify_bearer, with_request_id};
 use include_dir::{include_dir, Dir};
+use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tracing_subscriber::EnvFilter;
@@ -28,6 +31,8 @@ static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 struct AppState {
     nats: Nats,
     tenant: String,
+    idem_guard: IdempotencyGuard,
+    dlq: DlqPublisher,
 }
 
 #[tokio::main]
@@ -39,14 +44,34 @@ async fn main() -> Result<()> {
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let nats = async_nats::connect(nats_url).await?;
-    let state = AppState { nats, tenant };
+    let idem_guard = init_guard(&nats).await?;
+    let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
+    let state = AppState {
+        nats,
+        tenant,
+        idem_guard,
+        dlq,
+    };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/", get(index))
         .route("/webhook", post(webhook))
-        .with_state(state)
         .layer(middleware::from_fn(with_request_id))
         .layer(middleware::from_fn(verify_bearer));
+
+    match ActionContext::from_env(&state.nats).await {
+        Ok(ctx) => {
+            let shared: SharedActionContext = std::sync::Arc::new(ctx);
+            app = app
+                .route("/a", get(handle_action).layer(Extension(shared.clone())))
+                .route("/a/webchat", get(handle_action).layer(Extension(shared)));
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "action links disabled for ingress-webchat");
+        }
+    }
+
+    let app = app.with_state(state);
 
     let addr: std::net::SocketAddr = std::env::var("BIND")
         .unwrap_or_else(|_| "0.0.0.0:8090".into())
@@ -93,14 +118,74 @@ async fn webhook(
 ) -> axum::response::Response {
     let now = OffsetDateTime::now_utc();
     let env = envelope_from_webmsg(&state.tenant, &msg, now);
+    let span = tracing::info_span!(
+        "ingress.handle",
+        tenant = %env.tenant,
+        platform = %env.platform.as_str(),
+        chat_id = %env.chat_id,
+        msg_id = %env.msg_id
+    );
+    let _guard = span.enter();
 
     let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
+    let key = IdemKey {
+        tenant: env.tenant.clone(),
+        platform: env.platform.as_str().to_string(),
+        msg_id: env.msg_id.clone(),
+    };
+    match state.idem_guard.should_process(&key).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::info!(
+                tenant = %key.tenant,
+                platform = %key.platform,
+                msg_id = %key.msg_id,
+                "duplicate webchat event dropped"
+            );
+            let rid = request_id.as_ref().map(|Extension(id)| id);
+            return ack202(rid).into_response();
+        }
+        Err(err) => {
+            tracing::error!(
+                error = %err,
+                tenant = %key.tenant,
+                platform = %key.platform,
+                msg_id = %key.msg_id,
+                "idempotency check failed; continuing"
+            );
+        }
+    }
 
     match serde_json::to_vec(&env) {
         Ok(bytes) => {
             if let Err(e) = state.nats.publish(subject.clone(), bytes.into()).await {
                 tracing::error!("publish failed: {e}");
+                if let Err(dlq_err) = state
+                    .dlq
+                    .publish(
+                        &state.tenant,
+                        env.platform.as_str(),
+                        &env.msg_id,
+                        1,
+                        DlqError {
+                            code: "E_PUBLISH".into(),
+                            message: e.to_string(),
+                            stage: None,
+                        },
+                        &env,
+                    )
+                    .await
+                {
+                    tracing::error!("failed to publish dlq entry: {dlq_err}");
+                }
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            } else {
+                metrics::counter!(
+                    "messages_ingressed",
+                    1,
+                    "tenant" => env.tenant.clone(),
+                    "platform" => env.platform.as_str().to_string()
+                );
             }
             tracing::info!("published to {subject}");
         }

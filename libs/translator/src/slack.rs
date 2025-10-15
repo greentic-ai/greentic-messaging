@@ -20,7 +20,7 @@ pub fn to_slack_payloads(out: &OutMessage) -> Result<Vec<Value>> {
                 .message_card
                 .as_ref()
                 .context("missing card for OutKind::Card")?;
-            let blocks = card_to_blocks(card)?;
+            let blocks = card_to_blocks(card, out)?;
             let title = card.title.as_deref().unwrap_or_default();
             let mut payloads = Vec::new();
             for chunk in blocks.chunks(MAX_BLOCKS_PER_MESSAGE) {
@@ -52,7 +52,7 @@ fn payload_with_blocks(text: &str, blocks: Vec<Value>, thread_ts: Option<&str>) 
     payload
 }
 
-fn card_to_blocks(card: &MessageCard) -> Result<Vec<Value>> {
+fn card_to_blocks(card: &MessageCard, out: &OutMessage) -> Result<Vec<Value>> {
     let mut blocks: Vec<Value> = Vec::new();
     if let Some(title) = &card.title {
         blocks.push(json!({
@@ -89,8 +89,8 @@ fn card_to_blocks(card: &MessageCard) -> Result<Vec<Value>> {
         let mut elements = Vec::new();
         for (idx, action) in card.actions.iter().enumerate() {
             match action {
-                CardAction::OpenUrl { title, url, jwt } => {
-                    let href = crate::sign_url_if_needed(url, *jwt);
+                CardAction::OpenUrl { title, url, .. } => {
+                    let href = crate::secure_action_url(out, title, url);
                     elements.push(json!({
                       "type": "button",
                       "text": { "type": "plain_text", "text": title, "emoji": true },

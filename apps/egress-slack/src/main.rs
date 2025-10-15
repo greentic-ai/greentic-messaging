@@ -1,10 +1,15 @@
 //! Slack egress adapter that converts normalized messages into Slack API calls.
 
 use anyhow::{Context, Result};
+use async_nats::jetstream::AckKind;
 use futures::StreamExt;
+use gsm_backpressure::BackpressureLimiter;
 use gsm_core::{OutMessage, Platform};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_egress_common::egress::bootstrap;
 use gsm_translator::slack::to_slack_payloads;
 use serde_json::Value;
+use tracing::{event, Instrument, Level};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -18,53 +23,165 @@ async fn main() -> Result<()> {
     let bot_token = std::env::var("SLACK_BOT_TOKEN")
         .context("SLACK_BOT_TOKEN environment variable required")?;
 
-    let nats = async_nats::connect(nats_url).await?;
-    let subject = format!("greentic.msg.out.{}.slack.>", tenant);
-    let mut sub = nats.subscribe(subject.clone()).await?;
-    tracing::info!("egress-slack subscribed to {subject}");
+    let queue = bootstrap(&nats_url, &tenant, Platform::Slack.as_str()).await?;
+    tracing::info!(
+        stream = %queue.stream,
+        consumer = %queue.consumer,
+        "egress-slack consuming from JetStream"
+    );
+
+    let dlq = DlqPublisher::new("egress", queue.client()).await?;
 
     let http = reqwest::Client::new();
+    let mut messages = queue.messages;
+    let limiter = queue.limiter;
 
-    while let Some(msg) = sub.next().await {
-        let out: OutMessage = match serde_json::from_slice(&msg.payload) {
+    while let Some(next) = messages.next().await {
+        let msg = match next {
+            Ok(msg) => msg,
+            Err(err) => {
+                tracing::error!("jetstream message error: {err}");
+                continue;
+            }
+        };
+
+        let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("bad out msg: {e}");
+                let _ = msg.ack().await;
                 continue;
             }
         };
         if out.platform != Platform::Slack {
+            if let Err(err) = msg.ack().await {
+                tracing::error!("ack failed: {err}");
+            }
             continue;
         }
 
-        let payloads = match to_slack_payloads(&out) {
+        let msg_id = out.message_id();
+        let span = tracing::info_span!(
+            "egress.acquire_permit",
+            tenant = %out.tenant,
+            platform = "slack",
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let permit = match limiter.acquire(&out.tenant).instrument(span).await {
             Ok(p) => p,
-            Err(e) => {
-                tracing::warn!("slack translation failed: {e}");
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    tenant = %out.tenant,
+                    platform = "slack",
+                    "failed to acquire backpressure permit"
+                );
+                let _ = msg.ack_with(AckKind::Nak(None)).await;
                 continue;
             }
         };
+        event!(
+            Level::INFO,
+            tenant = %out.tenant,
+            platform = "slack",
+            msg_id = %msg_id,
+            acquired = true,
+            "backpressure permit acquired"
+        );
 
-        for mut payload in payloads {
-            merge_channel_info(&mut payload, &out);
-            let res = http
-                .post("https://slack.com/api/chat.postMessage")
-                .bearer_auth(&bot_token)
-                .json(&payload)
-                .send()
-                .await;
-
-            match res {
-                Ok(response) if response.status().is_success() => {
-                    tracing::debug!("slack message posted: {}", out.chat_id);
+        let translate_span = tracing::info_span!(
+            "translate.run",
+            tenant = %out.tenant,
+            platform = %out.platform.as_str(),
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let payloads = {
+            let _guard = translate_span.enter();
+            match to_slack_payloads(&out) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!("slack translation failed: {e}");
+                    drop(permit);
+                    let _ = msg.ack_with(AckKind::Nak(None)).await;
+                    continue;
                 }
-                Ok(response) => {
-                    let status = response.status();
-                    let text = response.text().await.unwrap_or_default();
-                    tracing::warn!("slack api err {}: {}", status, text);
-                }
-                Err(error) => tracing::warn!("slack http error: {error}"),
             }
+        };
+
+        let mut had_error = false;
+        let mut last_error: Option<String> = None;
+        {
+            let send_span = tracing::info_span!(
+                "egress.send",
+                tenant = %out.tenant,
+                platform = %out.platform.as_str(),
+                chat_id = %out.chat_id,
+                msg_id = %msg_id
+            );
+            let _guard = send_span.enter();
+            for mut payload in payloads {
+                merge_channel_info(&mut payload, &out);
+                match http
+                    .post("https://slack.com/api/chat.postMessage")
+                    .bearer_auth(&bot_token)
+                    .json(&payload)
+                    .send()
+                    .await
+                {
+                    Ok(response) if response.status().is_success() => {
+                        tracing::debug!("slack message posted: {}", out.chat_id);
+                    }
+                    Ok(response) => {
+                        let status = response.status();
+                        let text = response.text().await.unwrap_or_default();
+                        tracing::warn!("slack api err {}: {}", status, text);
+                        had_error = true;
+                        last_error = Some(format!("HTTP {}: {}", status, text));
+                    }
+                    Err(error) => {
+                        tracing::warn!("slack http error: {error}");
+                        had_error = true;
+                        last_error = Some(error.to_string());
+                    }
+                }
+            }
+        }
+        drop(permit);
+
+        if had_error {
+            if let Some(err_msg) = last_error {
+                if let Err(err) = dlq
+                    .publish(
+                        &out.tenant,
+                        out.platform.as_str(),
+                        &msg_id,
+                        1,
+                        DlqError {
+                            code: "E_SEND".into(),
+                            message: err_msg,
+                            stage: None,
+                        },
+                        &out,
+                    )
+                    .await
+                {
+                    tracing::error!("failed to publish dlq entry: {err}");
+                }
+            }
+            if let Err(err) = msg.ack_with(AckKind::Nak(None)).await {
+                tracing::error!("nak failed: {err}");
+            }
+        } else if let Err(err) = msg.ack().await {
+            tracing::error!("ack failed: {err}");
+        } else {
+            metrics::counter!(
+                "messages_egressed",
+                1,
+                "tenant" => out.tenant.clone(),
+                "platform" => out.platform.as_str().to_string()
+            );
         }
     }
 

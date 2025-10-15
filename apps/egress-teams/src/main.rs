@@ -8,11 +8,16 @@
 //! ```
 
 use anyhow::{anyhow, Result};
+use async_nats::jetstream::AckKind;
 use futures::StreamExt;
+use gsm_backpressure::BackpressureLimiter;
 use gsm_core::{OutKind, OutMessage, Platform};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_egress_common::egress::bootstrap;
 use gsm_translator::teams::to_teams_adaptive;
 use serde_json::json;
 use tokio::time::{sleep, Duration};
+use tracing::{event, Instrument, Level};
 use tracing_subscriber::EnvFilter;
 
 fn auth_base() -> String {
@@ -48,24 +53,119 @@ async fn main() -> Result<()> {
     let client_id = std::env::var("MS_GRAPH_CLIENT_ID")?;
     let client_secret = std::env::var("MS_GRAPH_CLIENT_SECRET")?;
 
-    let nats = async_nats::connect(nats_url).await?;
-    let subject = format!("greentic.msg.out.{}.teams.>", tenant);
-    let mut sub = nats.subscribe(subject.clone()).await?;
-    tracing::info!("egress-teams subscribed to {subject}");
+    let queue = bootstrap(&nats_url, &tenant, Platform::Teams.as_str()).await?;
+    tracing::info!(
+        stream = %queue.stream,
+        consumer = %queue.consumer,
+        "egress-teams consuming from JetStream"
+    );
 
-    while let Some(msg) = sub.next().await {
-        let out: OutMessage = match serde_json::from_slice(&msg.payload) {
+    let dlq = DlqPublisher::new("egress", queue.client()).await?;
+
+    let mut messages = queue.messages;
+    let limiter = queue.limiter;
+
+    while let Some(next) = messages.next().await {
+        let msg = match next {
+            Ok(msg) => msg,
+            Err(err) => {
+                tracing::error!("jetstream message error: {err}");
+                continue;
+            }
+        };
+
+        let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("bad out msg: {e}");
+                let _ = msg.ack().await;
                 continue;
             }
         };
         if out.platform != Platform::Teams {
+            if let Err(err) = msg.ack().await {
+                tracing::error!("ack failed: {err}");
+            }
             continue;
         }
-        if let Err(e) = deliver(&graph_tenant, &client_id, &client_secret, &out).await {
-            tracing::error!("deliver failed: {e}");
+
+        let msg_id = out.message_id();
+        let span = tracing::info_span!(
+            "egress.acquire_permit",
+            tenant = %out.tenant,
+            platform = "teams",
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let permit = match limiter.acquire(&out.tenant).instrument(span).await {
+            Ok(p) => p,
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    tenant = %out.tenant,
+                    platform = "teams",
+                    "failed to acquire backpressure permit"
+                );
+                let _ = msg.ack_with(AckKind::Nak(None)).await;
+                continue;
+            }
+        };
+        event!(
+            Level::INFO,
+            tenant = %out.tenant,
+            platform = "teams",
+            msg_id = %msg_id,
+            acquired = true,
+            "backpressure permit acquired"
+        );
+
+        let send_span = tracing::info_span!(
+            "egress.send",
+            tenant = %out.tenant,
+            platform = "teams",
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let result = deliver(&graph_tenant, &client_id, &client_secret, &out)
+            .instrument(send_span)
+            .await;
+        drop(permit);
+
+        match result {
+            Ok(()) => {
+                if let Err(err) = msg.ack().await {
+                    tracing::error!("ack failed: {err}");
+                }
+                metrics::counter!(
+                    "messages_egressed",
+                    1,
+                    "tenant" => out.tenant.clone(),
+                    "platform" => out.platform.as_str().to_string()
+                );
+            }
+            Err(e) => {
+                tracing::error!("deliver failed: {e}");
+                if let Err(err) = dlq
+                    .publish(
+                        &out.tenant,
+                        out.platform.as_str(),
+                        &msg_id,
+                        3,
+                        DlqError {
+                            code: "E_SEND".into(),
+                            message: e.to_string(),
+                            stage: None,
+                        },
+                        &out,
+                    )
+                    .await
+                {
+                    tracing::error!("failed to publish dlq entry: {err}");
+                }
+                if let Err(err) = msg.ack_with(AckKind::Nak(None)).await {
+                    tracing::error!("nak failed: {err}");
+                }
+            }
         }
     }
 
@@ -98,9 +198,19 @@ async fn deliver(tenant: &str, cid: &str, secret: &str, out: &OutMessage) -> Res
 
     match out.kind {
         OutKind::Text => {
-            let body = json!({
-              "body": { "contentType":"text", "content": out.text.clone().unwrap_or_default() }
-            });
+            let body = {
+                let translate_span = tracing::info_span!(
+                    "translate.run",
+                    tenant = %out.tenant,
+                    platform = %out.platform.as_str(),
+                    chat_id = %out.chat_id,
+                    msg_id = %out.message_id()
+                );
+                let _guard = translate_span.enter();
+                json!({
+                  "body": { "contentType":"text", "content": out.text.clone().unwrap_or_default() }
+                })
+            };
             let url = messages_url(chat_id);
             send(&client, &tkn, &url, &body).await?;
         }
@@ -109,7 +219,17 @@ async fn deliver(tenant: &str, cid: &str, secret: &str, out: &OutMessage) -> Res
                 .message_card
                 .as_ref()
                 .ok_or_else(|| anyhow!("missing card"))?;
-            let adaptive = to_teams_adaptive(card)?;
+            let adaptive = {
+                let translate_span = tracing::info_span!(
+                    "translate.run",
+                    tenant = %out.tenant,
+                    platform = %out.platform.as_str(),
+                    chat_id = %out.chat_id,
+                    msg_id = %out.message_id()
+                );
+                let _guard = translate_span.enter();
+                to_teams_adaptive(card, out)?
+            };
             let body = json!({
               "subject": null,
               "importance": "normal",

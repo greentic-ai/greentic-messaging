@@ -1,0 +1,16 @@
+[package]
+name = "gsm-dlq"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+time = { workspace = true }
+metrics = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+nanoid = "0.4"
+futures = "0.3"

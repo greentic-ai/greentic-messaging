@@ -9,6 +9,11 @@ This repo contains:
 ```bash
 cargo build
 ```
+## Test
+```bash
+cargo test
+cargo test -p gsm-runner --features chaos -- --ignored chaos
+```
 
 ## Slack Integration
 

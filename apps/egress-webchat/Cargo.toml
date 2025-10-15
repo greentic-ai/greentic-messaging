@@ -15,8 +15,12 @@ serde_json = { workspace = true }
 include_dir = "0.7"
 gsm-core = { path = "../../libs/core" }
 gsm-translator = { path = "../../libs/translator" }
+gsm-egress-common = { path = "../egress-common" }
+gsm-backpressure = { path = "../../libs/backpressure" }
+gsm-dlq = { path = "../../libs/dlq" }
 async-stream = "0.3.6"
 futures = "0.3.31"
+metrics = { workspace = true }
 
 [dev-dependencies]
 hyper = "1"

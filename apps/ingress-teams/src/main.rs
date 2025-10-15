@@ -5,9 +5,13 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use gsm_core::*;
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
+use gsm_ingress_common::init_guard;
+use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -18,6 +22,8 @@ use tracing_subscriber::EnvFilter;
 struct AppState {
     nats: Nats,
     tenant: String,
+    idem_guard: IdempotencyGuard,
+    dlq: DlqPublisher,
 }
 
 #[tokio::main]
@@ -29,12 +35,32 @@ async fn main() -> Result<()> {
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let nats = async_nats::connect(nats_url).await?;
-    let state = AppState { nats, tenant };
+    let idem_guard = init_guard(&nats).await?;
+    let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
+    let state = AppState {
+        nats,
+        tenant,
+        idem_guard,
+        dlq,
+    };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/teams/webhook", get(validate))
-        .route("/teams/webhook", post(notify))
-        .with_state(state);
+        .route("/teams/webhook", post(notify));
+
+    match ActionContext::from_env(&state.nats).await {
+        Ok(ctx) => {
+            let shared: SharedActionContext = std::sync::Arc::new(ctx);
+            app = app
+                .route("/a", get(handle_action).layer(Extension(shared.clone())))
+                .route("/a/teams", get(handle_action).layer(Extension(shared)));
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "action links disabled for ingress-teams");
+        }
+    }
+
+    let app = app.with_state(state);
 
     let addr: std::net::SocketAddr = std::env::var("BIND")
         .unwrap_or_else(|_| "0.0.0.0:8085".into())
@@ -149,12 +175,71 @@ async fn notify(
     for notif in env.value {
         let chat_id = extract_chat_id(&notif.resource);
         let envelope = envelope_from_notification(&state.tenant, &notif);
+        let span = tracing::info_span!(
+            "ingress.handle",
+            tenant = %envelope.tenant,
+            platform = %envelope.platform.as_str(),
+            chat_id = %envelope.chat_id,
+            msg_id = %envelope.msg_id
+        );
+        let _guard = span.enter();
         let subject = in_subject(&state.tenant, envelope.platform.as_str(), &chat_id);
+        let key = IdemKey {
+            tenant: envelope.tenant.clone(),
+            platform: envelope.platform.as_str().to_string(),
+            msg_id: envelope.msg_id.clone(),
+        };
+        match state.idem_guard.should_process(&key).await {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::info!(
+                    tenant = %key.tenant,
+                    platform = %key.platform,
+                    msg_id = %key.msg_id,
+                    "duplicate teams event dropped"
+                );
+                continue;
+            }
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    tenant = %key.tenant,
+                    platform = %key.platform,
+                    msg_id = %key.msg_id,
+                    "idempotency check failed; continuing"
+                );
+            }
+        }
         match serde_json::to_vec(&envelope) {
             Ok(bytes) => {
                 if let Err(e) = state.nats.publish(subject.clone(), bytes.into()).await {
                     tracing::error!("publish failed: {e}");
+                    if let Err(dlq_err) = state
+                        .dlq
+                        .publish(
+                            &state.tenant,
+                            envelope.platform.as_str(),
+                            &envelope.msg_id,
+                            1,
+                            DlqError {
+                                code: "E_PUBLISH".into(),
+                                message: e.to_string(),
+                                stage: None,
+                            },
+                            &envelope,
+                        )
+                        .await
+                    {
+                        tracing::error!("failed to publish dlq entry: {dlq_err}");
+                    }
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                } else {
+                    metrics::counter!(
+                        "messages_ingressed",
+                        1,
+                        "tenant" => envelope.tenant.clone(),
+                        "platform" => envelope.platform.as_str().to_string()
+                    );
                 }
             }
             Err(e) => {

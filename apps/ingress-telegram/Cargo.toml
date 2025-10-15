@@ -15,3 +15,7 @@ async-nats = { workspace = true }
 time = { workspace = true }
 gsm-core = { path = "../../libs/core" }
 gsm-ingress-common = { path = "../ingress-common" }
+gsm-dlq = { path = "../../libs/dlq" }
+gsm-idempotency = { path = "../../libs/idempotency" }
+security = { path = "../../libs/security" }
+metrics = { workspace = true }

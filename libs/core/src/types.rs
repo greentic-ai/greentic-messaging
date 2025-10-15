@@ -97,6 +97,18 @@ pub struct OutMessage {
     pub meta: BTreeMap<String, serde_json::Value>,
 }
 
+impl OutMessage {
+    /// Returns a stable identifier for tracing/logging, falling back to chat scope.
+    pub fn message_id(&self) -> String {
+        self.meta
+            .get("source_msg_id")
+            .and_then(|v| v.as_str())
+            .or_else(|| self.meta.get("msg_id").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("{}:{}", self.platform.as_str(), self.chat_id))
+    }
+}
+
 /// Output payload kinds supported by translators.
 ///
 /// ```

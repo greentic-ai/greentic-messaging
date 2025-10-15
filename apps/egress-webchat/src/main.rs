@@ -6,6 +6,7 @@
 //! ```
 
 use anyhow::Result;
+use async_nats::jetstream::AckKind;
 use async_stream::stream;
 use axum::{
     extract::State,
@@ -14,11 +15,15 @@ use axum::{
     Router,
 };
 use futures::StreamExt;
+use gsm_backpressure::BackpressureLimiter;
 use gsm_core::{OutMessage, Platform};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_egress_common::egress::bootstrap;
 use gsm_translator::{Translator, WebChatTranslator};
 use include_dir::{include_dir, Dir};
 use serde_json::Value;
 use tokio::sync::broadcast;
+use tracing::{event, Instrument, Level};
 use tracing_subscriber::EnvFilter;
 
 static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
@@ -38,27 +43,139 @@ async fn main() -> Result<()> {
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let platform = std::env::var("PLATFORM").unwrap_or_else(|_| "webchat".into());
 
-    let nats = async_nats::connect(nats_url).await?;
-    let subject = format!("greentic.msg.out.{}.{}.>", tenant, platform);
-    let mut sub = nats.subscribe(subject.clone()).await?;
-    tracing::info!("egress-webchat subscribed to {subject}");
+    let queue = bootstrap(&nats_url, &tenant, &platform).await?;
+    tracing::info!(
+        stream = %queue.stream,
+        consumer = %queue.consumer,
+        "egress-webchat consuming from JetStream"
+    );
 
     let (tx, _rx) = broadcast::channel::<Value>(64);
     let state = AppState { latest: tx.clone() };
     let translator = WebChatTranslator::new();
+    let client = queue.client();
+    let mut messages = queue.messages;
+    let limiter = queue.limiter;
+    let dlq = DlqPublisher::new("egress", client).await?;
 
     tokio::spawn(async move {
-        while let Some(msg) = sub.next().await {
-            match serde_json::from_slice::<OutMessage>(&msg.payload) {
-                Ok(out) if out.platform == Platform::WebChat => {
-                    if let Ok(payloads) = translator.to_platform(&out) {
-                        for payload in payloads {
-                            let _ = tx.send(payload);
-                        }
+        let dlq = dlq.clone();
+        while let Some(next) = messages.next().await {
+            let msg = match next {
+                Ok(msg) => msg,
+                Err(err) => {
+                    tracing::error!("jetstream message error: {err}");
+                    continue;
+                }
+            };
+
+            let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("bad out msg: {e}");
+                    let _ = msg.ack().await;
+                    continue;
+                }
+            };
+
+            if out.platform != Platform::WebChat {
+                if let Err(err) = msg.ack().await {
+                    tracing::error!("ack failed: {err}");
+                }
+                continue;
+            }
+
+            let msg_id = out.message_id();
+            let span = tracing::info_span!(
+                "egress.acquire_permit",
+                tenant = %out.tenant,
+                platform = "webchat",
+                chat_id = %out.chat_id,
+                msg_id = %msg_id
+            );
+            let permit = match limiter.acquire(&out.tenant).instrument(span).await {
+                Ok(p) => p,
+                Err(err) => {
+                    tracing::error!(
+                        error = %err,
+                        tenant = %out.tenant,
+                        platform = "webchat",
+                        "failed to acquire backpressure permit"
+                    );
+                    let _ = msg.ack_with(AckKind::Nak(None)).await;
+                    continue;
+                }
+            };
+            event!(
+                Level::INFO,
+                tenant = %out.tenant,
+                platform = "webchat",
+                msg_id = %msg_id,
+                acquired = true,
+                "backpressure permit acquired"
+            );
+
+            let translate_span = tracing::info_span!(
+                "translate.run",
+                tenant = %out.tenant,
+                platform = %out.platform.as_str(),
+                chat_id = %out.chat_id,
+                msg_id = %msg_id
+            );
+            let result = {
+                let _translate_guard = translate_span.enter();
+                translator.to_platform(&out)
+            }
+            .map(|payloads| {
+                let send_span = tracing::info_span!(
+                    "egress.send",
+                    tenant = %out.tenant,
+                    platform = %out.platform.as_str(),
+                    chat_id = %out.chat_id,
+                    msg_id = %msg_id
+                );
+                let _send_guard = send_span.enter();
+                payloads.into_iter().for_each(|payload| {
+                    let _ = tx.send(payload);
+                });
+            });
+            drop(permit);
+
+            match result {
+                Ok(()) => {
+                    if let Err(err) = msg.ack().await {
+                        tracing::error!("ack failed: {err}");
+                    }
+                    metrics::counter!(
+                        "messages_egressed",
+                        1,
+                        "tenant" => out.tenant.clone(),
+                        "platform" => out.platform.as_str().to_string()
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("webchat translation failed: {e}");
+                    if let Err(err) = dlq
+                        .publish(
+                            &out.tenant,
+                            out.platform.as_str(),
+                            &msg_id,
+                            1,
+                            DlqError {
+                                code: "E_TRANSLATE".into(),
+                                message: e.to_string(),
+                                stage: None,
+                            },
+                            &out,
+                        )
+                        .await
+                    {
+                        tracing::error!("failed to publish dlq entry: {err}");
+                    }
+                    if let Err(err) = msg.ack_with(AckKind::Nak(None)).await {
+                        tracing::error!("nak failed: {err}");
                     }
                 }
-                Ok(_) => {}
-                Err(e) => tracing::warn!("bad out msg: {e}"),
             }
         }
     });

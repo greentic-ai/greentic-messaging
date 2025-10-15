@@ -13,10 +13,14 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
-    Router,
+    Extension, Router,
 };
 use gsm_core::{in_subject, MessageEnvelope, Platform};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
+use gsm_ingress_common::init_guard;
 use hmac::{Hmac, Mac};
+use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::Sha256;
@@ -31,6 +35,8 @@ struct AppState {
     tenant: String,
     verify_token: String,
     app_secret: String,
+    idem_guard: IdempotencyGuard,
+    dlq: DlqPublisher,
 }
 
 #[tokio::main]
@@ -44,16 +50,32 @@ async fn main() -> Result<()> {
     let verify_token = std::env::var("WA_VERIFY_TOKEN").expect("WA_VERIFY_TOKEN required");
     let app_secret = std::env::var("WA_APP_SECRET").expect("WA_APP_SECRET required");
     let nats = async_nats::connect(nats_url).await?;
+    let idem_guard = init_guard(&nats).await?;
+    let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
     let state = AppState {
         nats,
         tenant,
         verify_token,
         app_secret,
+        idem_guard,
+        dlq,
     };
 
-    let app = Router::new()
-        .route("/whatsapp/webhook", get(verify).post(receive))
-        .with_state(state);
+    let mut app = Router::new().route("/whatsapp/webhook", get(verify).post(receive));
+
+    match ActionContext::from_env(&state.nats).await {
+        Ok(ctx) => {
+            let shared: SharedActionContext = std::sync::Arc::new(ctx);
+            app = app
+                .route("/a", get(handle_action).layer(Extension(shared.clone())))
+                .route("/a/whatsapp", get(handle_action).layer(Extension(shared)));
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "action links disabled for ingress-whatsapp");
+        }
+    }
+
+    let app = app.with_state(state);
 
     let addr: std::net::SocketAddr = std::env::var("BIND")
         .unwrap_or_else(|_| "0.0.0.0:8087".into())
@@ -105,14 +127,73 @@ async fn receive(
 
     let envelopes = extract_envelopes(&state.tenant, &payload);
     for env in envelopes {
+        let span = tracing::info_span!(
+            "ingress.handle",
+            tenant = %env.tenant,
+            platform = %env.platform.as_str(),
+            chat_id = %env.chat_id,
+            msg_id = %env.msg_id
+        );
+        let _guard = span.enter();
         let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
+        let key = IdemKey {
+            tenant: env.tenant.clone(),
+            platform: env.platform.as_str().to_string(),
+            msg_id: env.msg_id.clone(),
+        };
+        match state.idem_guard.should_process(&key).await {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::info!(
+                    tenant = %key.tenant,
+                    platform = %key.platform,
+                    msg_id = %key.msg_id,
+                    "duplicate whatsapp event dropped"
+                );
+                continue;
+            }
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    tenant = %key.tenant,
+                    platform = %key.platform,
+                    msg_id = %key.msg_id,
+                    "idempotency check failed; continuing"
+                );
+            }
+        }
         if let Err(e) = state
             .nats
             .publish(subject.clone(), serde_json::to_vec(&env).unwrap().into())
             .await
         {
             tracing::error!("publish failed on {subject}: {e}");
+            if let Err(dlq_err) = state
+                .dlq
+                .publish(
+                    &state.tenant,
+                    env.platform.as_str(),
+                    &env.msg_id,
+                    1,
+                    DlqError {
+                        code: "E_PUBLISH".into(),
+                        message: e.to_string(),
+                        stage: None,
+                    },
+                    &env,
+                )
+                .await
+            {
+                tracing::error!("failed to publish dlq entry: {dlq_err}");
+            }
             return StatusCode::INTERNAL_SERVER_ERROR;
+        } else {
+            metrics::counter!(
+                "messages_ingressed",
+                1,
+                "tenant" => env.tenant.clone(),
+                "platform" => env.platform.as_str().to_string()
+            );
         }
     }
 

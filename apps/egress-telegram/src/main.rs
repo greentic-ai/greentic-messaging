@@ -1,10 +1,20 @@
 //! Telegram egress adapter that translates `OutMessage` payloads into Bot API requests.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use async_nats::jetstream::{
+    consumer::{
+        push::{Config as PushConfig, Messages},
+        AckPolicy,
+    },
+    stream::{Config as StreamConfig, RetentionPolicy},
+    AckKind, Context as JsContext,
+};
 use futures::StreamExt;
+use gsm_backpressure::{BackpressureLimiter, HybridLimiter};
 use gsm_core::{OutMessage, Platform};
 use gsm_translator::{TelegramTranslator, Translator};
 use serde_json::Value;
+use tracing::Instrument;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,37 +35,146 @@ async fn main() -> Result<()> {
         std::env::var("TELEGRAM_API_BASE").unwrap_or_else(|_| "https://api.telegram.org".into());
 
     let nats = async_nats::connect(nats_url).await?;
-    let subject = format!("greentic.msg.out.{}.telegram.>", tenant);
-    let mut sub = nats.subscribe(subject.clone()).await?;
-    tracing::info!("egress-telegram subscribed to {subject}");
+    let js = async_nats::jetstream::new(nats.clone());
+    let limiter = HybridLimiter::new(Some(&js)).await?;
+    let (mut messages, stream_name, consumer_name) =
+        init_consumer(&js, &tenant, Platform::Telegram.as_str()).await?;
+    tracing::info!(
+        stream = %stream_name,
+        consumer = %consumer_name,
+        "egress-telegram consuming from JetStream"
+    );
 
-    while let Some(msg) = sub.next().await {
-        let out: OutMessage = match serde_json::from_slice(&msg.payload) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("bad out msg: {e}");
+    while let Some(next) = messages.next().await {
+        let msg = match next {
+            Ok(msg) => msg,
+            Err(err) => {
+                tracing::error!("jetstream message error: {err}");
                 continue;
             }
         };
-        if out.platform != Platform::Telegram {
-            continue;
-        }
-
-        match translator.to_platform(&out) {
-            Ok(mut payloads) => {
-                for payload in payloads.iter_mut() {
-                    enrich_payload(payload, &out);
-                    if let Err(err) =
-                        send_payload(&client, &api_base, &bot_token, payload.clone()).await
-                    {
-                        tracing::warn!("telegram send failed: {err}");
-                    }
+        match process_message(&msg, &translator, &client, &api_base, &bot_token, &limiter).await {
+            Ok(()) => {
+                if let Err(err) = msg.ack().await {
+                    tracing::error!("ack failed: {err}");
                 }
             }
-            Err(e) => tracing::warn!("translator error: {e}"),
+            Err(err) => {
+                tracing::error!(error = %err, "telegram egress failed");
+                if let Err(nak_err) = msg.ack_with(AckKind::Nak(None)).await {
+                    tracing::error!("nak failed: {nak_err}");
+                }
+            }
         }
     }
 
+    Ok(())
+}
+
+async fn init_consumer(
+    js: &JsContext,
+    tenant: &str,
+    platform: &str,
+) -> Result<(Messages, String, String)> {
+    let subject = format!("greentic.msg.out.{}.{}.>", tenant, platform);
+    let stream_name = format!("msg-out-{}-{}", tenant, platform);
+    let mut stream_cfg = StreamConfig::default();
+    stream_cfg.name = stream_name.clone();
+    stream_cfg.subjects = vec![subject.clone()];
+    stream_cfg.retention = RetentionPolicy::WorkQueue;
+    stream_cfg.max_messages = -1;
+    stream_cfg.max_messages_per_subject = -1;
+    stream_cfg.max_bytes = -1;
+    let stream = js
+        .get_or_create_stream(stream_cfg)
+        .await
+        .with_context(|| format!("ensure stream {stream_name}"))?;
+    let deliver = format!("deliver.egress.{tenant}.{platform}");
+    let consumer_name = format!("egress-{tenant}-{platform}");
+    let consumer = stream
+        .get_or_create_consumer(
+            &consumer_name,
+            PushConfig {
+                durable_name: Some(consumer_name.clone()),
+                deliver_subject: deliver.clone(),
+                deliver_group: Some(format!("egress-{tenant}")),
+                filter_subject: subject.clone(),
+                ack_policy: AckPolicy::Explicit,
+                max_ack_pending: 256,
+                ..Default::default()
+            },
+        )
+        .await
+        .with_context(|| format!("ensure consumer {consumer_name}"))?;
+    let messages = consumer
+        .messages()
+        .await
+        .with_context(|| format!("attach consumer stream {consumer_name}"))?;
+    Ok((messages, stream_name, consumer_name))
+}
+
+async fn process_message(
+    msg: &async_nats::jetstream::Message,
+    translator: &TelegramTranslator,
+    client: &reqwest::Client,
+    api_base: &str,
+    bot_token: &str,
+    limiter: &Arc<HybridLimiter>,
+) -> Result<()> {
+    let out: OutMessage = serde_json::from_slice(msg.payload.as_ref())
+        .context("decode OutMessage from JetStream payload")?;
+    if out.platform != Platform::Telegram {
+        tracing::debug!("skip non-telegram payload");
+        return Ok(());
+    }
+    let msg_id = out.message_id();
+    let span = tracing::info_span!(
+        "egress.acquire_permit",
+        tenant = %out.tenant,
+        platform = "telegram",
+        chat_id = %out.chat_id,
+        msg_id = %msg_id
+    );
+    let _permit = limiter
+        .acquire(&out.tenant)
+        .instrument(span)
+        .await
+        .context("acquire backpressure permit")?;
+    let mut payloads = {
+        let translate_span = tracing::info_span!(
+            "translate.run",
+            tenant = %out.tenant,
+            platform = %out.platform.as_str(),
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let _guard = translate_span.enter();
+        translator
+            .to_platform(&out)
+            .context("translate payload to telegram")?
+    };
+    {
+        let send_span = tracing::info_span!(
+            "egress.send",
+            tenant = %out.tenant,
+            platform = %out.platform.as_str(),
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let _guard = send_span.enter();
+        for payload in payloads.iter_mut() {
+            enrich_payload(payload, &out);
+            send_payload(client, api_base, bot_token, payload.clone())
+                .await
+                .with_context(|| format!("telegram api send chat={}", out.chat_id))?;
+        }
+    }
+    metrics::counter!(
+        "messages_egressed",
+        1,
+        "tenant" => out.tenant.clone(),
+        "platform" => out.platform.as_str().to_string()
+    );
     Ok(())
 }
 
@@ -138,3 +257,4 @@ mod tests {
             .contains_key("reply_to_message_id"));
     }
 }
+use std::sync::Arc;

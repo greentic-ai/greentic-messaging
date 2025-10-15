@@ -12,11 +12,16 @@ use axum::{
     extract::{Extension, State},
     middleware,
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use gsm_core::*;
-use gsm_ingress_common::{ack202, rate_limit_layer, verify_bearer, verify_hmac, with_request_id};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_idempotency::IdKey as IdemKey;
+use gsm_ingress_common::{
+    ack202, init_guard, rate_limit_layer, verify_bearer, verify_hmac, with_request_id,
+};
+use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -27,6 +32,8 @@ struct AppState {
     nats: Nats,
     tenant: String,
     secret_token: Option<String>,
+    idem_guard: gsm_idempotency::IdempotencyGuard,
+    dlq: DlqPublisher,
 }
 
 #[tokio::main]
@@ -39,19 +46,36 @@ async fn main() -> Result<()> {
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let secret_token = std::env::var("TELEGRAM_SECRET_TOKEN").ok();
     let nats = async_nats::connect(nats_url).await?;
+    let idem_guard = init_guard(&nats).await?;
+    let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
     let state = AppState {
         nats,
         tenant,
         secret_token,
+        idem_guard,
+        dlq,
     };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/telegram/webhook", post(handle_update))
-        .with_state(state.clone())
         .layer(rate_limit_layer(20, 10))
         .layer(middleware::from_fn(with_request_id))
         .layer(middleware::from_fn(verify_bearer))
         .layer(middleware::from_fn(verify_hmac));
+
+    match ActionContext::from_env(&state.nats).await {
+        Ok(ctx) => {
+            let shared: SharedActionContext = std::sync::Arc::new(ctx);
+            app = app
+                .route("/a", get(handle_action).layer(Extension(shared.clone())))
+                .route("/a/telegram", get(handle_action).layer(Extension(shared)));
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "action links disabled for ingress-telegram");
+        }
+    }
+
+    let app = app.with_state(state);
 
     let addr: std::net::SocketAddr = std::env::var("BIND")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
@@ -169,13 +193,72 @@ async fn handle_update(
 
     if let Some(msg) = extract_message(&update).cloned() {
         let env = envelope_from_message(&state.tenant, &msg);
+        let span = tracing::info_span!(
+            "ingress.handle",
+            tenant = %env.tenant,
+            platform = %env.platform.as_str(),
+            chat_id = %env.chat_id,
+            msg_id = %env.msg_id
+        );
+        let _guard = span.enter();
+        let id_key = IdemKey {
+            tenant: env.tenant.clone(),
+            platform: env.platform.as_str().to_string(),
+            msg_id: env.msg_id.clone(),
+        };
+        match state.idem_guard.should_process(&id_key).await {
+            Ok(true) => {}
+            Ok(false) => {
+                let rid_ref = request_id.as_ref().map(|Extension(id)| id);
+                tracing::info!(
+                    tenant = %id_key.tenant,
+                    platform = %id_key.platform,
+                    msg_id = %id_key.msg_id,
+                    "duplicate telegram event dropped"
+                );
+                return ack202(rid_ref).into_response();
+            }
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    tenant = %id_key.tenant,
+                    platform = %id_key.platform,
+                    msg_id = %id_key.msg_id,
+                    "idempotency check failed; continuing"
+                );
+            }
+        }
         let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
         if let Ok(bytes) = serde_json::to_vec(&env) {
             if let Err(e) = state.nats.publish(subject.clone(), bytes.into()).await {
                 tracing::error!("publish failed: {e}");
+                if let Err(dlq_err) = state
+                    .dlq
+                    .publish(
+                        &state.tenant,
+                        env.platform.as_str(),
+                        &env.msg_id,
+                        1,
+                        DlqError {
+                            code: "E_PUBLISH".into(),
+                            message: e.to_string(),
+                            stage: None,
+                        },
+                        &env,
+                    )
+                    .await
+                {
+                    tracing::error!("failed to publish dlq entry: {dlq_err}");
+                }
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
             } else {
                 tracing::info!("published to {subject}");
+                metrics::counter!(
+                    "messages_ingressed",
+                    1,
+                    "tenant" => env.tenant.clone(),
+                    "platform" => env.platform.as_str().to_string()
+                );
             }
         }
 

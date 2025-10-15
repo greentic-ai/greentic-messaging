@@ -2,18 +2,22 @@
 //! window and falls back to approved templates when required.
 
 use anyhow::{anyhow, Result};
-use async_nats::Client as Nats;
+use async_nats::jetstream::AckKind;
 use futures::StreamExt;
+use gsm_backpressure::BackpressureLimiter;
 use gsm_core::{OutKind, OutMessage, Platform};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_egress_common::egress::bootstrap;
+use gsm_translator::secure_action_url;
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
+use tracing::{event, Instrument, Level};
 use tracing_subscriber::EnvFilter;
 
 const SESSION_WINDOW_HOURS: i64 = 24;
 
 #[derive(Clone)]
 struct AppConfig {
-    tenant: String,
     phone_id: String,
     token: String,
     template_name: String,
@@ -38,7 +42,6 @@ async fn main() -> Result<()> {
         std::env::var("WA_API_BASE").unwrap_or_else(|_| "https://graph.facebook.com".into());
 
     let config = AppConfig {
-        tenant,
         phone_id,
         token,
         template_name,
@@ -46,32 +49,121 @@ async fn main() -> Result<()> {
         api_base,
     };
 
-    let nats = async_nats::connect(nats_url).await?;
-    run(nats, config).await
-}
+    let queue = bootstrap(&nats_url, &tenant, Platform::WhatsApp.as_str()).await?;
+    tracing::info!(
+        stream = %queue.stream,
+        consumer = %queue.consumer,
+        "egress-whatsapp consuming from JetStream"
+    );
 
-async fn run(nats: Nats, config: AppConfig) -> Result<()> {
-    let subject = format!("greentic.msg.out.{}.whatsapp.>", config.tenant);
-    let mut sub = nats.subscribe(subject.clone()).await?;
-    tracing::info!("egress-whatsapp subscribed to {subject}");
-
+    let client = queue.client();
+    let mut messages = queue.messages;
+    let limiter = queue.limiter;
+    let dlq = DlqPublisher::new("egress", client).await?;
     let http = reqwest::Client::new();
 
-    while let Some(msg) = sub.next().await {
-        let out: OutMessage = match serde_json::from_slice(&msg.payload) {
+    while let Some(next) = messages.next().await {
+        let msg = match next {
+            Ok(msg) => msg,
+            Err(err) => {
+                tracing::error!("jetstream message error: {err}");
+                continue;
+            }
+        };
+
+        let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("bad out msg: {e}");
+                let _ = msg.ack().await;
                 continue;
             }
         };
 
         if out.platform != Platform::WhatsApp {
+            if let Err(err) = msg.ack().await {
+                tracing::error!("ack failed: {err}");
+            }
             continue;
         }
 
-        if let Err(e) = dispatch_message(&http, &config, &out).await {
-            tracing::warn!("failed to send whatsapp message: {e}");
+        let msg_id = out.message_id();
+        let span = tracing::info_span!(
+            "egress.acquire_permit",
+            tenant = %out.tenant,
+            platform = "whatsapp",
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let permit = match limiter.acquire(&out.tenant).instrument(span).await {
+            Ok(p) => p,
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    tenant = %out.tenant,
+                    platform = "whatsapp",
+                    "failed to acquire backpressure permit"
+                );
+                let _ = msg.ack_with(AckKind::Nak(None)).await;
+                continue;
+            }
+        };
+        event!(
+            Level::INFO,
+            tenant = %out.tenant,
+            platform = "whatsapp",
+            msg_id = %msg_id,
+            acquired = true,
+            "backpressure permit acquired"
+        );
+
+        let send_span = tracing::info_span!(
+            "egress.send",
+            tenant = %out.tenant,
+            platform = "whatsapp",
+            chat_id = %out.chat_id,
+            msg_id = %msg_id
+        );
+        let result = dispatch_message(&http, &config, &out)
+            .instrument(send_span)
+            .await;
+        drop(permit);
+
+        match result {
+            Ok(()) => {
+                if let Err(err) = msg.ack().await {
+                    tracing::error!("ack failed: {err}");
+                }
+                metrics::counter!(
+                    "messages_egressed",
+                    1,
+                    "tenant" => out.tenant.clone(),
+                    "platform" => out.platform.as_str().to_string()
+                );
+            }
+            Err(e) => {
+                tracing::warn!("failed to send whatsapp message: {e}");
+                if let Err(err) = dlq
+                    .publish(
+                        &out.tenant,
+                        out.platform.as_str(),
+                        &msg_id,
+                        1,
+                        DlqError {
+                            code: "E_SEND".into(),
+                            message: e.to_string(),
+                            stage: None,
+                        },
+                        &out,
+                    )
+                    .await
+                {
+                    tracing::error!("failed to publish dlq entry: {err}");
+                }
+                if let Err(err) = msg.ack_with(AckKind::Nak(None)).await {
+                    tracing::error!("nak failed: {err}");
+                }
+            }
         }
     }
 
@@ -80,17 +172,41 @@ async fn run(nats: Nats, config: AppConfig) -> Result<()> {
 
 async fn dispatch_message(http: &reqwest::Client, cfg: &AppConfig, out: &OutMessage) -> Result<()> {
     let chat_id = out.chat_id.clone();
-    match out.kind {
-        OutKind::Text => {
-            let text = out.text.clone().unwrap_or_default();
-            if within_session_window(out) {
-                send_text(http, cfg, &chat_id, &text).await
-            } else {
-                tracing::info!("session window expired; sending template fallback");
-                send_card_fallback(http, cfg, out, &chat_id, &text).await
+    let msg_id = out.message_id();
+
+    enum Dispatch {
+        Text { text: String },
+        Fallback { text: String },
+    }
+
+    let decision = {
+        let translate_span = tracing::info_span!(
+            "translate.run",
+            tenant = %out.tenant,
+            platform = %out.platform.as_str(),
+            chat_id = %chat_id,
+            msg_id = %msg_id
+        );
+        let _guard = translate_span.enter();
+        match out.kind {
+            OutKind::Text => {
+                let text = out.text.clone().unwrap_or_default();
+                if within_session_window(out) {
+                    Dispatch::Text { text }
+                } else {
+                    tracing::info!("session window expired; sending template fallback");
+                    Dispatch::Fallback { text }
+                }
             }
+            OutKind::Card => Dispatch::Fallback {
+                text: String::new(),
+            },
         }
-        OutKind::Card => send_card_fallback(http, cfg, out, &chat_id, "").await,
+    };
+
+    match decision {
+        Dispatch::Text { text } => send_text(http, cfg, &chat_id, &text).await,
+        Dispatch::Fallback { text } => send_card_fallback(http, cfg, out, &chat_id, &text).await,
     }
 }
 
@@ -121,18 +237,19 @@ async fn send_card_fallback(
     if !title.is_empty() {
         vars.push(title.as_str());
     }
-    let fallback_owned =
+    let fallback_raw =
         std::env::var("WA_FALLBACK_URL").unwrap_or_else(|_| "https://app.greentic.ai".into());
-    vars.push(fallback_owned.as_str());
+    let fallback_url = secure_action_url(out, "fallback", &fallback_raw);
+    vars.push(fallback_url.as_str());
 
     match send_template(http, cfg, chat_id, vars.as_slice()).await {
         Ok(()) => Ok(()),
         Err(e) => {
             tracing::warn!("template send failed, falling back to text: {e}");
             let fallback_text = if text.is_empty() {
-                format!("View details: {}", vars.last().unwrap())
+                format!("View details: {}", fallback_url)
             } else {
-                format!("{} — {}", text, vars.last().unwrap())
+                format!("{} — {}", text, fallback_url)
             };
             send_text(http, cfg, chat_id, &fallback_text).await
         }
@@ -249,7 +366,6 @@ mod tests {
     #[test]
     fn send_template_builds_body() {
         let cfg = AppConfig {
-            tenant: "acme".into(),
             phone_id: "123".into(),
             token: "token".into(),
             template_name: "weather".into(),

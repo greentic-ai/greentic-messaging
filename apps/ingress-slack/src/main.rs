@@ -10,11 +10,15 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
-    Router,
+    routing::{get, post},
+    Extension, Router,
 };
 use gsm_core::{in_subject, MessageEnvelope, Platform};
+use gsm_dlq::{DlqError, DlqPublisher};
+use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
+use gsm_ingress_common::init_guard;
 use hmac::{Hmac, Mac};
+use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use time::OffsetDateTime;
@@ -27,6 +31,8 @@ struct AppState {
     nats: Nats,
     tenant: String,
     signing_secret: String,
+    idem_guard: IdempotencyGuard,
+    dlq: DlqPublisher,
 }
 
 #[tokio::main]
@@ -40,15 +46,31 @@ async fn main() -> Result<()> {
     let signing_secret =
         std::env::var("SLACK_SIGNING_SECRET").expect("SLACK_SIGNING_SECRET required");
     let nats = async_nats::connect(nats_url).await?;
+    let idem_guard = init_guard(&nats).await?;
+    let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
     let state = AppState {
         nats,
         tenant,
         signing_secret,
+        idem_guard,
+        dlq,
     };
 
-    let app = Router::new()
-        .route("/slack/events", post(handle))
-        .with_state(state);
+    let mut app = Router::new().route("/slack/events", post(handle));
+
+    match ActionContext::from_env(&state.nats).await {
+        Ok(ctx) => {
+            let shared: SharedActionContext = std::sync::Arc::new(ctx);
+            app = app
+                .route("/a", get(handle_action).layer(Extension(shared.clone())))
+                .route("/a/slack", get(handle_action).layer(Extension(shared)));
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "action links disabled for ingress-slack");
+        }
+    }
+
+    let app = app.with_state(state);
 
     let addr: std::net::SocketAddr = std::env::var("BIND")
         .unwrap_or_else(|_| "0.0.0.0:8086".into())
@@ -108,19 +130,80 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
 
     if let Some(event) = envelope.event {
         match map_slack_event(&state.tenant, event) {
-            Some((subject, message)) => match serde_json::to_vec(&message) {
-                Ok(bytes) => {
-                    if let Err(error) = state.nats.publish(subject.clone(), bytes.into()).await {
-                        tracing::error!("publish failed on {subject}: {error}");
+            Some((subject, message)) => {
+                let span = tracing::info_span!(
+                    "ingress.handle",
+                    tenant = %message.tenant,
+                    platform = %message.platform.as_str(),
+                    chat_id = %message.chat_id,
+                    msg_id = %message.msg_id
+                );
+                let _guard = span.enter();
+                let key = IdemKey {
+                    tenant: message.tenant.clone(),
+                    platform: message.platform.as_str().to_string(),
+                    msg_id: message.msg_id.clone(),
+                };
+                match state.idem_guard.should_process(&key).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        tracing::info!(
+                            tenant = %key.tenant,
+                            platform = %key.platform,
+                            msg_id = %key.msg_id,
+                            "duplicate slack event dropped"
+                        );
+                        return StatusCode::OK.into_response();
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            error = %err,
+                            tenant = %key.tenant,
+                            platform = %key.platform,
+                            msg_id = %key.msg_id,
+                            "idempotency check failed; continuing"
+                        );
+                    }
+                }
+                match serde_json::to_vec(&message) {
+                    Ok(bytes) => {
+                        if let Err(error) = state.nats.publish(subject.clone(), bytes.into()).await
+                        {
+                            tracing::error!("publish failed on {subject}: {error}");
+                            if let Err(dlq_err) = state
+                                .dlq
+                                .publish(
+                                    &state.tenant,
+                                    message.platform.as_str(),
+                                    &message.msg_id,
+                                    1,
+                                    DlqError {
+                                        code: "E_PUBLISH".into(),
+                                        message: error.to_string(),
+                                        stage: None,
+                                    },
+                                    &message,
+                                )
+                                .await
+                            {
+                                tracing::error!("failed to publish dlq entry: {dlq_err}");
+                            }
+                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        }
+                        tracing::info!("published slack event for {}", message.chat_id);
+                        metrics::counter!(
+                            "messages_ingressed",
+                            1,
+                            "tenant" => message.tenant.clone(),
+                            "platform" => message.platform.as_str().to_string()
+                        );
+                    }
+                    Err(error) => {
+                        tracing::error!("serialize envelope failed: {error}");
                         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                     }
-                    tracing::info!("published slack event for {}", message.chat_id);
                 }
-                Err(error) => {
-                    tracing::error!("serialize envelope failed: {error}");
-                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            },
+            }
             None => return StatusCode::BAD_REQUEST.into_response(),
         }
     }

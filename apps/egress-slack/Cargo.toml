@@ -14,4 +14,8 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 gsm-core = { path = "../../libs/core" }
 gsm-translator = { path = "../../libs/translator" }
+gsm-egress-common = { path = "../egress-common" }
+gsm-backpressure = { path = "../../libs/backpressure" }
+gsm-dlq = { path = "../../libs/dlq" }
 futures = "0.3"
+metrics = { workspace = true }
