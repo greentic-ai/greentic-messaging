@@ -19,3 +19,4 @@ gsm-backpressure = { path = "../../libs/backpressure" }
 gsm-dlq = { path = "../../libs/dlq" }
 futures = "0.3"
 metrics = { workspace = true }
+gsm-telemetry = { path = "../../libs/telemetry" }

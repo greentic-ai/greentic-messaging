@@ -18,14 +18,14 @@ use axum::{
 use gsm_core::{in_subject, MessageEnvelope, Platform};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::init_guard;
+use gsm_ingress_common::{init_guard, record_ingress, start_ingress_span};
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use hmac::{Hmac, Mac};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::Sha256;
 use time::OffsetDateTime;
-use tracing_subscriber::EnvFilter;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -41,9 +41,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-ingress-whatsapp", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
@@ -127,13 +126,8 @@ async fn receive(
 
     let envelopes = extract_envelopes(&state.tenant, &payload);
     for env in envelopes {
-        let span = tracing::info_span!(
-            "ingress.handle",
-            tenant = %env.tenant,
-            platform = %env.platform.as_str(),
-            chat_id = %env.chat_id,
-            msg_id = %env.msg_id
-        );
+        record_ingress(&env);
+        let span = start_ingress_span(&env);
         let _guard = span.enter();
         let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
         let key = IdemKey {
@@ -187,13 +181,6 @@ async fn receive(
                 tracing::error!("failed to publish dlq entry: {dlq_err}");
             }
             return StatusCode::INTERNAL_SERVER_ERROR;
-        } else {
-            metrics::counter!(
-                "messages_ingressed",
-                1,
-                "tenant" => env.tenant.clone(),
-                "platform" => env.platform.as_str().to_string()
-            );
         }
     }
 

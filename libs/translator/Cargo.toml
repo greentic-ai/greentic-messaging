@@ -13,6 +13,7 @@ security = { path = "../security" }
 uuid = { workspace = true }
 time = { workspace = true }
 urlencoding = "2.1"
+gsm-telemetry = { path = "../telemetry" }
 
 [dev-dependencies]
 insta = { version = "1.43.2", features = ["json"] }

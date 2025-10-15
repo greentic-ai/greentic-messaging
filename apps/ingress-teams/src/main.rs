@@ -10,13 +10,13 @@ use axum::{
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::init_guard;
+use gsm_ingress_common::{init_guard, record_ingress, start_ingress_span};
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
-use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 struct AppState {
@@ -28,9 +28,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-ingress-teams", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
@@ -175,13 +174,8 @@ async fn notify(
     for notif in env.value {
         let chat_id = extract_chat_id(&notif.resource);
         let envelope = envelope_from_notification(&state.tenant, &notif);
-        let span = tracing::info_span!(
-            "ingress.handle",
-            tenant = %envelope.tenant,
-            platform = %envelope.platform.as_str(),
-            chat_id = %envelope.chat_id,
-            msg_id = %envelope.msg_id
-        );
+        record_ingress(&envelope);
+        let span = start_ingress_span(&envelope);
         let _guard = span.enter();
         let subject = in_subject(&state.tenant, envelope.platform.as_str(), &chat_id);
         let key = IdemKey {

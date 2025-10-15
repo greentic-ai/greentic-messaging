@@ -16,13 +16,13 @@ use axum::{
 use gsm_core::{in_subject, MessageEnvelope, Platform};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::init_guard;
+use gsm_ingress_common::{init_guard, record_ingress, start_ingress_span};
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use hmac::{Hmac, Mac};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use time::OffsetDateTime;
-use tracing_subscriber::EnvFilter;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -37,9 +37,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-ingress-slack", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
@@ -131,13 +130,8 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
     if let Some(event) = envelope.event {
         match map_slack_event(&state.tenant, event) {
             Some((subject, message)) => {
-                let span = tracing::info_span!(
-                    "ingress.handle",
-                    tenant = %message.tenant,
-                    platform = %message.platform.as_str(),
-                    chat_id = %message.chat_id,
-                    msg_id = %message.msg_id
-                );
+                record_ingress(&message);
+                let span = start_ingress_span(&message);
                 let _guard = span.enter();
                 let key = IdemKey {
                     tenant: message.tenant.clone(),

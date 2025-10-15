@@ -1,0 +1,79 @@
+mod config;
+mod context;
+mod metrics;
+mod tracing_init;
+
+pub use config::{TelemetryConfig, TelemetryProtocol};
+pub use context::{MessageContext, TelemetryLabels};
+pub use metrics::{record_counter, record_gauge, record_histogram};
+pub use tracing_init::{
+    init_telemetry, telemetry_enabled, with_common_fields, TELEMETRY_METER_NAME,
+};
+
+#[macro_export]
+macro_rules! counter {
+    ($name:expr, $value:expr, $labels:expr) => {{
+        $crate::metrics::record_counter($name, $value, $labels)
+    }};
+}
+
+#[macro_export]
+macro_rules! histogram {
+    ($name:expr, $value:expr, $labels:expr) => {{
+        $crate::metrics::record_histogram($name, $value, $labels)
+    }};
+}
+
+#[macro_export]
+macro_rules! gauge {
+    ($name:expr, $value:expr, $labels:expr) => {{
+        $crate::metrics::record_gauge($name, $value, $labels)
+    }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn config_defaults_disabled() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::remove_var("ENABLE_OTEL");
+        std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
+        let cfg = TelemetryConfig::from_env("test-service", "0.0.1");
+        assert!(!cfg.enabled);
+        assert!(cfg.endpoint.is_empty());
+        assert!(cfg.json_logs);
+    }
+
+    #[test]
+    fn config_enabled_when_flag_and_endpoint() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var("ENABLE_OTEL", "true");
+        std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+        std::env::set_var("LOG_FORMAT", "text");
+        let cfg = TelemetryConfig::from_env("svc", "1.2.3");
+        assert!(cfg.enabled);
+        assert_eq!(cfg.endpoint, "http://localhost:4317");
+        assert!(!cfg.json_logs);
+        std::env::remove_var("ENABLE_OTEL");
+        std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
+        std::env::remove_var("LOG_FORMAT");
+    }
+
+    #[test]
+    fn init_noop_when_disabled() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::remove_var("ENABLE_OTEL");
+        std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
+        let cfg = TelemetryConfig::from_env("svc", "1.0.0");
+        init_telemetry(cfg).expect("init should succeed");
+        assert!(!crate::tracing_init::telemetry_enabled());
+    }
+}

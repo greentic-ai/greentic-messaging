@@ -7,16 +7,18 @@ use gsm_backpressure::BackpressureLimiter;
 use gsm_core::{OutMessage, Platform};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::egress::bootstrap;
+use gsm_telemetry::{
+    init_telemetry, record_counter, record_histogram, MessageContext, TelemetryConfig,
+};
 use gsm_translator::slack::to_slack_payloads;
 use serde_json::Value;
+use std::time::Instant;
 use tracing::{event, Instrument, Level};
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-egress-slack", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
@@ -60,10 +62,15 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        let msg_id = out.message_id();
+        let msg_ctx = MessageContext::from_out(&out);
+        let msg_id = msg_ctx
+            .labels
+            .msg_id
+            .clone()
+            .unwrap_or_else(|| out.message_id());
         let span = tracing::info_span!(
             "egress.acquire_permit",
-            tenant = %out.tenant,
+            tenant = %msg_ctx.labels.tenant,
             platform = "slack",
             chat_id = %out.chat_id,
             msg_id = %msg_id
@@ -92,7 +99,7 @@ async fn main() -> Result<()> {
 
         let translate_span = tracing::info_span!(
             "translate.run",
-            tenant = %out.tenant,
+            tenant = %msg_ctx.labels.tenant,
             platform = %out.platform.as_str(),
             chat_id = %out.chat_id,
             msg_id = %msg_id
@@ -115,7 +122,7 @@ async fn main() -> Result<()> {
         {
             let send_span = tracing::info_span!(
                 "egress.send",
-                tenant = %out.tenant,
+                tenant = %msg_ctx.labels.tenant,
                 platform = %out.platform.as_str(),
                 chat_id = %out.chat_id,
                 msg_id = %msg_id
@@ -123,6 +130,7 @@ async fn main() -> Result<()> {
             let _guard = send_span.enter();
             for mut payload in payloads {
                 merge_channel_info(&mut payload, &out);
+                let send_start = Instant::now();
                 match http
                     .post("https://slack.com/api/chat.postMessage")
                     .bearer_auth(&bot_token)
@@ -146,6 +154,8 @@ async fn main() -> Result<()> {
                         last_error = Some(error.to_string());
                     }
                 }
+                let elapsed = send_start.elapsed().as_secs_f64() * 1000.0;
+                record_histogram("egress_send_latency_ms", elapsed, &msg_ctx.labels);
             }
         }
         drop(permit);
@@ -176,12 +186,7 @@ async fn main() -> Result<()> {
         } else if let Err(err) = msg.ack().await {
             tracing::error!("ack failed: {err}");
         } else {
-            metrics::counter!(
-                "messages_egressed",
-                1,
-                "tenant" => out.tenant.clone(),
-                "platform" => out.platform.as_str().to_string()
-            );
+            record_counter("messages_egressed", 1, &msg_ctx.labels);
         }
     }
 

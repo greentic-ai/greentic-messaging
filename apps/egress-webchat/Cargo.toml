@@ -21,6 +21,7 @@ gsm-dlq = { path = "../../libs/dlq" }
 async-stream = "0.3.6"
 futures = "0.3.31"
 metrics = { workspace = true }
+gsm-telemetry = { path = "../../libs/telemetry" }
 
 [dev-dependencies]
 hyper = "1"

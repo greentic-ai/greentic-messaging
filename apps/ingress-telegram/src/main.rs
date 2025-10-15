@@ -19,13 +19,14 @@ use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::IdKey as IdemKey;
 use gsm_ingress_common::{
-    ack202, init_guard, rate_limit_layer, verify_bearer, verify_hmac, with_request_id,
+    ack202, init_guard, rate_limit_layer, record_ingress, start_ingress_span, verify_bearer,
+    verify_hmac, with_request_id,
 };
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
-use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 struct AppState {
@@ -38,9 +39,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-ingress-telegram", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
@@ -193,13 +193,8 @@ async fn handle_update(
 
     if let Some(msg) = extract_message(&update).cloned() {
         let env = envelope_from_message(&state.tenant, &msg);
-        let span = tracing::info_span!(
-            "ingress.handle",
-            tenant = %env.tenant,
-            platform = %env.platform.as_str(),
-            chat_id = %env.chat_id,
-            msg_id = %env.msg_id
-        );
+        record_ingress(&env);
+        let span = start_ingress_span(&env);
         let _guard = span.enter();
         let id_key = IdemKey {
             tenant: env.tenant.clone(),

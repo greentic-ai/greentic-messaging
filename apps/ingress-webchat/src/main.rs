@@ -18,12 +18,14 @@ use axum::{
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::{ack202, init_guard, verify_bearer, with_request_id};
+use gsm_ingress_common::{
+    ack202, init_guard, record_ingress, start_ingress_span, verify_bearer, with_request_id,
+};
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use include_dir::{include_dir, Dir};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tracing_subscriber::EnvFilter;
 
 static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 
@@ -37,9 +39,8 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-ingress-webchat", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
@@ -118,13 +119,8 @@ async fn webhook(
 ) -> axum::response::Response {
     let now = OffsetDateTime::now_utc();
     let env = envelope_from_webmsg(&state.tenant, &msg, now);
-    let span = tracing::info_span!(
-        "ingress.handle",
-        tenant = %env.tenant,
-        platform = %env.platform.as_str(),
-        chat_id = %env.chat_id,
-        msg_id = %env.msg_id
-    );
+    record_ingress(&env);
+    let span = start_ingress_span(&env);
     let _guard = span.enter();
 
     let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
@@ -179,13 +175,6 @@ async fn webhook(
                     tracing::error!("failed to publish dlq entry: {dlq_err}");
                 }
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            } else {
-                metrics::counter!(
-                    "messages_ingressed",
-                    1,
-                    "tenant" => env.tenant.clone(),
-                    "platform" => env.platform.as_str().to_string()
-                );
             }
             tracing::info!("published to {subject}");
         }
