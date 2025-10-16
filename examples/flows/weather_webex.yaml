@@ -1,0 +1,47 @@
+id: webex.weather_quickstart
+title: Webex → Weather Demo
+description: Prompt for a location, call the weather API WASM tool, and respond with a simple card.
+type: messaging
+in: webex_in
+nodes:
+  webex_in:
+    qa:
+      welcome: "Hi there! I can fetch the current weather for any city."
+      questions:
+        - id: location
+          prompt: "🌎 Which location would you like the forecast for?"
+          answer_type: text
+          max_words: 4
+    routes:
+      - weatherapi_wasm
+  weatherapi_wasm:
+    tool:
+      tool: weather_api
+      action: current_weather
+      input:
+        q: "{{state.location}}"
+    routes:
+      - formatter
+  formatter:
+    card:
+      title: "🌤️ Weather for {{payload.location.name}}"
+      body:
+        - type: text
+          text: "Current conditions: {{payload.current.condition.text}}"
+        - type: fact
+          label: "Temperature"
+          value: "{{payload.current.temp_c}}°C"
+        - type: fact
+          label: "Feels like"
+          value: "{{payload.current.feelslike_c}}°C"
+      actions:
+        - type: openUrl
+          title: "View in Weather API"
+          url: "https://www.weatherapi.com/"
+    routes:
+      - webex_out
+  webex_out:
+    template:
+      template: webex.default
+    routes:
+      - end

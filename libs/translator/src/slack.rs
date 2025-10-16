@@ -1,5 +1,6 @@
 //! Helpers for translating `OutMessage` instances into Slack block payloads.
 
+use crate::telemetry::translate_with_span;
 use anyhow::{anyhow, Context, Result};
 use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage};
 use serde_json::{json, Value};
@@ -8,27 +9,29 @@ const MAX_BLOCKS_PER_MESSAGE: usize = 45;
 const MAX_ACTIONS_PER_BLOCK: usize = 5;
 
 pub fn to_slack_payloads(out: &OutMessage) -> Result<Vec<Value>> {
-    let thread_ts = out.thread_id.as_deref();
-    match out.kind {
-        OutKind::Text => {
-            let text = out.text.clone().unwrap_or_default();
-            let blocks = vec![section_md(&text)];
-            Ok(vec![payload_with_blocks(&text, blocks, thread_ts)])
-        }
-        OutKind::Card => {
-            let card = out
-                .message_card
-                .as_ref()
-                .context("missing card for OutKind::Card")?;
-            let blocks = card_to_blocks(card, out)?;
-            let title = card.title.as_deref().unwrap_or_default();
-            let mut payloads = Vec::new();
-            for chunk in blocks.chunks(MAX_BLOCKS_PER_MESSAGE) {
-                payloads.push(payload_with_blocks(title, chunk.to_vec(), thread_ts));
+    translate_with_span(out, "slack", || {
+        let thread_ts = out.thread_id.as_deref();
+        match out.kind {
+            OutKind::Text => {
+                let text = out.text.clone().unwrap_or_default();
+                let blocks = vec![section_md(&text)];
+                Ok(vec![payload_with_blocks(&text, blocks, thread_ts)])
             }
-            Ok(payloads)
+            OutKind::Card => {
+                let card = out
+                    .message_card
+                    .as_ref()
+                    .context("missing card for OutKind::Card")?;
+                let blocks = card_to_blocks(card, out)?;
+                let title = card.title.as_deref().unwrap_or_default();
+                let mut payloads = Vec::new();
+                for chunk in blocks.chunks(MAX_BLOCKS_PER_MESSAGE) {
+                    payloads.push(payload_with_blocks(title, chunk.to_vec(), thread_ts));
+                }
+                Ok(payloads)
+            }
         }
-    }
+    })
 }
 
 fn section_md(text: &str) -> Value {

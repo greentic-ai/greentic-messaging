@@ -1,0 +1,50 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 1024
+    spike_limit_mib: 256
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 30s
+    override: false
+
+exporters:
+  otlphttp/traces:
+    endpoint: ${env:OCI_OTLP_TRACES_ENDPOINT}
+    headers:
+      Authorization: ${env:OCI_OTLP_AUTH_HEADER}
+  otlphttp/metrics:
+    endpoint: ${env:OCI_OTLP_METRICS_ENDPOINT}
+    headers:
+      Authorization: ${env:OCI_OTLP_AUTH_HEADER}
+  otlphttp/logs:
+    endpoint: ${env:OCI_OTLP_LOGS_ENDPOINT}
+    headers:
+      Authorization: ${env:OCI_OTLP_AUTH_HEADER}
+
+service:
+  telemetry:
+    logs:
+      level: ${env:OTEL_LOG_LEVEL:-info}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlphttp/traces]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlphttp/metrics]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlphttp/logs]

@@ -6,10 +6,11 @@ use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
 use gsm_core::{OutMessage, Platform};
 use gsm_dlq::{DlqError, DlqPublisher};
-use gsm_egress_common::egress::bootstrap;
-use gsm_telemetry::{
-    init_telemetry, record_counter, record_histogram, MessageContext, TelemetryConfig,
+use gsm_egress_common::{
+    egress::bootstrap,
+    telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
 };
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use gsm_translator::slack::to_slack_payloads;
 use serde_json::Value;
 use std::time::Instant;
@@ -62,25 +63,19 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        let msg_ctx = MessageContext::from_out(&out);
-        let msg_id = msg_ctx
+        let ctx = context_from_out(&out);
+        let msg_id = ctx
             .labels
             .msg_id
             .clone()
             .unwrap_or_else(|| out.message_id());
-        let span = tracing::info_span!(
-            "egress.acquire_permit",
-            tenant = %msg_ctx.labels.tenant,
-            platform = "slack",
-            chat_id = %out.chat_id,
-            msg_id = %msg_id
-        );
-        let permit = match limiter.acquire(&out.tenant).instrument(span).await {
+        let acquire_span = start_acquire_span(&ctx);
+        let permit = match limiter.acquire(&out.tenant).instrument(acquire_span).await {
             Ok(p) => p,
             Err(err) => {
                 tracing::error!(
                     error = %err,
-                    tenant = %out.tenant,
+                    tenant = %ctx.labels.tenant,
                     platform = "slack",
                     "failed to acquire backpressure permit"
                 );
@@ -90,47 +85,31 @@ async fn main() -> Result<()> {
         };
         event!(
             Level::INFO,
-            tenant = %out.tenant,
+            tenant = %ctx.labels.tenant,
             platform = "slack",
             msg_id = %msg_id,
             acquired = true,
             "backpressure permit acquired"
         );
 
-        let translate_span = tracing::info_span!(
-            "translate.run",
-            tenant = %msg_ctx.labels.tenant,
-            platform = %out.platform.as_str(),
-            chat_id = %out.chat_id,
-            msg_id = %msg_id
-        );
-        let payloads = {
-            let _guard = translate_span.enter();
-            match to_slack_payloads(&out) {
-                Ok(p) => p,
-                Err(e) => {
-                    tracing::warn!("slack translation failed: {e}");
-                    drop(permit);
-                    let _ = msg.ack_with(AckKind::Nak(None)).await;
-                    continue;
-                }
+        let payloads = match to_slack_payloads(&out) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("slack translation failed: {e}");
+                drop(permit);
+                let _ = msg.ack_with(AckKind::Nak(None)).await;
+                continue;
             }
         };
 
         let mut had_error = false;
         let mut last_error: Option<String> = None;
+        let send_start = Instant::now();
         {
-            let send_span = tracing::info_span!(
-                "egress.send",
-                tenant = %msg_ctx.labels.tenant,
-                platform = %out.platform.as_str(),
-                chat_id = %out.chat_id,
-                msg_id = %msg_id
-            );
+            let send_span = start_send_span(&ctx);
             let _guard = send_span.enter();
             for mut payload in payloads {
                 merge_channel_info(&mut payload, &out);
-                let send_start = Instant::now();
                 match http
                     .post("https://slack.com/api/chat.postMessage")
                     .bearer_auth(&bot_token)
@@ -154,10 +133,9 @@ async fn main() -> Result<()> {
                         last_error = Some(error.to_string());
                     }
                 }
-                let elapsed = send_start.elapsed().as_secs_f64() * 1000.0;
-                record_histogram("egress_send_latency_ms", elapsed, &msg_ctx.labels);
             }
         }
+        let elapsed_ms = send_start.elapsed().as_secs_f64() * 1000.0;
         drop(permit);
 
         if had_error {
@@ -186,7 +164,7 @@ async fn main() -> Result<()> {
         } else if let Err(err) = msg.ack().await {
             tracing::error!("ack failed: {err}");
         } else {
-            record_counter("messages_egressed", 1, &msg_ctx.labels);
+            record_egress_success(&ctx, elapsed_ms);
         }
     }
 

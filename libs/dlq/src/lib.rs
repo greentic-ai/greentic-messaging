@@ -1,3 +1,32 @@
+//! Helpers for emitting failed messages to dedicated delay/dead-letter subjects.
+//!
+//! ```no_run
+//! use gsm_dlq::{DlqError, DlqPublisher};
+//!
+//! # fn main() -> anyhow::Result<()> {
+//! # let rt = tokio::runtime::Runtime::new()?;
+//! rt.block_on(async {
+//!     let client = async_nats::connect("nats://127.0.0.1:4222").await?;
+//!     let dlq = DlqPublisher::new("egress", client).await?;
+//!     dlq
+//!         .publish(
+//!             "acme",
+//!             "webex",
+//!             "msg-1",
+//!             1,
+//!             DlqError {
+//!                 code: "E_SEND".into(),
+//!                 message: "provider returned 500".into(),
+//!                 stage: Some("egress".into()),
+//!             },
+//!             &serde_json::json!({"chat_id": "room-1"}),
+//!         )
+//!         .await?;
+//!     anyhow::Ok(())
+//! })
+//! # }
+//! ```
+
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
@@ -10,6 +39,7 @@ use async_nats::{
     Client,
 };
 use futures::TryStreamExt;
+use gsm_telemetry::{record_counter, TelemetryLabels};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -116,13 +146,18 @@ impl DlqPublisher {
             .await
             .with_context(|| format!("publish DLQ entry to {subject}"))?;
 
-        metrics::counter!(
-            "dlq_published",
-            1,
-            "tenant" => tenant.to_string(),
-            "stage" => self.stage.clone(),
-            "code" => record.error.code.clone()
-        );
+        let mut labels = TelemetryLabels {
+            tenant: tenant.to_string(),
+            platform: None,
+            chat_id: None,
+            msg_id: None,
+            extra: Vec::new(),
+        };
+        labels.extra.push(("stage".into(), self.stage.clone()));
+        labels
+            .extra
+            .push(("code".into(), record.error.code.clone()));
+        record_counter("dlq_published", 1, &labels);
         info!(
             tenant = %record.tenant,
             stage = %record.stage,

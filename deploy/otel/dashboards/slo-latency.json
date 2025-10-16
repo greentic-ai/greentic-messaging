@@ -1,0 +1,310 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [],
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 99
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(messages_egressed[5m]))",
+          "legendFormat": "throughput",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Egress Throughput",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Trace exemplar",
+              "url": "/explore?orgId=1&left={\"datasource\":\"${datasource_tempo}\",\"queries\":[{\"query\":\"{trace_id='${__value.exemplarLabels.trace_id}'}\"}]}"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 400
+              },
+              {
+                "color": "red",
+                "value": 600
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "exemplars": {
+          "lineStyle": "dot",
+          "show": true
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(histogram.egress_latency_ms_bucket[10m])))",
+          "legendFormat": "p99 egress latency",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(histogram.ingress_latency_ms_bucket[10m])))",
+          "legendFormat": "p99 ingress latency",
+          "refId": "B"
+        }
+      ],
+      "title": "p99 Latency (10m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "displayMode": "color-background",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": false
+      },
+      "targets": [
+        {
+          "expr": "(1 - (sum(rate(idempotency_hit[1h])) / sum(rate(messages_ingressed[1h])))) * 100",
+          "legendFormat": "idempotency success %",
+          "refId": "A"
+        },
+        {
+          "expr": "(1 - (sum(rate(dlq_published[1h])) / sum(rate(messages_ingressed[1h])))) * 100",
+          "legendFormat": "delivery success %",
+          "refId": "B"
+        }
+      ],
+      "title": "SLO: Success Percentages (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Trace exemplar",
+              "url": "/explore?orgId=1&left={\"datasource\":\"${datasource_tempo}\",\"queries\":[{\"query\":\"{trace_id='${__value.exemplarLabels.trace_id}'}\"}]}"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 700
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "hidden",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "exemplars": {
+          "lineStyle": "dash",
+          "show": true
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, tenant) (rate(histogram.egress_latency_ms_bucket[5m])))",
+          "legendFormat": "{{tenant}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Tenant p95 Egress Latency",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "greentic",
+    "slo"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "${datasource_prometheus}"
+        },
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "datasource_prometheus",
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "Tempo",
+          "value": "${datasource_tempo}"
+        },
+        "hide": 0,
+        "label": "Tempo",
+        "name": "datasource_tempo",
+        "query": "tempo",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "title": "Latency SLOs",
+  "uid": "gsm-slo-latency",
+  "version": 1
+}

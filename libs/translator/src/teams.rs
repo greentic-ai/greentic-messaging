@@ -1,5 +1,6 @@
 //! Helpers for rendering Teams-specific Adaptive Cards.
 
+use crate::telemetry::translate_with_span;
 use anyhow::Result;
 use gsm_core::{CardAction, CardBlock, MessageCard, OutMessage};
 use serde_json::{json, Value};
@@ -40,59 +41,61 @@ use serde_json::{json, Value};
 /// assert_eq!(card_payload["body"][0]["text"], "Weather");
 /// ```
 pub fn to_teams_adaptive(card: &MessageCard, out: &OutMessage) -> Result<Value> {
-    let mut body: Vec<Value> = vec![];
-    if let Some(t) = &card.title {
-        body.push(json!({"type":"TextBlock","weight":"Bolder","size":"Medium","text":t}));
-    }
-    let mut facts: Vec<Value> = vec![];
+    translate_with_span(out, "teams", || {
+        let mut body: Vec<Value> = vec![];
+        if let Some(t) = &card.title {
+            body.push(json!({"type":"TextBlock","weight":"Bolder","size":"Medium","text":t}));
+        }
+        let mut facts: Vec<Value> = vec![];
 
-    for b in &card.body {
-        match b {
-            CardBlock::Text { text, .. } => {
-                body.push(json!({
-                  "type":"TextBlock",
-                  "wrap": true,
-                  "text": text
-                }));
-            }
-            CardBlock::Fact { label, value } => {
-                facts.push(json!({"title": label, "value": value}));
-            }
-            CardBlock::Image { url } => {
-                body.push(json!({"type":"Image","url":url}));
+        for b in &card.body {
+            match b {
+                CardBlock::Text { text, .. } => {
+                    body.push(json!({
+                      "type":"TextBlock",
+                      "wrap": true,
+                      "text": text
+                    }));
+                }
+                CardBlock::Fact { label, value } => {
+                    facts.push(json!({"title": label, "value": value}));
+                }
+                CardBlock::Image { url } => {
+                    body.push(json!({"type":"Image","url":url}));
+                }
             }
         }
-    }
-    if !facts.is_empty() {
-        body.push(json!({"type":"FactSet","facts": facts}));
-    }
+        if !facts.is_empty() {
+            body.push(json!({"type":"FactSet","facts": facts}));
+        }
 
-    let mut actions: Vec<Value> = vec![];
-    for a in &card.actions {
-        match a {
-            CardAction::OpenUrl { title, url, .. } => {
-                let href = crate::secure_action_url(out, title, url);
-                actions.push(json!({
-                  "type":"Action.OpenUrl",
-                  "title": title,
-                  "url": href
-                }));
-            }
-            CardAction::Postback { title, data } => {
-                actions.push(json!({
-                  "type":"Action.Submit",
-                  "title": title,
-                  "data": data
-                }));
+        let mut actions: Vec<Value> = vec![];
+        for a in &card.actions {
+            match a {
+                CardAction::OpenUrl { title, url, .. } => {
+                    let href = crate::secure_action_url(out, title, url);
+                    actions.push(json!({
+                      "type":"Action.OpenUrl",
+                      "title": title,
+                      "url": href
+                    }));
+                }
+                CardAction::Postback { title, data } => {
+                    actions.push(json!({
+                      "type":"Action.Submit",
+                      "title": title,
+                      "data": data
+                    }));
+                }
             }
         }
-    }
 
-    Ok(json!({
-      "type":"AdaptiveCard",
-      "version":"1.4",
-      "body": body,
-      "actions": actions,
-      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
-    }))
+        Ok(json!({
+          "type":"AdaptiveCard",
+          "version":"1.4",
+          "body": body,
+          "actions": actions,
+          "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
+        }))
+    })
 }

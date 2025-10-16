@@ -1,0 +1,54 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 75
+    spike_limit_percentage: 10
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  resourcedetection:
+    detectors: [env, ec2]
+    timeout: 30s
+    override: false
+
+exporters:
+  awscloudwatchlogs:
+    log_group_name: ${env:CLOUDWATCH_LOG_GROUP}
+    log_stream_name: ${env:CLOUDWATCH_LOG_STREAM:-collector}
+    region: ${env:AWS_REGION}
+    max_retries: 3
+  awsemf:
+    region: ${env:AWS_REGION}
+    log_group_name: ${env:CLOUDWATCH_METRIC_LOG_GROUP:-/greentic/otel-metrics}
+    namespace: ${env:AWS_EMF_NAMESPACE:-Greentic/Otel}
+  awsxray:
+    region: ${env:AWS_REGION}
+  awsprometheusremotewrite:
+    endpoint: ${env:AWS_AMP_REMOTE_WRITE_ENDPOINT}
+    aws_auth:
+      region: ${env:AWS_REGION}
+      service: aps
+
+service:
+  telemetry:
+    logs:
+      level: ${env:OTEL_LOG_LEVEL:-info}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [awsxray]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [awsprometheusremotewrite, awsemf]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [awscloudwatchlogs]

@@ -18,7 +18,7 @@ use axum::{
 use gsm_core::{in_subject, MessageEnvelope, Platform};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::{init_guard, record_ingress, start_ingress_span};
+use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use hmac::{Hmac, Mac};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
@@ -126,7 +126,6 @@ async fn receive(
 
     let envelopes = extract_envelopes(&state.tenant, &payload);
     for env in envelopes {
-        record_ingress(&env);
         let span = start_ingress_span(&env);
         let _guard = span.enter();
         let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
@@ -138,6 +137,7 @@ async fn receive(
         match state.idem_guard.should_process(&key).await {
             Ok(true) => {}
             Ok(false) => {
+                record_idempotency_hit(&key.tenant);
                 tracing::info!(
                     tenant = %key.tenant,
                     platform = %key.platform,
@@ -181,6 +181,8 @@ async fn receive(
                 tracing::error!("failed to publish dlq entry: {dlq_err}");
             }
             return StatusCode::INTERNAL_SERVER_ERROR;
+        } else {
+            record_ingress(&env);
         }
     }
 

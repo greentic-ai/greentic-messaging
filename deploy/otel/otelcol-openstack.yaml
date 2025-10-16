@@ -1,0 +1,51 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 75
+    spike_limit_percentage: 10
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 30s
+    override: false
+
+exporters:
+  loki:
+    endpoint: ${env:LOKI_ENDPOINT}
+    tenant_id: ${env:LOKI_TENANT_ID}
+    headers:
+      Authorization: ${env:LOKI_AUTH_HEADER}
+  prometheusremotewrite:
+    endpoint: ${env:PROM_REMOTE_WRITE_ENDPOINT}
+    headers:
+      Authorization: ${env:PROM_REMOTE_WRITE_AUTH_HEADER}
+  otlphttp/tempo:
+    endpoint: ${env:TEMPO_OTLP_ENDPOINT}
+    headers:
+      Authorization: ${env:TEMPO_AUTH_HEADER}
+
+service:
+  telemetry:
+    logs:
+      level: ${env:OTEL_LOG_LEVEL:-info}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [otlphttp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [prometheusremotewrite]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [loki]

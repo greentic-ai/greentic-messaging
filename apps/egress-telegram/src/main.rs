@@ -12,16 +12,19 @@ use async_nats::jetstream::{
 use futures::StreamExt;
 use gsm_backpressure::{BackpressureLimiter, HybridLimiter};
 use gsm_core::{OutMessage, Platform};
+use gsm_egress_common::telemetry::{
+    context_from_out, record_egress_success, start_acquire_span, start_send_span,
+};
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use gsm_translator::{TelegramTranslator, Translator};
 use serde_json::Value;
+use std::{sync::Arc, time::Instant};
 use tracing::Instrument;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(false)
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-egress-telegram", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
     tracing::info!("egress-telegram booting");
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
@@ -127,40 +130,18 @@ async fn process_message(
         tracing::debug!("skip non-telegram payload");
         return Ok(());
     }
-    let msg_id = out.message_id();
-    let span = tracing::info_span!(
-        "egress.acquire_permit",
-        tenant = %out.tenant,
-        platform = "telegram",
-        chat_id = %out.chat_id,
-        msg_id = %msg_id
-    );
-    let _permit = limiter
+    let ctx = context_from_out(&out);
+    let permit = limiter
         .acquire(&out.tenant)
-        .instrument(span)
+        .instrument(start_acquire_span(&ctx))
         .await
         .context("acquire backpressure permit")?;
-    let mut payloads = {
-        let translate_span = tracing::info_span!(
-            "translate.run",
-            tenant = %out.tenant,
-            platform = %out.platform.as_str(),
-            chat_id = %out.chat_id,
-            msg_id = %msg_id
-        );
-        let _guard = translate_span.enter();
-        translator
-            .to_platform(&out)
-            .context("translate payload to telegram")?
-    };
+    let mut payloads = translator
+        .to_platform(&out)
+        .context("translate payload to telegram")?;
+    let send_start = Instant::now();
     {
-        let send_span = tracing::info_span!(
-            "egress.send",
-            tenant = %out.tenant,
-            platform = %out.platform.as_str(),
-            chat_id = %out.chat_id,
-            msg_id = %msg_id
-        );
+        let send_span = start_send_span(&ctx);
         let _guard = send_span.enter();
         for payload in payloads.iter_mut() {
             enrich_payload(payload, &out);
@@ -169,12 +150,9 @@ async fn process_message(
                 .with_context(|| format!("telegram api send chat={}", out.chat_id))?;
         }
     }
-    metrics::counter!(
-        "messages_egressed",
-        1,
-        "tenant" => out.tenant.clone(),
-        "platform" => out.platform.as_str().to_string()
-    );
+    drop(permit);
+    let elapsed_ms = send_start.elapsed().as_secs_f64() * 1000.0;
+    record_egress_success(&ctx, elapsed_ms);
     Ok(())
 }
 
@@ -257,4 +235,3 @@ mod tests {
             .contains_key("reply_to_message_id"));
     }
 }
-use std::sync::Arc;

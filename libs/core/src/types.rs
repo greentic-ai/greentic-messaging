@@ -17,6 +17,7 @@ pub enum Platform {
     Telegram,
     WhatsApp,
     WebChat,
+    Webex,
 }
 
 impl Platform {
@@ -28,6 +29,7 @@ impl Platform {
             Platform::Telegram => "telegram",
             Platform::WhatsApp => "whatsapp",
             Platform::WebChat => "webchat",
+            Platform::Webex => "webex",
         }
     }
 }

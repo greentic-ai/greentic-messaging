@@ -6,6 +6,7 @@ pub struct TelemetryLabels {
     pub platform: Option<String>,
     pub chat_id: Option<String>,
     pub msg_id: Option<String>,
+    pub extra: Vec<(String, String)>,
 }
 
 impl TelemetryLabels {
@@ -15,6 +16,7 @@ impl TelemetryLabels {
             platform: Some(out.platform.as_str().to_string()),
             chat_id: Some(out.chat_id.clone()),
             msg_id: Some(out.message_id()),
+            extra: Vec::new(),
         }
     }
 
@@ -24,6 +26,7 @@ impl TelemetryLabels {
             platform: Some(env.platform.as_str().to_string()),
             chat_id: Some(env.chat_id.clone()),
             msg_id: Some(env.msg_id.clone()),
+            extra: Vec::new(),
         }
     }
 
@@ -38,6 +41,9 @@ impl TelemetryLabels {
         }
         if let Some(msg) = &self.msg_id {
             tags.push(("msg_id", msg.clone()));
+        }
+        for (key, value) in &self.extra {
+            tags.push((key.as_str(), value.clone()));
         }
         tags
     }

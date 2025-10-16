@@ -1,0 +1,193 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "description": "Message count by DLQ stage and code. Hover exemplars to pivot to trace.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "links": [
+            {
+              "title": "Trace",
+              "url": "/explore?orgId=1&left={\"datasource\":\"${datasource_tempo}\",\"queries\":[{\"query\":\"{trace_id='${__value.exemplarLabels.trace_id}'}\"}]}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 14,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "calculate": false,
+        "cellGap": 2,
+        "cellRadius": 0,
+        "colorScale": "sqrt",
+        "exemplars": {
+          "lineStyle": "dot",
+          "show": true
+        },
+        "filterValues": {
+          "le": 0,
+          "lt": null
+        },
+        "legend": {
+          "show": true
+        },
+        "showValue": "never",
+        "tooltip": {
+          "show": true
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum(rate(dlq_published[5m])) by (tenant, stage, code)",
+          "format": "heatmap",
+          "legendFormat": "{{tenant}} {{stage}} {{code}}",
+          "refId": "A"
+        }
+      ],
+      "title": "DLQ Rate Heatmap",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [],
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 10,
+        "x": 14,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(dlq_published[5m])) by (tenant, stage))",
+          "legendFormat": "{{tenant}} / {{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Top DLQ Contributors (5m)",
+      "type": "bargauge"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "greentic",
+    "dlq"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "${datasource_prometheus}"
+        },
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "datasource_prometheus",
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "Tempo",
+          "value": "${datasource_tempo}"
+        },
+        "hide": 0,
+        "label": "Tempo",
+        "name": "datasource_tempo",
+        "query": "tempo",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "DLQ Heatmap",
+  "uid": "gsm-dlq-heatmap",
+  "version": 1,
+  "weekStart": ""
+}

@@ -16,6 +16,8 @@ use time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
+use crate::telemetry::translate_with_span;
+
 /// Converts a platform-agnostic [`OutMessage`](gsm_core::OutMessage) into a list of platform specific payloads.
 ///
 /// Implementations should never mutate the original message and must return an error when required
@@ -79,6 +81,8 @@ fn slugify(input: &str) -> String {
 
 pub mod slack;
 pub mod teams;
+mod telemetry;
+pub mod webex;
 
 /// Translator that produces Telegram specific API requests.
 ///
@@ -172,7 +176,7 @@ impl TelegramTranslator {
 
 impl Translator for TelegramTranslator {
     fn to_platform(&self, out: &OutMessage) -> Result<Vec<Value>> {
-        match out.kind {
+        translate_with_span(out, "telegram", || match out.kind {
             OutKind::Text => {
                 let text = out.text.as_deref().ok_or_else(|| anyhow!("missing text"))?;
                 Ok(vec![Self::render_text(text)])
@@ -184,7 +188,7 @@ impl Translator for TelegramTranslator {
                     .ok_or_else(|| anyhow!("missing card"))?;
                 Ok(Self::render_card(out, card))
             }
-        }
+        })
     }
 }
 
@@ -237,28 +241,46 @@ impl WebChatTranslator {
 /// ```
 impl Translator for WebChatTranslator {
     fn to_platform(&self, out: &OutMessage) -> Result<Vec<Value>> {
-        let payload = match out.kind {
-            OutKind::Text => json!({
-              "kind": "text",
-              "text": out.text.clone().unwrap_or_default(),
-            }),
-            OutKind::Card => {
-                let mut card = out
-                    .message_card
-                    .clone()
-                    .ok_or_else(|| anyhow!("missing card"))?;
-                for action in card.actions.iter_mut() {
-                    if let CardAction::OpenUrl { title, url, .. } = action {
-                        let signed = secure_action_url(out, title, url);
-                        *url = signed;
+        translate_with_span(out, "webchat", || {
+            let payload = match out.kind {
+                OutKind::Text => json!({
+                  "kind": "text",
+                  "text": out.text.clone().unwrap_or_default(),
+                }),
+                OutKind::Card => {
+                    let mut card = out
+                        .message_card
+                        .clone()
+                        .ok_or_else(|| anyhow!("missing card"))?;
+                    for action in card.actions.iter_mut() {
+                        if let CardAction::OpenUrl { title, url, .. } = action {
+                            let signed = secure_action_url(out, title, url);
+                            *url = signed;
+                        }
                     }
+                    json!({
+                      "kind": "card",
+                      "card": card,
+                    })
                 }
-                json!({
-                  "kind": "card",
-                  "card": card,
-                })
-            }
-        };
+            };
+            Ok(vec![payload])
+        })
+    }
+}
+
+/// Translator for Webex messages.
+pub struct WebexTranslator;
+
+impl WebexTranslator {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Translator for WebexTranslator {
+    fn to_platform(&self, out: &OutMessage) -> Result<Vec<Value>> {
+        let payload = crate::webex::to_webex_payload(out)?;
         Ok(vec![payload])
     }
 }

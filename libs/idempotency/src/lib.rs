@@ -16,6 +16,7 @@ use async_nats::jetstream::{
     Context as JsContext,
 };
 use async_trait::async_trait;
+use gsm_telemetry::{record_counter, TelemetryLabels};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
@@ -173,6 +174,26 @@ impl IdempotencyGuard {
     }
 
     /// Returns `Ok(true)` when the caller should proceed (first sighting).
+    ///
+    /// ```no_run
+    /// use gsm_idempotency::{IdempotencyGuard, InMemoryIdemStore, IdKey};
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// # let rt = tokio::runtime::Runtime::new()?;
+    /// rt.block_on(async {
+    ///     let store = InMemoryIdemStore::new();
+    ///     let guard = IdempotencyGuard::new(std::sync::Arc::new(store), 1);
+    ///     let key = IdKey {
+    ///         tenant: "acme".into(),
+    ///         platform: "webex".into(),
+    ///         msg_id: "msg-42".into(),
+    ///     };
+    ///     assert!(guard.should_process(&key).await.unwrap());
+    ///     assert!(!guard.should_process(&key).await.unwrap());
+    ///     anyhow::Ok(())
+    /// })
+    /// # }
+    /// ```
     pub async fn should_process(&self, key: &IdKey) -> Result<bool> {
         let inserted = self
             .store
@@ -180,7 +201,14 @@ impl IdempotencyGuard {
             .await?;
         if !inserted {
             warn!(tenant = %key.tenant, platform = %key.platform, msg_id = %key.msg_id, "duplicate message dropped");
-            metrics::counter!("idempotency_hit", 1, "tenant" => key.tenant.clone(), "platform" => key.platform.clone());
+            let labels = TelemetryLabels {
+                tenant: key.tenant.clone(),
+                platform: None,
+                chat_id: None,
+                msg_id: None,
+                extra: Vec::new(),
+            };
+            record_counter("idempotency_hit", 1, &labels);
         }
         Ok(inserted)
     }

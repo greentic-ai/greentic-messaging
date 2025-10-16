@@ -17,3 +17,4 @@ futures = "0.3.31"
 gsm-backpressure = { path = "../../libs/backpressure" }
 metrics = { workspace = true }
 gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-egress-common = { path = "../egress-common" }

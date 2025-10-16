@@ -10,7 +10,7 @@ use axum::{
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::{init_guard, record_ingress, start_ingress_span};
+use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
@@ -174,7 +174,6 @@ async fn notify(
     for notif in env.value {
         let chat_id = extract_chat_id(&notif.resource);
         let envelope = envelope_from_notification(&state.tenant, &notif);
-        record_ingress(&envelope);
         let span = start_ingress_span(&envelope);
         let _guard = span.enter();
         let subject = in_subject(&state.tenant, envelope.platform.as_str(), &chat_id);
@@ -186,6 +185,7 @@ async fn notify(
         match state.idem_guard.should_process(&key).await {
             Ok(true) => {}
             Ok(false) => {
+                record_idempotency_hit(&key.tenant);
                 tracing::info!(
                     tenant = %key.tenant,
                     platform = %key.platform,
@@ -228,12 +228,7 @@ async fn notify(
                     }
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 } else {
-                    metrics::counter!(
-                        "messages_ingressed",
-                        1,
-                        "tenant" => envelope.tenant.clone(),
-                        "platform" => envelope.platform.as_str().to_string()
-                    );
+                    record_ingress(&envelope);
                 }
             }
             Err(e) => {

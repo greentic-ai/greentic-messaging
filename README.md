@@ -108,3 +108,21 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    make run-egress-whatsapp
    ```
 4. Configure Meta to call `/whatsapp/webhook` with your verify token. Inbound messages publish to NATS and are delivered via egress; card responses automatically fall back to templates or deep links when the 24-hour session window has expired.
+
+## Webex Integration
+
+1. Create a [Webex bot](https://developer.webex.com/my-apps/new/bot) and note the Bot Access Token. Configure a webhook pointing to `/webex/messages` with a secret.
+2. Export runtime configuration:
+   ```bash
+   export WEBEX_WEBHOOK_SECRET=super-secret
+   export WEBEX_BOT_TOKEN=BearerTokenFromStep1
+   export TENANT=acme
+   export NATS_URL=nats://127.0.0.1:4222
+   ```
+3. Start the ingress and egress services:
+   ```bash
+   make run-ingress-webex
+   make run-egress-webex
+   FLOW=examples/flows/weather_webex.yaml PLATFORM=webex make run-runner
+   ```
+4. Set the webhook target URL (`https://<public>/webex/messages`). Messages sent to the bot are normalised, deduplicated, and republished through NATS; the egress worker handles rate limits, retries, and Adaptive Card rendering for Webex spaces.

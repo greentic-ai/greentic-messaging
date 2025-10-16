@@ -1,0 +1,48 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 75
+    spike_limit_percentage: 10
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  resourcedetection:
+    detectors: [env, azure]
+    timeout: 30s
+    override: false
+
+exporters:
+  azuremonitor:
+    connection:
+      endpoint: ${env:AZURE_MONITOR_ENDPOINT:https://dc.services.visualstudio.com}
+      instrumentation_key: ${env:AZURE_MONITOR_INSTRUMENTATION_KEY}
+    metrics:
+      namespace: ${env:AZURE_MONITOR_METRIC_NAMESPACE:Greentic/Otel}
+    logs:
+      enable: true
+    traces:
+      enable: true
+
+service:
+  telemetry:
+    logs:
+      level: ${env:OTEL_LOG_LEVEL:-info}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [azuremonitor]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [azuremonitor]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [azuremonitor]

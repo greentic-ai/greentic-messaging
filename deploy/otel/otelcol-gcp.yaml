@@ -1,0 +1,47 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 1024
+    spike_limit_mib: 256
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  resourcedetection:
+    detectors: [env, gcp]
+    timeout: 30s
+    override: false
+
+exporters:
+  googlecloud:
+    project: ${env:GCP_PROJECT_ID}
+    user_agent: greentic-otel-collector
+    metric:
+      prefix: custom.googleapis.com/greentic
+    log:
+      default_log_name: greentic/otel
+    trace:
+      endpoint: cloudtrace.googleapis.com:443
+
+service:
+  telemetry:
+    logs:
+      level: ${env:OTEL_LOG_LEVEL:-info}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [googlecloud]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [googlecloud]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [googlecloud]

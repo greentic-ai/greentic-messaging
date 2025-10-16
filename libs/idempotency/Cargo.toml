@@ -7,10 +7,10 @@ edition = "2021"
 anyhow = { workspace = true }
 async-nats = { workspace = true }
 async-trait = { workspace = true }
-metrics = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+gsm-telemetry = { path = "../telemetry" }

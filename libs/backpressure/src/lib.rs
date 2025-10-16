@@ -16,6 +16,7 @@ use async_nats::jetstream::{
     Context as JsContext,
 };
 use async_trait::async_trait;
+use gsm_telemetry::{record_gauge, TelemetryLabels};
 use serde::{Deserialize, Serialize};
 use time::{serde::rfc3339, Duration, OffsetDateTime};
 use tokio::sync::Mutex;
@@ -28,6 +29,21 @@ static BACKPRESSURE_NAMESPACE_ENV: &str = "JS_KV_NAMESPACE_BACKPRESSURE";
 const TOKEN: f64 = 1.0;
 const TICK_MS: i64 = 100;
 
+fn compute_wait_secs(limit: RateLimit, tokens: f64) -> f64 {
+    let missing = (TOKEN - tokens).max(0.0);
+    missing / limit.rps.max(0.1)
+}
+
+fn record_backpressure_tokens(tenant: &str, tokens: f64) {
+    let labels = TelemetryLabels {
+        tenant: tenant.to_string(),
+        platform: None,
+        chat_id: None,
+        msg_id: None,
+        extra: Vec::new(),
+    };
+    record_gauge("backpressure_tokens", tokens.round() as i64, &labels);
+}
 #[derive(Debug, Clone, Copy)]
 pub struct RateLimit {
     pub rps: f64,
@@ -152,16 +168,19 @@ impl BackpressureLimiter for LocalBackpressureLimiter {
             }
             if bucket.tokens >= TOKEN {
                 bucket.tokens -= TOKEN;
-                metrics::gauge!(
-                    "gauge.backpressure.tokens",
-                    bucket.tokens,
-                    "tenant" => tenant_key.clone()
-                );
+                record_backpressure_tokens(&tenant_key, bucket.tokens);
                 drop(guard);
                 return Ok(Permit::new());
             }
-            let missing = (TOKEN - bucket.tokens).max(0.0);
-            let wait_secs = missing / limit.rps.max(0.1);
+            let wait_secs = compute_wait_secs(limit, bucket.tokens);
+            if wait_secs > 1.0 {
+                event!(
+                    Level::INFO,
+                    tenant = %tenant_key,
+                    wait_secs,
+                    "backpressure.waiting_for_tokens"
+                );
+            }
             drop(guard);
             tokio::time::sleep(StdDuration::from_secs_f64(wait_secs.max(0.1))).await;
         }
@@ -256,9 +275,7 @@ impl JetStreamBackpressureLimiter {
         state
     }
 
-    async fn wait_for_tokens(limit: RateLimit, tokens: f64) {
-        let missing = (TOKEN - tokens).max(0.0);
-        let wait_secs = missing / limit.rps.max(0.1);
+    async fn wait_for_tokens(wait_secs: f64) {
         tokio::time::sleep(StdDuration::from_secs_f64(wait_secs.max(0.1))).await;
     }
 }
@@ -282,15 +299,21 @@ impl BackpressureLimiter for JetStreamBackpressureLimiter {
             let mut state = self.parse_state(entry.clone(), limit);
             state = Self::refill_tokens(state, limit, now);
             if state.tokens < TOKEN {
-                Self::wait_for_tokens(limit, state.tokens).await;
+                let wait_secs = compute_wait_secs(limit, state.tokens);
+                if wait_secs > 1.0 {
+                    event!(
+                        Level::INFO,
+                        tenant = %tenant_key,
+                        wait_secs,
+                        namespace = %self.namespace,
+                        "backpressure.waiting_for_tokens"
+                    );
+                }
+                Self::wait_for_tokens(wait_secs).await;
                 continue;
             }
             state.tokens -= TOKEN;
-            metrics::gauge!(
-                "gauge.backpressure.tokens",
-                state.tokens,
-                "tenant" => tenant_key.clone()
-            );
+            record_backpressure_tokens(&tenant_key, state.tokens);
             let persisted = RemoteBucketPersisted::new(state.tokens, state.last_refill);
             let payload = serde_json::to_vec(&persisted)?;
             match &entry {
@@ -307,7 +330,7 @@ impl BackpressureLimiter for JetStreamBackpressureLimiter {
                                 Level::WARN,
                                 tenant = %tenant_key,
                                 retries,
-                                "remote rate limiter CAS retry"
+                                "egress.acquire_permit.cas_retry"
                             );
                         }
                         continue;

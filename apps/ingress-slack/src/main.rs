@@ -16,7 +16,7 @@ use axum::{
 use gsm_core::{in_subject, MessageEnvelope, Platform};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::{init_guard, record_ingress, start_ingress_span};
+use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use hmac::{Hmac, Mac};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
@@ -130,7 +130,6 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
     if let Some(event) = envelope.event {
         match map_slack_event(&state.tenant, event) {
             Some((subject, message)) => {
-                record_ingress(&message);
                 let span = start_ingress_span(&message);
                 let _guard = span.enter();
                 let key = IdemKey {
@@ -141,6 +140,7 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
                 match state.idem_guard.should_process(&key).await {
                     Ok(true) => {}
                     Ok(false) => {
+                        record_idempotency_hit(&key.tenant);
                         tracing::info!(
                             tenant = %key.tenant,
                             platform = %key.platform,
@@ -185,12 +185,7 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
                             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                         }
                         tracing::info!("published slack event for {}", message.chat_id);
-                        metrics::counter!(
-                            "messages_ingressed",
-                            1,
-                            "tenant" => message.tenant.clone(),
-                            "platform" => message.platform.as_str().to_string()
-                        );
+                        record_ingress(&message);
                     }
                     Err(error) => {
                         tracing::error!("serialize envelope failed: {error}");

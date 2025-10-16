@@ -1,0 +1,347 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never"
+          },
+          "links": [
+            {
+              "title": "View Trace",
+              "url": "/explore?orgId=1&left={\"datasource\":\"${datasource_tempo}\",\"queries\":[{\"query\":\"{trace_id='${__value.exemplarLabels.trace_id}'}\"}]}"
+            }
+          ],
+          "mappings": [],
+          "max": null,
+          "min": null,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "exemplars": {
+          "lineStyle": "dashed",
+          "show": true
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(messages_ingressed[5m])) by (tenant, platform)",
+          "legendFormat": "{{tenant}} / {{platform}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Ingress Rate by Platform",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 3,
+            "showPoints": "auto"
+          },
+          "links": [
+            {
+              "title": "Trace",
+              "url": "/explore?orgId=1&left={\"datasource\":\"${datasource_tempo}\",\"queries\":[{\"query\":\"{trace_id='${__value.exemplarLabels.trace_id}'}\"}]}"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "exemplars": {
+          "lineStyle": "dotted",
+          "show": true
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(messages_egressed[5m])) by (tenant, platform)",
+          "legendFormat": "{{tenant}} / {{platform}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Egress Rate by Platform",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          },
+          "links": [],
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "id": 3,
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Sum"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (tenant, platform) (rate(idempotency_hit[15m])))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{tenant}} / {{platform}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Idempotency Hits (15m)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "Sum"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Trace exemplar",
+              "url": "/explore?orgId=1&left={\"datasource\":\"${datasource_tempo}\",\"queries\":[{\"query\":\"{trace_id='${__value.exemplarLabels.trace_id}'}\"}]}"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "exemplars": {
+          "lineStyle": "dot",
+          "show": true
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(histogram_egress_latency_ms_bucket[5m])))",
+          "legendFormat": "p95 egress latency",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(histogram_ingress_latency_ms_bucket[5m])))",
+          "legendFormat": "p95 ingress latency",
+          "refId": "B"
+        }
+      ],
+      "title": "p95 Latency (Ingress vs Egress)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "greentic",
+    "golden-path"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "${datasource_prometheus}"
+        },
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "datasource_prometheus",
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "Tempo",
+          "value": "${datasource_tempo}"
+        },
+        "hide": 0,
+        "label": "Tempo",
+        "name": "datasource_tempo",
+        "query": "tempo",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Messages Golden Path",
+  "uid": "gsm-golden-path",
+  "version": 1,
+  "weekStart": ""
+}

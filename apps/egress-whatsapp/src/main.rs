@@ -7,12 +7,16 @@ use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
 use gsm_core::{OutKind, OutMessage, Platform};
 use gsm_dlq::{DlqError, DlqPublisher};
-use gsm_egress_common::egress::bootstrap;
+use gsm_egress_common::{
+    egress::bootstrap,
+    telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
+};
+use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use gsm_translator::secure_action_url;
 use serde_json::json;
+use std::time::Instant;
 use time::{Duration, OffsetDateTime};
 use tracing::{event, Instrument, Level};
-use tracing_subscriber::EnvFilter;
 
 const SESSION_WINDOW_HOURS: i64 = 24;
 
@@ -27,9 +31,8 @@ struct AppConfig {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    let telemetry = TelemetryConfig::from_env("gsm-egress-whatsapp", env!("CARGO_PKG_VERSION"));
+    init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
@@ -87,20 +90,19 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        let msg_id = out.message_id();
-        let span = tracing::info_span!(
-            "egress.acquire_permit",
-            tenant = %out.tenant,
-            platform = "whatsapp",
-            chat_id = %out.chat_id,
-            msg_id = %msg_id
-        );
-        let permit = match limiter.acquire(&out.tenant).instrument(span).await {
+        let ctx = context_from_out(&out);
+        let msg_id = ctx
+            .labels
+            .msg_id
+            .clone()
+            .unwrap_or_else(|| out.message_id());
+        let acquire_span = start_acquire_span(&ctx);
+        let permit = match limiter.acquire(&out.tenant).instrument(acquire_span).await {
             Ok(p) => p,
             Err(err) => {
                 tracing::error!(
                     error = %err,
-                    tenant = %out.tenant,
+                    tenant = %ctx.labels.tenant,
                     platform = "whatsapp",
                     "failed to acquire backpressure permit"
                 );
@@ -110,36 +112,27 @@ async fn main() -> Result<()> {
         };
         event!(
             Level::INFO,
-            tenant = %out.tenant,
+            tenant = %ctx.labels.tenant,
             platform = "whatsapp",
             msg_id = %msg_id,
             acquired = true,
             "backpressure permit acquired"
         );
 
-        let send_span = tracing::info_span!(
-            "egress.send",
-            tenant = %out.tenant,
-            platform = "whatsapp",
-            chat_id = %out.chat_id,
-            msg_id = %msg_id
-        );
+        let send_start = Instant::now();
+        let send_span = start_send_span(&ctx);
         let result = dispatch_message(&http, &config, &out)
             .instrument(send_span)
             .await;
         drop(permit);
+        let elapsed_ms = send_start.elapsed().as_secs_f64() * 1000.0;
 
         match result {
             Ok(()) => {
                 if let Err(err) = msg.ack().await {
                     tracing::error!("ack failed: {err}");
                 }
-                metrics::counter!(
-                    "messages_egressed",
-                    1,
-                    "tenant" => out.tenant.clone(),
-                    "platform" => out.platform.as_str().to_string()
-                );
+                record_egress_success(&ctx, elapsed_ms);
             }
             Err(e) => {
                 tracing::warn!("failed to send whatsapp message: {e}");

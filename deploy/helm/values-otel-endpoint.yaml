@@ -1,0 +1,13 @@
+# Shared Helm values snippet to surface the OTLP endpoint for all workloads.
+global:
+  otel:
+    exporter:
+      endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+
+# Example: charts should append these env vars to each deployment/statefulset.
+env:
+  extra:
+    - name: ENABLE_OTEL
+      value: "true"
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "{{ .Values.global.otel.exporter.endpoint }}"

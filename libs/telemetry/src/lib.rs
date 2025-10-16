@@ -1,3 +1,24 @@
+//! Lightweight facade around tracing + OpenTelemetry setup.
+//!
+//! ```no_run
+//! use gsm_telemetry::{init_telemetry, TelemetryConfig};
+//!
+//! # fn main() -> anyhow::Result<()> {
+//! let cfg = TelemetryConfig {
+//!     service_name: "example-service".into(),
+//!     service_version: "0.1.0".into(),
+//!     enabled: false,
+//!     endpoint: String::new(),
+//!     protocol: gsm_telemetry::TelemetryProtocol::Grpc,
+//!     json_logs: true,
+//!     environment: "local".into(),
+//! };
+//! init_telemetry(cfg)?;
+//! tracing::info!("telemetry configured");
+//! Ok(())
+//! # }
+//! ```
+
 mod config;
 mod context;
 mod metrics;

@@ -19,7 +19,8 @@ use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
 use gsm_ingress_common::{
-    ack202, init_guard, record_ingress, start_ingress_span, verify_bearer, with_request_id,
+    ack202, init_guard, record_idempotency_hit, record_ingress, start_ingress_span, verify_bearer,
+    with_request_id,
 };
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use include_dir::{include_dir, Dir};
@@ -119,7 +120,6 @@ async fn webhook(
 ) -> axum::response::Response {
     let now = OffsetDateTime::now_utc();
     let env = envelope_from_webmsg(&state.tenant, &msg, now);
-    record_ingress(&env);
     let span = start_ingress_span(&env);
     let _guard = span.enter();
 
@@ -132,6 +132,7 @@ async fn webhook(
     match state.idem_guard.should_process(&key).await {
         Ok(true) => {}
         Ok(false) => {
+            record_idempotency_hit(&key.tenant);
             tracing::info!(
                 tenant = %key.tenant,
                 platform = %key.platform,
@@ -177,6 +178,7 @@ async fn webhook(
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
             tracing::info!("published to {subject}");
+            record_ingress(&env);
         }
         Err(e) => {
             tracing::error!("serialize failed: {e}");

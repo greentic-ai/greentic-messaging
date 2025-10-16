@@ -9,8 +9,8 @@ async-nats = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 time = { workspace = true }
-metrics = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 nanoid = "0.4"
 futures = "0.3"
+gsm-telemetry = { path = "../telemetry" }

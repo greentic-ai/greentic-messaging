@@ -21,6 +21,24 @@ pub struct ActionClaims {
 }
 
 impl ActionClaims {
+    /// Build a signed action request claim with a configurable expiry.
+    ///
+    /// ```no_run
+    /// use security::jwt::{ActionClaims, JwtSigner};
+    /// use time::Duration;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// std::env::set_var("JWT_ALG", "HS256");
+    /// std::env::set_var("JWT_SECRET", "top-secret");
+    /// let signer = JwtSigner::from_env()?;
+    /// let claims = ActionClaims::new("room-1", "acme", "qa.submit", "hash", None, Duration::seconds(300));
+    /// let token = signer.sign(&claims)?;
+    /// assert!(!token.is_empty());
+    /// std::env::remove_var("JWT_SECRET");
+    /// std::env::remove_var("JWT_ALG");
+    /// anyhow::Ok(())
+    /// # }
+    /// ```
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         sub: impl Into<String>,

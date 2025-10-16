@@ -33,6 +33,20 @@ impl QueueConsumer {
     }
 }
 
+/// Connect to NATS JetStream and prepare a queue-group consumer for the egress worker.
+///
+/// ```no_run
+/// use gsm_egress_common::bootstrap;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// # let rt = tokio::runtime::Runtime::new()?;
+/// rt.block_on(async {
+///     let consumer = bootstrap("nats://127.0.0.1:4222", "acme", "webex").await?;
+///     println!("stream={} consumer={}", consumer.stream, consumer.consumer);
+///     anyhow::Ok(())
+/// })
+/// # }
+/// ```
 pub async fn bootstrap(nats_url: &str, tenant: &str, platform: &str) -> Result<QueueConsumer> {
     let client = async_nats::connect(nats_url).await?;
     let js = async_nats::jetstream::new(client.clone());

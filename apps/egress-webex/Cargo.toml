@@ -1,0 +1,31 @@
+[package]
+name = "gsm-egress-webex"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+time = { workspace = true }
+gsm-core = { path = "../../libs/core" }
+gsm-translator = { path = "../../libs/translator" }
+gsm-egress-common = { path = "../egress-common" }
+gsm-backpressure = { path = "../../libs/backpressure" }
+gsm-dlq = { path = "../../libs/dlq" }
+gsm-telemetry = { path = "../../libs/telemetry" }
+async-trait = { workspace = true }
+metrics = { workspace = true }
+thiserror = { workspace = true }
+futures = "0.3"
+
+[dev-dependencies]
+axum = { workspace = true, features = ["macros"] }
+tower = "0.5"
+http-body-util = "0.1"

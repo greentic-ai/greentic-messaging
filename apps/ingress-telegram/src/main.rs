@@ -19,8 +19,8 @@ use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::IdKey as IdemKey;
 use gsm_ingress_common::{
-    ack202, init_guard, rate_limit_layer, record_ingress, start_ingress_span, verify_bearer,
-    verify_hmac, with_request_id,
+    ack202, init_guard, rate_limit_layer, record_idempotency_hit, record_ingress,
+    start_ingress_span, verify_bearer, verify_hmac, with_request_id,
 };
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
@@ -193,7 +193,6 @@ async fn handle_update(
 
     if let Some(msg) = extract_message(&update).cloned() {
         let env = envelope_from_message(&state.tenant, &msg);
-        record_ingress(&env);
         let span = start_ingress_span(&env);
         let _guard = span.enter();
         let id_key = IdemKey {
@@ -204,6 +203,7 @@ async fn handle_update(
         match state.idem_guard.should_process(&id_key).await {
             Ok(true) => {}
             Ok(false) => {
+                record_idempotency_hit(&id_key.tenant);
                 let rid_ref = request_id.as_ref().map(|Extension(id)| id);
                 tracing::info!(
                     tenant = %id_key.tenant,
@@ -248,12 +248,7 @@ async fn handle_update(
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
             } else {
                 tracing::info!("published to {subject}");
-                metrics::counter!(
-                    "messages_ingressed",
-                    1,
-                    "tenant" => env.tenant.clone(),
-                    "platform" => env.platform.as_str().to_string()
-                );
+                record_ingress(&env);
             }
         }
 
