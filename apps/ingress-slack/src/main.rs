@@ -282,9 +282,11 @@ fn map_slack_event(tenant: &str, bot_user_id: Option<&str>, event: SlackEvent) -
 
     let chat_id = channel?;
     let user_id = user?;
-    if bot_user_id == Some(user_id.as_str()) {
-        tracing::debug!(user_id = %user_id, "ignoring slack event from bot user");
-        return None;
+    if let Some(bot_user) = bot_user_id {
+        if bot_user == user_id && text.as_deref().map(|t| t.trim().is_empty()).unwrap_or(true) {
+            tracing::debug!(user_id = %user_id, "ignoring slack event from bot user (empty text)");
+            return None;
+        }
     }
     let timestamp = ts.unwrap_or_else(|| "0".into());
     let now = OffsetDateTime::now_utc();
@@ -403,7 +405,7 @@ mod tests {
 
         let bot_user_event = SlackEvent {
             r#type: Some("message".into()),
-            text: Some("self".into()),
+            text: None,
             user: Some("Ubot".into()),
             channel: Some("C456".into()),
             ts: Some("1700000000.000400".into()),

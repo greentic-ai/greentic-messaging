@@ -22,8 +22,8 @@ cargo test -p gsm-runner --features chaos -- --ignored chaos
    ```bash
    export SLACK_SIGNING_SECRET=...
    export SLACK_BOT_TOKEN=xoxb-...
-   # Optional: helps ingress ignore our own bot messages
-   export SLACK_BOT_USER_ID=U0ABCDEF
+   # Optional: only set if Slack events for your bot miss bot_id (ingress ignores blank-text messages for this user)
+   # export SLACK_BOT_USER_ID=U0ABCDEF
    export TENANT=acme
    export NATS_URL=nats://127.0.0.1:4222
    ```
