@@ -93,7 +93,7 @@ struct SlackEnvelope {
     event: Option<SlackEvent>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 struct SlackEvent {
     #[serde(default)]
     r#type: Option<String>,
@@ -107,6 +107,10 @@ struct SlackEvent {
     ts: Option<String>,
     #[serde(default)]
     thread_ts: Option<String>,
+    #[serde(default)]
+    bot_id: Option<String>,
+    #[serde(default)]
+    subtype: Option<String>,
 }
 
 async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
@@ -193,7 +197,7 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
                     }
                 }
             }
-            None => return StatusCode::BAD_REQUEST.into_response(),
+            None => return StatusCode::OK.into_response(),
         }
     }
 
@@ -245,18 +249,46 @@ pub fn verify_slack_sig(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool 
 }
 
 fn map_slack_event(tenant: &str, event: SlackEvent) -> Option<(String, MessageEnvelope)> {
-    let chat_id = event.channel?;
-    let user_id = event.user.unwrap_or_else(|| "unknown".into());
-    let timestamp = event.ts.unwrap_or_else(|| "0".into());
+    let SlackEvent {
+        r#type,
+        text,
+        user,
+        channel,
+        ts,
+        thread_ts,
+        bot_id,
+        subtype,
+    } = event;
+
+    if let Some(bot) = bot_id {
+        tracing::debug!(bot_id = %bot, "ignoring slack bot event");
+        return None;
+    }
+
+    if matches!(subtype.as_deref(), Some("bot_message" | "message_changed" | "message_deleted")) {
+        tracing::debug!(?subtype, "ignoring slack subtype event");
+        return None;
+    }
+
+    if let Some(kind) = r#type.as_deref() {
+        if kind != "message" {
+            tracing::debug!(event_type = ?kind, "ignoring non-message slack event");
+            return None;
+        }
+    }
+
+    let chat_id = channel?;
+    let user_id = user?;
+    let timestamp = ts.unwrap_or_else(|| "0".into());
     let now = OffsetDateTime::now_utc();
     let envelope = MessageEnvelope {
         tenant: tenant.to_string(),
         platform: Platform::Slack,
         chat_id: chat_id.clone(),
         user_id,
-        thread_id: event.thread_ts,
+        thread_id: thread_ts,
         msg_id: format!("slack:{timestamp}"),
-        text: event.text,
+        text,
         timestamp: now
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into()),
@@ -328,6 +360,7 @@ mod tests {
             channel: Some("C456".into()),
             ts: Some("1700000000.000100".into()),
             thread_ts: Some("1700000000.000101".into()),
+            ..Default::default()
         };
         let (subject, envelope) = map_slack_event("acme", event).expect("event");
         assert_eq!(subject, "greentic.msg.in.acme.slack.C456");
@@ -335,6 +368,31 @@ mod tests {
         assert_eq!(envelope.user_id, "U123");
         assert_eq!(envelope.msg_id, "slack:1700000000.000100");
         assert_eq!(envelope.thread_id.as_deref(), Some("1700000000.000101"));
+    }
+
+    #[test]
+    fn map_slack_event_skips_bot_messages() {
+        let bot_event = SlackEvent {
+            r#type: Some("message".into()),
+            text: Some("bot message".into()),
+            user: None,
+            channel: Some("C456".into()),
+            ts: Some("1700000000.000200".into()),
+            bot_id: Some("B999".into()),
+            ..Default::default()
+        };
+        assert!(map_slack_event("acme", bot_event).is_none());
+
+        let subtype_event = SlackEvent {
+            r#type: Some("message".into()),
+            text: Some("bot subtype".into()),
+            user: Some("Ubot".into()),
+            channel: Some("C456".into()),
+            ts: Some("1700000000.000300".into()),
+            subtype: Some("bot_message".into()),
+            ..Default::default()
+        };
+        assert!(map_slack_event("acme", subtype_event).is_none());
     }
 
     #[test]

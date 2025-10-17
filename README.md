@@ -62,6 +62,10 @@ cargo test -p gsm-runner --features chaos -- --ignored chaos
    ```bash
    export TELEGRAM_SECRET_TOKEN=dev
    export TENANT=acme
+   # Optional: point to a tenants.yaml file if you manage multiple tenants
+   # export TENANT_CONFIG=config/tenants.yaml
+   # TELEGRAM_PUBLIC_WEBHOOK_BASE will fall back to http://localhost:8080/telegram/webhook
+   export TELEGRAM_PUBLIC_WEBHOOK_BASE=https://gsm.greentic.ai/telegram/webhook
    export NATS_URL=nats://127.0.0.1:4222
    ```
 3. Start ingress, egress, and the runner:
@@ -71,6 +75,21 @@ make run-egress-telegram
 FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
 ```
 4. Set the Telegram webhook to point at `/telegram/webhook`. Messages sent to the bot are normalized, routed through NATS, and responses are delivered via the Telegram egress adapter using the official Bot API.
+
+**Tenant configuration**
+
+- `TENANT` identifies the default tenant for single-tenant deployments and is used when subscribing to inbound subjects.
+- `TENANT_CONFIG` (optional) points at a YAML file describing tenants and their Telegram settings. When omitted, the service synthesizes a single-tenant configuration from the environment variables above.
+
+**Startup reconciliation & admin endpoints**
+
+- On boot the ingress service reconciles Telegram webhooks for every enabled tenant and emits `greentic_telegram_webhook_reconciles_total{tenant,result}` metrics.
+- The admin API exposes helpers for CI/ops:
+  - `POST /admin/telegram/{tenant}/register`
+  - `POST /admin/telegram/{tenant}/deregister`
+  - `GET  /admin/telegram/{tenant}/status`
+- Bootstrap secrets before enabling a tenant: store `tenants/<tenant>/telegram/bot_token` and `tenants/<tenant>/telegram/secret_token` (or allow the service to generate the secret if your store supports writes).
+- First-time registration sets `drop_pending_updates=true`; the admin `register` endpoint keeps history by default (`drop_pending_updates=false`).
 
 ## WebChat Integration
 

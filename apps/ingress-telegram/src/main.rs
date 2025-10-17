@@ -6,10 +6,16 @@
 //! into `TelegramUpdate` and re-published to NATS.
 //! ```
 
+mod config;
+mod reconciler;
+mod secrets;
+mod telegram_api;
+
 use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
-    extract::{Extension, State},
+    extract::{Extension, Path, State},
+    http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{get, post},
@@ -22,10 +28,19 @@ use gsm_ingress_common::{
     ack202, init_guard, rate_limit_layer, record_idempotency_hit, record_ingress,
     start_ingress_span, verify_bearer, verify_hmac, with_request_id,
 };
+use config::load_tenants;
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use reconciler::{
+    allowed_updates, desired_webhook_url, ensure_secret, reconcile_all_telegram_webhooks,
+    urls_match,
+};
+use reqwest::Client;
+use secrets::{EnvSecretsManager, SecretsManager};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
+use telegram_api::{HttpTelegramApi, TelegramApi, WebhookInfo};
 use time::OffsetDateTime;
 
 #[derive(Clone)]
@@ -35,6 +50,200 @@ struct AppState {
     secret_token: Option<String>,
     idem_guard: gsm_idempotency::IdempotencyGuard,
     dlq: DlqPublisher,
+    tenants: Vec<config::Tenant>,
+    secrets: Arc<dyn SecretsManager>,
+    telegram_api: Arc<dyn TelegramApi>,
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    ok: bool,
+    error: String,
+}
+
+#[derive(Serialize)]
+struct RegisterResponse {
+    ok: bool,
+    tenant: String,
+    applied: bool,
+    url: String,
+    allowed_updates: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct DeregisterResponse {
+    ok: bool,
+    tenant: String,
+}
+
+#[derive(Serialize)]
+struct StatusResponse {
+    ok: bool,
+    tenant: String,
+    desired_url: String,
+    matches: bool,
+    info: WebhookInfo,
+}
+
+fn error_response(
+    status: StatusCode,
+    message: impl Into<String>,
+) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        status,
+        Json(ErrorResponse {
+            ok: false,
+            error: message.into(),
+        }),
+    )
+}
+
+#[derive(Debug)]
+enum AdminOpError {
+    TenantNotFound(String),
+    TelegramDisabled(String),
+    MissingBotToken(String),
+    Secret(anyhow::Error),
+    Telegram(anyhow::Error),
+}
+
+fn map_admin_error(err: AdminOpError) -> (StatusCode, Json<ErrorResponse>) {
+    match err {
+        AdminOpError::TenantNotFound(tenant) => error_response(
+            StatusCode::NOT_FOUND,
+            format!("tenant {} not found", tenant),
+        ),
+        AdminOpError::TelegramDisabled(tenant) => error_response(
+            StatusCode::BAD_REQUEST,
+            format!("telegram disabled or not configured for {}", tenant),
+        ),
+        AdminOpError::MissingBotToken(tenant) => error_response(
+            StatusCode::BAD_REQUEST,
+            format!("bot token not configured for {}", tenant),
+        ),
+        AdminOpError::Secret(err) => {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("secret error: {}", err))
+        }
+        AdminOpError::Telegram(err) => {
+            error_response(StatusCode::BAD_GATEWAY, format!("telegram error: {}", err))
+        }
+    }
+}
+
+async fn register_tenant_op(
+    tenants: Vec<config::Tenant>,
+    secrets: Arc<dyn SecretsManager>,
+    api: Arc<dyn TelegramApi>,
+    tenant_id: String,
+) -> Result<RegisterResponse, AdminOpError> {
+    let tenant = tenants
+        .into_iter()
+        .find(|t| t.id == tenant_id)
+        .ok_or_else(|| AdminOpError::TenantNotFound(tenant_id.clone()))?;
+    let tenant_id = tenant.id.clone();
+    let telegram_cfg = tenant
+        .telegram
+        .clone()
+        .filter(|cfg| cfg.enabled)
+        .ok_or_else(|| AdminOpError::TelegramDisabled(tenant_id.clone()))?;
+    let bot_token_key = format!("tenants/{}/telegram/bot_token", tenant_id);
+    let bot_token = secrets
+        .get(&bot_token_key)
+        .await
+        .map_err(AdminOpError::Secret)?
+        .ok_or_else(|| AdminOpError::MissingBotToken(tenant_id.clone()))?;
+    let secret = ensure_secret(secrets.as_ref(), &tenant_id, &telegram_cfg)
+        .await
+        .map_err(AdminOpError::Secret)?;
+    let desired_url = desired_webhook_url(&telegram_cfg, &tenant_id);
+    let allowed = allowed_updates(&telegram_cfg);
+    api.set_webhook(&bot_token, &desired_url, &secret, &allowed, false)
+        .await
+        .map_err(AdminOpError::Telegram)?;
+    tracing::info!(
+        event = "telegram_admin_register",
+        tenant = %tenant_id,
+        url = %desired_url
+    );
+    Ok(RegisterResponse {
+        ok: true,
+        tenant: tenant_id,
+        applied: true,
+        url: desired_url,
+        allowed_updates: allowed,
+    })
+}
+
+async fn deregister_tenant_op(
+    tenants: Vec<config::Tenant>,
+    secrets: Arc<dyn SecretsManager>,
+    api: Arc<dyn TelegramApi>,
+    tenant_id: String,
+) -> Result<DeregisterResponse, AdminOpError> {
+    let tenant = tenants
+        .into_iter()
+        .find(|t| t.id == tenant_id)
+        .ok_or_else(|| AdminOpError::TenantNotFound(tenant_id.clone()))?;
+    let tenant_id = tenant.id.clone();
+    if tenant
+        .telegram
+        .as_ref()
+        .filter(|cfg| cfg.enabled)
+        .is_none()
+    {
+        return Err(AdminOpError::TelegramDisabled(tenant_id));
+    }
+    let bot_token_key = format!("tenants/{}/telegram/bot_token", tenant.id);
+    let bot_token = secrets
+        .get(&bot_token_key)
+        .await
+        .map_err(AdminOpError::Secret)?
+        .ok_or_else(|| AdminOpError::MissingBotToken(tenant.id.clone()))?;
+    api.delete_webhook(&bot_token, true)
+        .await
+        .map_err(AdminOpError::Telegram)?;
+    tracing::info!(event = "telegram_admin_deregister", tenant = %tenant.id);
+    Ok(DeregisterResponse {
+        ok: true,
+        tenant: tenant.id,
+    })
+}
+
+async fn status_tenant_op(
+    tenants: Vec<config::Tenant>,
+    secrets: Arc<dyn SecretsManager>,
+    api: Arc<dyn TelegramApi>,
+    tenant_id: String,
+) -> Result<StatusResponse, AdminOpError> {
+    let tenant = tenants
+        .into_iter()
+        .find(|t| t.id == tenant_id)
+        .ok_or_else(|| AdminOpError::TenantNotFound(tenant_id.clone()))?;
+    let tenant_id = tenant.id.clone();
+    let telegram_cfg = tenant
+        .telegram
+        .clone()
+        .filter(|cfg| cfg.enabled)
+        .ok_or_else(|| AdminOpError::TelegramDisabled(tenant_id.clone()))?;
+    let bot_token_key = format!("tenants/{}/telegram/bot_token", tenant_id);
+    let bot_token = secrets
+        .get(&bot_token_key)
+        .await
+        .map_err(AdminOpError::Secret)?
+        .ok_or_else(|| AdminOpError::MissingBotToken(tenant_id.clone()))?;
+    let info = api
+        .get_webhook_info(&bot_token)
+        .await
+        .map_err(AdminOpError::Telegram)?;
+    let desired_url = desired_webhook_url(&telegram_cfg, &tenant_id);
+    let matches = urls_match(&info.url, &desired_url);
+    Ok(StatusResponse {
+        ok: true,
+        tenant: tenant_id,
+        desired_url,
+        matches,
+        info,
+    })
 }
 
 #[tokio::main]
@@ -44,20 +253,44 @@ async fn main() -> Result<()> {
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
-    let secret_token = std::env::var("TELEGRAM_SECRET_TOKEN").ok();
+    let tenant_config_path = std::env::var("TENANT_CONFIG").ok();
+    let tenants = load_tenants(tenant_config_path.as_deref(), &tenant)?;
+    let secrets: Arc<dyn SecretsManager> = Arc::new(EnvSecretsManager::default());
+    let api_base = std::env::var("TELEGRAM_API_BASE").ok();
+    let http_client = Client::new();
+    let telegram_impl = HttpTelegramApi::new(http_client, api_base);
+    let telegram_api: Arc<dyn TelegramApi> = Arc::new(telegram_impl);
+    let outcomes = reconcile_all_telegram_webhooks(&tenants, secrets.as_ref(), telegram_api.as_ref()).await;
+    let secret_token = outcomes
+        .iter()
+        .find(|o| o.tenant == tenant)
+        .and_then(|o| o.secret.clone())
+        .or_else(|| std::env::var("TELEGRAM_SECRET_TOKEN").ok());
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
     let state = AppState {
         nats,
-        tenant,
+        tenant: tenant.clone(),
         secret_token,
         idem_guard,
         dlq,
+        tenants: tenants.clone(),
+        secrets: Arc::clone(&secrets),
+        telegram_api: Arc::clone(&telegram_api),
     };
 
     let mut app = Router::new()
         .route("/telegram/webhook", post(handle_update))
+        .route(
+            "/admin/telegram/:tenant/register",
+            post(admin_register),
+        )
+        .route(
+            "/admin/telegram/:tenant/deregister",
+            post(admin_deregister),
+        )
+        .route("/admin/telegram/:tenant/status", get(admin_status))
         .layer(rate_limit_layer(20, 10))
         .layer(middleware::from_fn(with_request_id))
         .layer(middleware::from_fn(verify_bearer))
@@ -86,6 +319,55 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await?;
     Ok(())
 }
+
+async fn admin_register(
+    State(state): State<AppState>,
+    Path(tenant_id): Path<String>,
+) -> Result<Json<RegisterResponse>, (StatusCode, Json<ErrorResponse>)> {
+    register_tenant_op(
+        state.tenants.clone(),
+        Arc::clone(&state.secrets),
+        Arc::clone(&state.telegram_api),
+        tenant_id,
+    )
+    .await
+    .map(Json)
+    .map_err(map_admin_error)
+}
+
+
+
+async fn admin_deregister(
+    State(state): State<AppState>,
+    Path(tenant_id): Path<String>,
+) -> Result<Json<DeregisterResponse>, (StatusCode, Json<ErrorResponse>)> {
+    deregister_tenant_op(
+        state.tenants.clone(),
+        Arc::clone(&state.secrets),
+        Arc::clone(&state.telegram_api),
+        tenant_id,
+    )
+    .await
+    .map(Json)
+    .map_err(map_admin_error)
+}
+
+async fn admin_status(
+    State(state): State<AppState>,
+    Path(tenant_id): Path<String>,
+) -> Result<Json<StatusResponse>, (StatusCode, Json<ErrorResponse>)> {
+    status_tenant_op(
+        state.tenants.clone(),
+        Arc::clone(&state.secrets),
+        Arc::clone(&state.telegram_api),
+        tenant_id,
+    )
+    .await
+    .map(Json)
+    .map_err(map_admin_error)
+}
+
+
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct TelegramUpdate {
@@ -168,6 +450,7 @@ fn envelope_from_message(tenant: &str, msg: &TelegramMessage) -> MessageEnvelope
         context: Default::default(),
     }
 }
+
 
 async fn handle_update(
     State(state): State<AppState>,
@@ -262,6 +545,11 @@ async fn handle_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use anyhow::anyhow;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
 
     fn sample_message() -> TelegramMessage {
         TelegramMessage {
@@ -320,5 +608,197 @@ mod tests {
         assert!(!secret_token_valid(&expected, Some("wrong")));
         assert!(!secret_token_valid(&expected, None));
         assert!(secret_token_valid(&None, None));
+    }
+
+    #[derive(Default)]
+    struct MockSecrets {
+        data: Mutex<HashMap<String, String>>,
+        writable: bool,
+    }
+
+    impl MockSecrets {
+        fn new(writable: bool) -> Self {
+            Self {
+                data: Mutex::new(HashMap::new()),
+                writable,
+            }
+        }
+
+        async fn insert(&self, key: &str, value: &str) {
+            self.data
+                .lock()
+                .await
+                .insert(key.to_string(), value.to_string());
+        }
+    }
+
+    #[async_trait]
+    impl SecretsManager for MockSecrets {
+        async fn get(&self, key: &str) -> Result<Option<String>> {
+            Ok(self.data.lock().await.get(key).cloned())
+        }
+
+        async fn put(&self, key: &str, value: &str) -> Result<()> {
+            if self.writable {
+                self.insert(key, value).await;
+                Ok(())
+            } else {
+                Err(anyhow!("read-only"))
+            }
+        }
+
+        fn can_write(&self) -> bool {
+            self.writable
+        }
+    }
+
+    #[derive(Default)]
+    struct SetCall {
+        url: String,
+        allowed: Vec<String>,
+        drop_pending: bool,
+    }
+
+    #[derive(Default)]
+    struct MockTelegramApi {
+        info: Mutex<WebhookInfo>,
+        set_calls: Mutex<Vec<SetCall>>,
+        delete_calls: Mutex<Vec<(String, bool)>>,
+    }
+
+    impl MockTelegramApi {
+        fn new(info_url: &str) -> Self {
+            Self {
+                info: Mutex::new(WebhookInfo {
+                    url: info_url.to_string(),
+                    extra: Default::default(),
+                }),
+                set_calls: Default::default(),
+                delete_calls: Default::default(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl TelegramApi for MockTelegramApi {
+        async fn get_webhook_info(&self, _bot_token: &str) -> Result<WebhookInfo> {
+            Ok(self.info.lock().await.clone())
+        }
+
+        async fn set_webhook(
+            &self,
+            _bot_token: &str,
+            url: &str,
+            _secret: &str,
+            allowed_updates: &[String],
+            drop_pending: bool,
+        ) -> Result<()> {
+            self.set_calls.lock().await.push(SetCall {
+                url: url.to_string(),
+                allowed: allowed_updates.to_vec(),
+                drop_pending,
+            });
+            Ok(())
+        }
+
+        async fn delete_webhook(&self, _bot_token: &str, drop_pending: bool) -> Result<()> {
+            self.delete_calls
+                .lock()
+                .await
+                .push((_bot_token.to_string(), drop_pending));
+            Ok(())
+        }
+    }
+
+    fn sample_tenant_config() -> config::Tenant {
+        config::Tenant {
+            id: "acme".into(),
+            telegram: Some(config::TelegramConfig {
+                enabled: true,
+                public_webhook_base: "https://hook".into(),
+                secret_token_key: "tenants/acme/telegram/secret_token".into(),
+                allowed_updates: Some(vec!["message".into()]),
+                drop_pending_on_first_install: Some(true),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn register_op_invokes_set_webhook() {
+        let tenants = vec![sample_tenant_config()];
+        let secrets = Arc::new(MockSecrets::new(true));
+        secrets
+            .insert("tenants/acme/telegram/bot_token", "token-123")
+            .await;
+        secrets
+            .insert("tenants/acme/telegram/secret_token", "secret-xyz")
+            .await;
+        let api = Arc::new(MockTelegramApi::new(""));
+
+        let result = register_tenant_op(
+            tenants,
+            secrets.clone(),
+            api.clone(),
+            "acme".into(),
+        )
+        .await
+        .expect("register should succeed");
+
+        assert_eq!(result.tenant, "acme");
+        assert_eq!(result.url, "https://hook/acme");
+        let calls = api.set_calls.lock().await;
+        assert_eq!(calls.len(), 1);
+        let call = &calls[0];
+        assert_eq!(call.url, "https://hook/acme");
+        assert_eq!(call.allowed, vec!["message".to_string()]);
+        assert!(!call.drop_pending);
+    }
+
+    #[tokio::test]
+    async fn deregister_op_invokes_delete() {
+        let tenants = vec![sample_tenant_config()];
+        let secrets = Arc::new(MockSecrets::new(false));
+        secrets
+            .insert("tenants/acme/telegram/bot_token", "token-123")
+            .await;
+        let api = Arc::new(MockTelegramApi::new(""));
+
+        let result = deregister_tenant_op(
+            tenants,
+            secrets.clone(),
+            api.clone(),
+            "acme".into(),
+        )
+        .await
+        .expect("deregister should succeed");
+
+        assert!(result.ok);
+        let deletes = api.delete_calls.lock().await;
+        assert_eq!(deletes.len(), 1);
+        assert_eq!(deletes[0].1, true);
+    }
+
+    #[tokio::test]
+    async fn status_op_reports_match() {
+        let mut tenant = sample_tenant_config();
+        tenant.telegram.as_mut().unwrap().public_webhook_base = "https://hook".into();
+        let tenants = vec![tenant];
+        let secrets = Arc::new(MockSecrets::new(false));
+        secrets
+            .insert("tenants/acme/telegram/bot_token", "token-123")
+            .await;
+        let api = Arc::new(MockTelegramApi::new("https://hook/acme"));
+
+        let status = status_tenant_op(
+            tenants,
+            secrets.clone(),
+            api.clone(),
+            "acme".into(),
+        )
+        .await
+        .expect("status should succeed");
+
+        assert!(status.matches);
+        assert_eq!(status.desired_url, "https://hook/acme");
     }
 }
