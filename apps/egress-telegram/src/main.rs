@@ -1,6 +1,6 @@
 //! Telegram egress adapter that translates `OutMessage` payloads into Bot API requests.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream::{
     consumer::{
         push::{Config as PushConfig, Messages},
@@ -140,17 +140,36 @@ async fn process_message(
         .to_platform(&out)
         .context("translate payload to telegram")?;
     let send_start = Instant::now();
+    let mut permanent_failure: Option<String> = None;
     {
         let send_span = start_send_span(&ctx);
         let _guard = send_span.enter();
         for payload in payloads.iter_mut() {
             enrich_payload(payload, &out);
-            send_payload(client, api_base, bot_token, payload.clone())
-                .await
-                .with_context(|| format!("telegram api send chat={}", out.chat_id))?;
+            match send_payload(client, api_base, bot_token, payload.clone()).await {
+                Ok(()) => {}
+                Err(SendError::Permanent(reason)) => {
+                    tracing::warn!(
+                        tenant = %out.tenant,
+                        chat_id = %out.chat_id,
+                        event = "telegram_egress_permanent_failure",
+                        %reason,
+                        "telegram permanent failure; acking message to avoid retries"
+                    );
+                    permanent_failure = Some(reason);
+                    break;
+                }
+                Err(SendError::Transient(err)) => {
+                    let err = err.context(format!("telegram api send chat={}", out.chat_id));
+                    return Err(err);
+                }
+            }
         }
     }
     drop(permit);
+    if permanent_failure.is_some() {
+        return Ok(());
+    }
     let elapsed_ms = send_start.elapsed().as_secs_f64() * 1000.0;
     record_egress_success(&ctx, elapsed_ms);
     Ok(())
@@ -165,19 +184,41 @@ fn enrich_payload(payload: &mut Value, out: &OutMessage) {
     }
 }
 
+enum SendError {
+    Permanent(String),
+    Transient(anyhow::Error),
+}
+
 async fn send_payload(
     client: &reqwest::Client,
     api_base: &str,
     bot_token: &str,
     mut payload: Value,
-) -> Result<()> {
-    let method = extract_method(&mut payload)?;
+) -> Result<(), SendError> {
+    let method = extract_method(&mut payload).map_err(SendError::Transient)?;
     let url = build_api_url(api_base, bot_token, &method);
-    let res = client.post(url).json(&payload).send().await?;
-    if !res.status().is_success() {
-        let status = res.status();
+
+    let res = client
+        .post(url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|err| SendError::Transient(err.into()))?;
+    let status = res.status();
+    if !status.is_success() {
         let text = res.text().await.unwrap_or_default();
-        anyhow::bail!("telegram api err {}: {}", status, text);
+        if status.is_client_error() {
+            return Err(SendError::Permanent(format!(
+                "telegram api err {}: {}",
+                status, text
+            )));
+        } else {
+            return Err(SendError::Transient(anyhow!(
+                "telegram api err {}: {}",
+                status,
+                text
+            )));
+        }
     }
     Ok(())
 }
