@@ -34,8 +34,8 @@ async fn main() -> Result<()> {
 
     let translator = TelegramTranslator::new();
     let client = reqwest::Client::new();
-    let api_base =
-        std::env::var("TELEGRAM_API_BASE").unwrap_or_else(|_| "https://api.telegram.org".into());
+    let api_base = std::env::var("TELEGRAM_API_BASE")
+        .unwrap_or_else(|_| "https://api.telegram.org".into());
 
     let nats = async_nats::connect(nats_url).await?;
     let js = async_nats::jetstream::new(nats.clone());
@@ -169,9 +169,10 @@ async fn send_payload(
     client: &reqwest::Client,
     api_base: &str,
     bot_token: &str,
-    payload: Value,
+    mut payload: Value,
 ) -> Result<()> {
-    let url = build_api_url(api_base, bot_token);
+    let method = extract_method(&mut payload)?;
+    let url = build_api_url(api_base, bot_token, &method);
     let res = client.post(url).json(&payload).send().await?;
     if !res.status().is_success() {
         let status = res.status();
@@ -181,11 +182,27 @@ async fn send_payload(
     Ok(())
 }
 
-fn build_api_url(api_base: &str, bot_token: &str) -> String {
+fn extract_method(payload: &mut Value) -> Result<String> {
+    let obj = payload
+        .as_object_mut()
+        .context("telegram payload must be an object")?;
+    if let Some(method) = obj.remove("method") {
+        let method = method
+            .as_str()
+            .context("telegram payload method must be a string")?;
+        anyhow::ensure!(!method.is_empty(), "telegram payload method cannot be empty");
+        Ok(method.to_string())
+    } else {
+        Ok("sendMessage".into())
+    }
+}
+
+fn build_api_url(api_base: &str, bot_token: &str, method: &str) -> String {
     format!(
-        "{}/bot{}/sendMessage",
+        "{}/bot{}/{}",
         api_base.trim_end_matches('/'),
-        bot_token
+        bot_token,
+        method
     )
 }
 
@@ -210,8 +227,8 @@ mod tests {
 
     #[test]
     fn build_api_url_trims_slash() {
-        let url = build_api_url("https://api.telegram.org/", "token-123");
-        assert_eq!(url, "https://api.telegram.org/bottoken-123/sendMessage");
+        let url = build_api_url("https://api.telegram.org/", "token-123", "sendPhoto");
+        assert_eq!(url, "https://api.telegram.org/bottoken-123/sendPhoto");
     }
 
     #[test]
@@ -233,5 +250,21 @@ mod tests {
             .as_object()
             .unwrap()
             .contains_key("reply_to_message_id"));
+    }
+
+    #[test]
+    fn extract_method_defaults_to_send_message() {
+        let mut payload = json!({"text": "hello"});
+        let method = extract_method(&mut payload).unwrap();
+        assert_eq!(method, "sendMessage");
+        assert!(!payload.as_object().unwrap().contains_key("method"));
+    }
+
+    #[test]
+    fn extract_method_uses_custom_method() {
+        let mut payload = json!({"method": "sendPhoto", "photo": "abc"});
+        let method = extract_method(&mut payload).unwrap();
+        assert_eq!(method, "sendPhoto");
+        assert!(!payload.as_object().unwrap().contains_key("method"));
     }
 }
