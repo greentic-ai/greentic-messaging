@@ -57,6 +57,28 @@ cargo test -p gsm-runner --features chaos -- --ignored chaos
    ```
 4. Add the Graph subscription through the admin subject (`greentic.subs.admin`) or use the runner to trigger messages; cards are translated into Adaptive Cards for Teams.
 
+## Admin & Security Helpers
+
+Optional guard rails apply to all ingress services (Telegram, Slack, etc.) through `apps/ingress-common/src/security.rs`. Leave them unset for local dev, or export them and supply matching headers when you need protection.
+
+- `INGRESS_BEARER`: when set, requests must include `Authorization: Bearer $INGRESS_BEARER`.
+- `INGRESS_HMAC_SECRET`: enable HMAC validation for webhook/admin calls; compute base64(hmac_sha256(secret, body)) and send it in `INGRESS_HMAC_HEADER` (defaults to `x-signature`).
+- `INGRESS_HMAC_HEADER`: override the signature header name.
+
+Action Links (optional): provide `JWT_SECRET`, `JWT_ALG` (e.g. HS256), and `ACTION_BASE_URL` so ingress can generate signed deeplinks for card actions. Missing JWT envs just disable the feature (you’ll see a log warning).
+
+Admin endpoints share the same middleware stack as `/telegram/webhook`. If guards are enabled, include the headers when curling (example below). Otherwise, the endpoints are open on localhost.
+
+Example status call with bearer + HMAC:
+```bash
+sig=$(printf '' | openssl dgst -binary -sha256 -hmac "$INGRESS_HMAC_SECRET" | base64)
+curl -s \
+  -H "Authorization: Bearer $INGRESS_BEARER" \
+  -H "${INGRESS_HMAC_HEADER:-x-signature}: $sig" \
+  http://localhost:8080/admin/telegram/acme/status | jq
+```
+
+
 ## Telegram Integration
 
 1. Create a Telegram bot via BotFather and obtain the bot token; configure the webhook secret if desired.

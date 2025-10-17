@@ -33,12 +33,27 @@ where
 {
     let mut outcomes = Vec::new();
     for tenant in tenants {
-        if let Some(cfg) = tenant.telegram.as_ref() {
-            if !cfg.enabled {
-                continue;
+        match tenant.telegram.as_ref() {
+            Some(cfg) if cfg.enabled => {
+                let outcome = reconcile_tenant(api, secrets, tenant, cfg).await;
+                outcomes.push(outcome);
             }
-            let outcome = reconcile_tenant(api, secrets, tenant, cfg).await;
-            outcomes.push(outcome);
+            Some(_) => {
+                info!(
+                    tenant = %tenant.id,
+                    event = "telegram_webhook_reconcile",
+                    action = "skipped_disabled",
+                    "telegram config disabled; skipping reconcile"
+                );
+            }
+            None => {
+                info!(
+                    tenant = %tenant.id,
+                    event = "telegram_webhook_reconcile",
+                    action = "skipped_missing",
+                    "no telegram config found; skipping reconcile"
+                );
+            }
         }
     }
     outcomes
