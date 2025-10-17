@@ -283,14 +283,14 @@ async fn main() -> Result<()> {
     let mut app = Router::new()
         .route("/telegram/webhook", post(handle_update))
         .route(
-            "/admin/telegram/:tenant/register",
+            "/admin/telegram/{tenant}/register",
             post(admin_register),
         )
         .route(
-            "/admin/telegram/:tenant/deregister",
+            "/admin/telegram/{tenant}/deregister",
             post(admin_deregister),
         )
-        .route("/admin/telegram/:tenant/status", get(admin_status))
+        .route("/admin/telegram/{tenant}/status", get(admin_status))
         .layer(rate_limit_layer(20, 10))
         .layer(middleware::from_fn(with_request_id))
         .layer(middleware::from_fn(verify_bearer))
@@ -546,6 +546,7 @@ async fn handle_update(
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use crate::reconciler::ReconcileResult;
     use anyhow::anyhow;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -796,10 +797,14 @@ mod tests {
             .insert("tenants/active/telegram/bot_token", "token-xyz")
             .await;
         let api = Arc::new(MockTelegramApi::new(""));
-        reconcile_all_telegram_webhooks(&tenants, secrets.as_ref(), api.as_ref()).await;
+        let outcomes =
+            reconcile_all_telegram_webhooks(&tenants, secrets.as_ref(), api.as_ref()).await;
         assert!(logs_contain("action=\"skipped_missing\""));
         assert!(logs_contain("action=\"skipped_disabled\""));
         assert!(logs_contain("action=\"applied\""));
+        assert!(outcomes
+            .iter()
+            .any(|o| o.tenant == "active" && o.result == ReconcileResult::Applied));
     }
 
     #[tokio::test]
