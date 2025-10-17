@@ -26,8 +26,8 @@ use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::IdKey as IdemKey;
 use gsm_ingress_common::{
-    ack202, init_guard, rate_limit_layer, record_idempotency_hit, record_ingress,
-    start_ingress_span, verify_bearer, verify_hmac, with_request_id,
+    init_guard, rate_limit_layer, record_idempotency_hit, record_ingress, start_ingress_span,
+    verify_bearer, verify_hmac, with_request_id,
 };
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use reconciler::{
@@ -38,7 +38,7 @@ use reqwest::Client;
 use secrets::{EnvSecretsManager, SecretsManager};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use telegram_api::{HttpTelegramApi, TelegramApi, WebhookInfo};
 use time::OffsetDateTime;
@@ -470,11 +470,20 @@ async fn process_update(
     headers: axum::http::HeaderMap,
     payload: Value,
 ) -> axum::response::Response {
+    tracing::info!(
+        event = "telegram_webhook_request",
+        tenant = %state.tenant
+    );
+
     let provided_token = headers
         .get("X-Telegram-Bot-Api-Secret-Token")
         .and_then(|v| v.to_str().ok());
     if !secret_token_valid(&state.secret_token, provided_token) {
-        tracing::warn!("telegram secret token mismatch");
+        tracing::warn!(
+            tenant = %state.tenant,
+            event = "telegram_webhook_secret_mismatch",
+            "telegram secret token mismatch"
+        );
         return axum::http::StatusCode::UNAUTHORIZED.into_response();
     }
 
@@ -506,7 +515,7 @@ async fn process_update(
                     msg_id = %id_key.msg_id,
                     "duplicate telegram event dropped"
                 );
-                return ack202(rid_ref).into_response();
+                return ack_response(rid_ref);
             }
             Err(err) => {
                 tracing::error!(
@@ -547,11 +556,19 @@ async fn process_update(
             }
         }
 
-        let rid_ref = request_id.as_ref();
-        return ack202(rid_ref).into_response();
+        return ack_response(request_id.as_ref());
     }
 
     axum::http::StatusCode::OK.into_response()
+}
+
+fn ack_response(request_id: Option<&String>) -> axum::response::Response {
+    let rid = request_id.cloned().unwrap_or_else(|| "n/a".to_string());
+    (
+        axum::http::StatusCode::OK,
+        Json(json!({ "ok": true, "request_id": rid })),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
