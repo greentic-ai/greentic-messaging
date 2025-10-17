@@ -56,7 +56,7 @@ pub fn load_tenants(config_path: Option<&str>, fallback_tenant: &str) -> Result<
     let base = std::env::var("TELEGRAM_PUBLIC_WEBHOOK_BASE")
         .unwrap_or_else(|_| "http://localhost:8080/telegram/webhook".into());
     let secret_key = std::env::var("TELEGRAM_SECRET_TOKEN_KEY")
-        .unwrap_or_else(|_| "tenants/default/telegram/secret_token".into());
+        .unwrap_or_else(|_| format!("tenants/{}/telegram/secret_token", fallback_tenant));
 
     Ok(vec![Tenant {
         id: fallback_tenant.to_string(),
@@ -114,7 +114,7 @@ mod tests {
         );
         assert_eq!(
             tg.secret_token_key,
-            "tenants/default/telegram/secret_token"
+            "tenants/acme/telegram/secret_token"
         );
         assert_eq!(tg.allowed_updates(), vec!["message", "callback_query"]);
         assert!(tg.drop_pending_on_first_install());

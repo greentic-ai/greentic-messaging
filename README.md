@@ -105,6 +105,10 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
 - `TENANT` identifies the default tenant for single-tenant deployments and is used when subscribing to inbound subjects.
 - `TENANT_CONFIG` (optional) points at a YAML file describing tenants and their Telegram settings. When omitted, the service synthesizes a single-tenant configuration from the environment variables above.
 
+**Secrets & tenants**
+
+- Secrets default to environment variables named `TENANTS_<TENANT>_TELEGRAM_BOT_TOKEN` and `TENANTS_<TENANT>_TELEGRAM_SECRET_TOKEN` (uppercase, slashes replaced with `_`). Provide these or configure `TENANT_CONFIG` to source them elsewhere.
+
 **Startup reconciliation & admin endpoints**
 
 - On boot the ingress service reconciles Telegram webhooks for every enabled tenant and emits `greentic_telegram_webhook_reconciles_total{tenant,result}` metrics.
