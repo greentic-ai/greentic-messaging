@@ -33,6 +33,7 @@ struct AppState {
     signing_secret: String,
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
+    bot_user_id: Option<String>,
 }
 
 #[tokio::main]
@@ -44,6 +45,7 @@ async fn main() -> Result<()> {
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let signing_secret =
         std::env::var("SLACK_SIGNING_SECRET").expect("SLACK_SIGNING_SECRET required");
+    let bot_user_id = std::env::var("SLACK_BOT_USER_ID").ok();
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
@@ -53,6 +55,7 @@ async fn main() -> Result<()> {
         signing_secret,
         idem_guard,
         dlq,
+        bot_user_id,
     };
 
     let mut app = Router::new().route("/slack/events", post(handle));
@@ -132,7 +135,7 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
     };
 
     if let Some(event) = envelope.event {
-        match map_slack_event(&state.tenant, event) {
+        match map_slack_event(&state.tenant, state.bot_user_id.as_deref(), event) {
             Some((subject, message)) => {
                 let span = start_ingress_span(&message);
                 let _guard = span.enter();
@@ -248,7 +251,7 @@ pub fn verify_slack_sig(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool 
     subtle_constant_time_eq(&calc, signature)
 }
 
-fn map_slack_event(tenant: &str, event: SlackEvent) -> Option<(String, MessageEnvelope)> {
+fn map_slack_event(tenant: &str, bot_user_id: Option<&str>, event: SlackEvent) -> Option<(String, MessageEnvelope)> {
     let SlackEvent {
         r#type,
         text,
@@ -279,6 +282,10 @@ fn map_slack_event(tenant: &str, event: SlackEvent) -> Option<(String, MessageEn
 
     let chat_id = channel?;
     let user_id = user?;
+    if bot_user_id == Some(user_id.as_str()) {
+        tracing::debug!(user_id = %user_id, "ignoring slack event from bot user");
+        return None;
+    }
     let timestamp = ts.unwrap_or_else(|| "0".into());
     let now = OffsetDateTime::now_utc();
     let envelope = MessageEnvelope {
@@ -362,7 +369,7 @@ mod tests {
             thread_ts: Some("1700000000.000101".into()),
             ..Default::default()
         };
-        let (subject, envelope) = map_slack_event("acme", event).expect("event");
+        let (subject, envelope) = map_slack_event("acme", None, event).expect("event");
         assert_eq!(subject, "greentic.msg.in.acme.slack.C456");
         assert_eq!(envelope.chat_id, "C456");
         assert_eq!(envelope.user_id, "U123");
@@ -381,7 +388,7 @@ mod tests {
             bot_id: Some("B999".into()),
             ..Default::default()
         };
-        assert!(map_slack_event("acme", bot_event).is_none());
+        assert!(map_slack_event("acme", None, bot_event).is_none());
 
         let subtype_event = SlackEvent {
             r#type: Some("message".into()),
@@ -392,7 +399,17 @@ mod tests {
             subtype: Some("bot_message".into()),
             ..Default::default()
         };
-        assert!(map_slack_event("acme", subtype_event).is_none());
+        assert!(map_slack_event("acme", None, subtype_event).is_none());
+
+        let bot_user_event = SlackEvent {
+            r#type: Some("message".into()),
+            text: Some("self".into()),
+            user: Some("Ubot".into()),
+            channel: Some("C456".into()),
+            ts: Some("1700000000.000400".into()),
+            ..Default::default()
+        };
+        assert!(map_slack_event("acme", Some("Ubot"), bot_user_event).is_none());
     }
 
     #[test]
