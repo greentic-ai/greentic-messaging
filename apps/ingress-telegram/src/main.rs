@@ -778,6 +778,30 @@ mod tests {
         assert_eq!(deletes[0].1, true);
     }
 
+    #[tracing_test::traced_test]
+    #[tokio::test]
+    async fn reconcile_all_logs_skipped_states() {
+        let mut disabled = sample_tenant_config();
+        disabled.id = "disabled".into();
+        disabled.telegram.as_mut().unwrap().enabled = false;
+        let mut active = sample_tenant_config();
+        active.id = "active".into();
+        let tenants = vec![
+            config::Tenant { id: "missing".into(), telegram: None },
+            disabled.clone(),
+            active.clone(),
+        ];
+        let secrets = Arc::new(MockSecrets::new(true));
+        secrets
+            .insert("tenants/active/telegram/bot_token", "token-xyz")
+            .await;
+        let api = Arc::new(MockTelegramApi::new(""));
+        reconcile_all_telegram_webhooks(&tenants, secrets.as_ref(), api.as_ref()).await;
+        assert!(logs_contain("action=\"skipped_missing\""));
+        assert!(logs_contain("action=\"skipped_disabled\""));
+        assert!(logs_contain("action=\"applied\""));
+    }
+
     #[tokio::test]
     async fn status_op_reports_match() {
         let mut tenant = sample_tenant_config();
