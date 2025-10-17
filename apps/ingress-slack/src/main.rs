@@ -251,7 +251,11 @@ pub fn verify_slack_sig(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool 
     subtle_constant_time_eq(&calc, signature)
 }
 
-fn map_slack_event(tenant: &str, bot_user_id: Option<&str>, event: SlackEvent) -> Option<(String, MessageEnvelope)> {
+fn map_slack_event(
+    tenant: &str,
+    bot_user_id: Option<&str>,
+    event: SlackEvent,
+) -> Option<(String, MessageEnvelope)> {
     let SlackEvent {
         r#type,
         text,
@@ -268,7 +272,10 @@ fn map_slack_event(tenant: &str, bot_user_id: Option<&str>, event: SlackEvent) -
         return None;
     }
 
-    if matches!(subtype.as_deref(), Some("bot_message" | "message_changed" | "message_deleted")) {
+    if matches!(
+        subtype.as_deref(),
+        Some("bot_message" | "message_changed" | "message_deleted")
+    ) {
         tracing::debug!(?subtype, "ignoring slack subtype event");
         return None;
     }

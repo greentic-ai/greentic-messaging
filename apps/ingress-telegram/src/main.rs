@@ -21,6 +21,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use config::load_tenants;
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::IdKey as IdemKey;
@@ -28,7 +29,6 @@ use gsm_ingress_common::{
     ack202, init_guard, rate_limit_layer, record_idempotency_hit, record_ingress,
     start_ingress_span, verify_bearer, verify_hmac, with_request_id,
 };
-use config::load_tenants;
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use reconciler::{
     allowed_updates, desired_webhook_url, ensure_secret, reconcile_all_telegram_webhooks,
@@ -121,9 +121,10 @@ fn map_admin_error(err: AdminOpError) -> (StatusCode, Json<ErrorResponse>) {
             StatusCode::BAD_REQUEST,
             format!("bot token not configured for {}", tenant),
         ),
-        AdminOpError::Secret(err) => {
-            error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("secret error: {}", err))
-        }
+        AdminOpError::Secret(err) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("secret error: {}", err),
+        ),
         AdminOpError::Telegram(err) => {
             error_response(StatusCode::BAD_GATEWAY, format!("telegram error: {}", err))
         }
@@ -185,12 +186,7 @@ async fn deregister_tenant_op(
         .find(|t| t.id == tenant_id)
         .ok_or_else(|| AdminOpError::TenantNotFound(tenant_id.clone()))?;
     let tenant_id = tenant.id.clone();
-    if tenant
-        .telegram
-        .as_ref()
-        .filter(|cfg| cfg.enabled)
-        .is_none()
-    {
+    if tenant.telegram.as_ref().filter(|cfg| cfg.enabled).is_none() {
         return Err(AdminOpError::TelegramDisabled(tenant_id));
     }
     let bot_token_key = format!("tenants/{}/telegram/bot_token", tenant.id);
@@ -260,7 +256,8 @@ async fn main() -> Result<()> {
     let http_client = Client::new();
     let telegram_impl = HttpTelegramApi::new(http_client, api_base);
     let telegram_api: Arc<dyn TelegramApi> = Arc::new(telegram_impl);
-    let outcomes = reconcile_all_telegram_webhooks(&tenants, secrets.as_ref(), telegram_api.as_ref()).await;
+    let outcomes =
+        reconcile_all_telegram_webhooks(&tenants, secrets.as_ref(), telegram_api.as_ref()).await;
     let secret_token = outcomes
         .iter()
         .find(|o| o.tenant == tenant)
@@ -282,10 +279,8 @@ async fn main() -> Result<()> {
 
     let mut app = Router::new()
         .route("/telegram/webhook", post(handle_update))
-        .route(
-            "/admin/telegram/{tenant}/register",
-            post(admin_register),
-        )
+        .route("/telegram/webhook/{tenant}", post(handle_update_tenant))
+        .route("/admin/telegram/{tenant}/register", post(admin_register))
         .route(
             "/admin/telegram/{tenant}/deregister",
             post(admin_deregister),
@@ -335,8 +330,6 @@ async fn admin_register(
     .map_err(map_admin_error)
 }
 
-
-
 async fn admin_deregister(
     State(state): State<AppState>,
     Path(tenant_id): Path<String>,
@@ -366,8 +359,6 @@ async fn admin_status(
     .map(Json)
     .map_err(map_admin_error)
 }
-
-
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct TelegramUpdate {
@@ -451,12 +442,33 @@ fn envelope_from_message(tenant: &str, msg: &TelegramMessage) -> MessageEnvelope
     }
 }
 
-
 async fn handle_update(
     State(state): State<AppState>,
     request_id: Option<Extension<String>>,
     headers: axum::http::HeaderMap,
     Json(payload): Json<Value>,
+) -> axum::response::Response {
+    process_update(state, request_id.map(|Extension(id)| id), headers, payload).await
+}
+
+async fn handle_update_tenant(
+    State(state): State<AppState>,
+    Path(path_tenant): Path<String>,
+    request_id: Option<Extension<String>>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<Value>,
+) -> axum::response::Response {
+    if path_tenant != state.tenant {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    process_update(state, request_id.map(|Extension(id)| id), headers, payload).await
+}
+
+async fn process_update(
+    state: AppState,
+    request_id: Option<String>,
+    headers: axum::http::HeaderMap,
+    payload: Value,
 ) -> axum::response::Response {
     let provided_token = headers
         .get("X-Telegram-Bot-Api-Secret-Token")
@@ -487,7 +499,7 @@ async fn handle_update(
             Ok(true) => {}
             Ok(false) => {
                 record_idempotency_hit(&id_key.tenant);
-                let rid_ref = request_id.as_ref().map(|Extension(id)| id);
+                let rid_ref = request_id.as_ref();
                 tracing::info!(
                     tenant = %id_key.tenant,
                     platform = %id_key.platform,
@@ -535,7 +547,7 @@ async fn handle_update(
             }
         }
 
-        let rid_ref = request_id.as_ref().map(|Extension(id)| id);
+        let rid_ref = request_id.as_ref();
         return ack202(rid_ref).into_response();
     }
 
@@ -545,9 +557,9 @@ async fn handle_update(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::reconciler::ReconcileResult;
     use anyhow::anyhow;
+    use async_trait::async_trait;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -736,14 +748,9 @@ mod tests {
             .await;
         let api = Arc::new(MockTelegramApi::new(""));
 
-        let result = register_tenant_op(
-            tenants,
-            secrets.clone(),
-            api.clone(),
-            "acme".into(),
-        )
-        .await
-        .expect("register should succeed");
+        let result = register_tenant_op(tenants, secrets.clone(), api.clone(), "acme".into())
+            .await
+            .expect("register should succeed");
 
         assert_eq!(result.tenant, "acme");
         assert_eq!(result.url, "https://hook/acme");
@@ -764,14 +771,9 @@ mod tests {
             .await;
         let api = Arc::new(MockTelegramApi::new(""));
 
-        let result = deregister_tenant_op(
-            tenants,
-            secrets.clone(),
-            api.clone(),
-            "acme".into(),
-        )
-        .await
-        .expect("deregister should succeed");
+        let result = deregister_tenant_op(tenants, secrets.clone(), api.clone(), "acme".into())
+            .await
+            .expect("deregister should succeed");
 
         assert!(result.ok);
         let deletes = api.delete_calls.lock().await;
@@ -788,7 +790,10 @@ mod tests {
         let mut active = sample_tenant_config();
         active.id = "active".into();
         let tenants = vec![
-            config::Tenant { id: "missing".into(), telegram: None },
+            config::Tenant {
+                id: "missing".into(),
+                telegram: None,
+            },
             disabled.clone(),
             active.clone(),
         ];
@@ -818,14 +823,9 @@ mod tests {
             .await;
         let api = Arc::new(MockTelegramApi::new("https://hook/acme"));
 
-        let status = status_tenant_op(
-            tenants,
-            secrets.clone(),
-            api.clone(),
-            "acme".into(),
-        )
-        .await
-        .expect("status should succeed");
+        let status = status_tenant_op(tenants, secrets.clone(), api.clone(), "acme".into())
+            .await
+            .expect("status should succeed");
 
         assert!(status.matches);
         assert_eq!(status.desired_url, "https://hook/acme");

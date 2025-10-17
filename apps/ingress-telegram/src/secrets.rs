@@ -52,10 +52,7 @@ mod tests {
         let _guard = env_lock().lock().unwrap();
         std::env::set_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN", "abc");
         let mgr = EnvSecretsManager::default();
-        let value = mgr
-            .get("tenants/acme/telegram/secret_token")
-            .await
-            .unwrap();
+        let value = mgr.get("tenants/acme/telegram/secret_token").await.unwrap();
         assert_eq!(value, Some("abc".into()));
         std::env::remove_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN");
     }

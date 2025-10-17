@@ -34,8 +34,8 @@ async fn main() -> Result<()> {
 
     let translator = TelegramTranslator::new();
     let client = reqwest::Client::new();
-    let api_base = std::env::var("TELEGRAM_API_BASE")
-        .unwrap_or_else(|_| "https://api.telegram.org".into());
+    let api_base =
+        std::env::var("TELEGRAM_API_BASE").unwrap_or_else(|_| "https://api.telegram.org".into());
 
     let nats = async_nats::connect(nats_url).await?;
     let js = async_nats::jetstream::new(nats.clone());
@@ -190,7 +190,10 @@ fn extract_method(payload: &mut Value) -> Result<String> {
         let method = method
             .as_str()
             .context("telegram payload method must be a string")?;
-        anyhow::ensure!(!method.is_empty(), "telegram payload method cannot be empty");
+        anyhow::ensure!(
+            !method.is_empty(),
+            "telegram payload method cannot be empty"
+        );
         Ok(method.to_string())
     } else {
         Ok("sendMessage".into())

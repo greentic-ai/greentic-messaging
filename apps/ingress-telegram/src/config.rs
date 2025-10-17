@@ -112,10 +112,7 @@ mod tests {
             tg.public_webhook_base,
             "http://localhost:8080/telegram/webhook"
         );
-        assert_eq!(
-            tg.secret_token_key,
-            "tenants/acme/telegram/secret_token"
-        );
+        assert_eq!(tg.secret_token_key, "tenants/acme/telegram/secret_token");
         assert_eq!(tg.allowed_updates(), vec!["message", "callback_query"]);
         assert!(tg.drop_pending_on_first_install());
     }

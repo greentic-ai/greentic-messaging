@@ -63,7 +63,11 @@ impl HttpTelegramApi {
         Fut: std::future::Future<Output = Result<T>>,
     {
         let mut attempt = 0;
-        let delays = [Duration::from_millis(250), Duration::from_secs(1), Duration::from_secs(4)];
+        let delays = [
+            Duration::from_millis(250),
+            Duration::from_secs(1),
+            Duration::from_secs(4),
+        ];
         loop {
             match op().await {
                 Ok(value) => return Ok(value),
@@ -226,7 +230,8 @@ mod tests {
 
     #[tokio::test]
     async fn retry_exhausts_attempts() {
-        let result: Result<()> = HttpTelegramApi::with_retry(|| async { Err(anyhow!("nope")) }).await;
+        let result: Result<()> =
+            HttpTelegramApi::with_retry(|| async { Err(anyhow!("nope")) }).await;
         assert!(result.is_err());
     }
 

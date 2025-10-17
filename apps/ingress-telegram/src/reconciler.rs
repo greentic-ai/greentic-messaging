@@ -19,6 +19,7 @@ pub enum ReconcileResult {
 pub struct TenantOutcome {
     pub tenant: String,
     pub secret: Option<String>,
+    #[allow(dead_code)]
     pub result: ReconcileResult,
 }
 
@@ -72,11 +73,7 @@ fn record_metric(tenant: &str, result: ReconcileResult) {
         msg_id: None,
         extra: vec![("result".into(), result_label.into())],
     };
-    record_counter(
-        "greentic_telegram_webhook_reconciles_total",
-        1,
-        &labels,
-    );
+    record_counter("greentic_telegram_webhook_reconciles_total", 1, &labels);
 }
 
 async fn reconcile_tenant<TApi, TSecrets>(
@@ -195,15 +192,9 @@ where
         false
     };
     let allowed = allowed_updates(cfg);
-    api.set_webhook(
-        bot_token,
-        want_url,
-        secret,
-        &allowed,
-        drop_pending,
-    )
-    .await
-    .with_context(|| format!("set webhook for {}", want_url))?;
+    api.set_webhook(bot_token, want_url, secret, &allowed, drop_pending)
+        .await
+        .with_context(|| format!("set webhook for {}", want_url))?;
     Ok((ReconcileResult::Applied, drop_pending, Some(current_url)))
 }
 
