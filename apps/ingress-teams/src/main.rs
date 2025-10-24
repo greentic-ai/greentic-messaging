@@ -204,7 +204,15 @@ async fn notify(
                 );
             }
         }
-        match serde_json::to_vec(&envelope) {
+        let invocation = match envelope.clone().into_invocation() {
+            Ok(env) => env,
+            Err(err) => {
+                tracing::error!(error = %err, "failed to build invocation envelope");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
+
+        match serde_json::to_vec(&invocation) {
             Ok(bytes) => {
                 if let Err(e) = state.nats.publish(subject.clone(), bytes.into()).await {
                     tracing::error!("publish failed: {e}");
@@ -220,7 +228,7 @@ async fn notify(
                                 message: e.to_string(),
                                 stage: None,
                             },
-                            &envelope,
+                            &invocation,
                         )
                         .await
                     {

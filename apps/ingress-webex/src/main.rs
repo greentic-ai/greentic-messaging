@@ -184,9 +184,14 @@ async fn process_webhook(
         }
     }
 
+    let invocation = envelope.clone().into_invocation().map_err(|err| {
+        error!(error = %err, "failed to build invocation envelope");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     let subject = in_subject(&state.tenant, envelope.platform.as_str(), &envelope.chat_id);
-    let payload = serde_json::to_vec(&envelope).map_err(|err| {
-        error!(error = %err, "failed to serialise envelope");
+    let payload = serde_json::to_vec(&invocation).map_err(|err| {
+        error!(error = %err, "failed to serialise invocation");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -210,7 +215,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
-    use gsm_core::{MessageEnvelope, Platform};
+    use gsm_core::{InvocationEnvelope, MessageEnvelope, Platform};
     use gsm_idempotency::{InMemoryIdemStore, SharedIdemStore};
     use std::sync::Mutex;
     use tower::ServiceExt;
@@ -301,7 +306,9 @@ mod tests {
 
         let (subject, payload) = &stored[0];
         assert_eq!(subject, "greentic.msg.in.acme.webex.room-9");
-        let env: MessageEnvelope = serde_json::from_slice(payload).unwrap();
+        let invocation: InvocationEnvelope = serde_json::from_slice(payload).unwrap();
+        assert_eq!(invocation.ctx.tenant.as_str(), "acme");
+        let env = MessageEnvelope::try_from(invocation).expect("message envelope");
         assert_eq!(env.platform, Platform::Webex);
         assert_eq!(env.msg_id, "mid-001");
     }

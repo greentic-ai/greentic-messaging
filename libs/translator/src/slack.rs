@@ -138,10 +138,13 @@ fn flush_facts(fact_lines: &mut Vec<String>, blocks: &mut Vec<Value>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform};
+    use gsm_core::{
+        make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+    };
 
     fn base_message(kind: OutKind) -> OutMessage {
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::Slack,
             chat_id: "C123".into(),

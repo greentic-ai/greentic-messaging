@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
 use async_nats::Client;
 use futures::StreamExt;
 use gsm_core::*;
@@ -54,7 +54,8 @@ async fn publish_in(
         context: Default::default(),
     };
     let subject = in_subject(tenant, platform.as_str(), chat_id);
-    let bytes = serde_json::to_vec(&env)?;
+    let invocation = env.into_invocation().map_err(Error::new)?;
+    let bytes = serde_json::to_vec(&invocation)?;
     client.publish(subject, bytes.into()).await?;
     Ok(())
 }

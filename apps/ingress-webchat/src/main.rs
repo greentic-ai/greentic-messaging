@@ -153,38 +153,46 @@ async fn webhook(
         }
     }
 
-    match serde_json::to_vec(&env) {
-        Ok(bytes) => {
-            if let Err(e) = state.nats.publish(subject.clone(), bytes.into()).await {
-                tracing::error!("publish failed: {e}");
-                if let Err(dlq_err) = state
-                    .dlq
-                    .publish(
-                        &state.tenant,
-                        env.platform.as_str(),
-                        &env.msg_id,
-                        1,
-                        DlqError {
-                            code: "E_PUBLISH".into(),
-                            message: e.to_string(),
-                            stage: None,
-                        },
-                        &env,
-                    )
-                    .await
-                {
-                    tracing::error!("failed to publish dlq entry: {dlq_err}");
-                }
-                return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-            tracing::info!("published to {subject}");
-            record_ingress(&env);
+    let invocation = match env.clone().into_invocation() {
+        Ok(envelope) => envelope,
+        Err(err) => {
+            tracing::error!(error = %err, "failed to build invocation envelope");
+            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
-        Err(e) => {
-            tracing::error!("serialize failed: {e}");
-            return axum::http::StatusCode::BAD_REQUEST.into_response();
+    };
+
+    let payload = match serde_json::to_vec(&invocation) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            tracing::error!("serialize failed: {err}");
+            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
+    };
+
+    if let Err(e) = state.nats.publish(subject.clone(), payload.into()).await {
+        tracing::error!("publish failed: {e}");
+        if let Err(dlq_err) = state
+            .dlq
+            .publish(
+                &state.tenant,
+                env.platform.as_str(),
+                &env.msg_id,
+                1,
+                DlqError {
+                    code: "E_PUBLISH".into(),
+                    message: e.to_string(),
+                    stage: None,
+                },
+                &invocation,
+            )
+            .await
+        {
+            tracing::error!("failed to publish dlq entry: {dlq_err}");
+        }
+        return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
+    tracing::info!("published to {subject}");
+    record_ingress(&env);
 
     let rid = request_id.as_ref().map(|Extension(id)| id);
     ack202(rid).into_response()

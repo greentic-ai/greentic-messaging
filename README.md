@@ -15,6 +15,14 @@ cargo test
 cargo test -p gsm-runner --features chaos -- --ignored chaos
 ```
 
+## Environment & Tenant Context
+
+- `GREENTIC_ENV` selects the environment scope for a deployment (`dev`, `test`, `prod`). When unset, the runtime defaults to `dev` so local flows continue to work without extra configuration.
+- Every ingress normalises requests into an `InvocationEnvelope` carrying a full `TenantCtx` (`env`, `tenant`, optional `team`/`user`, tracing metadata). Downstream services (runner, egress) now receive the same shape regardless of source platform.
+- Export `TENANT` (and optionally `TEAM`) alongside channel-specific secrets when running locally so worker subjects resolve correctly.
+- Secrets resolvers and egress senders consume the shared context, making it safe to host multiple environments or teams within a single process.
+- Provider credentials live under `secret://{env}/{tenant}/{team|default}/messaging/{platform}-{team|default}-credentials.json`, so each environment stays isolated by design.
+
 ## Slack Integration
 
 1. Create a Slack app with a Bot User token (Scopes: `app_mentions:read`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `commands`). Enable Event Subscriptions and point it to `/slack/events`.

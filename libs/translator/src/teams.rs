@@ -27,6 +27,7 @@ use serde_json::{json, Value};
 /// };
 ///
 /// let out = gsm_core::OutMessage {
+///     ctx: gsm_core::make_tenant_ctx("acme".into(), None, None),
 ///     tenant: "acme".into(),
 ///     platform: gsm_core::Platform::Teams,
 ///     chat_id: "chat-1".into(),

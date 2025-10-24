@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use futures::stream::{self, StreamExt};
 use gsm_backpressure::{BackpressureLimiter, LocalBackpressureLimiter, RateLimits};
-use gsm_core::{MessageEnvelope, OutKind, OutMessage, Platform};
+use gsm_core::{make_tenant_ctx, MessageEnvelope, OutKind, OutMessage, Platform};
 use gsm_idempotency::{IdKey, IdempotencyGuard, InMemoryIdemStore, SharedIdemStore};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use tokio::sync::Mutex;
@@ -275,6 +275,7 @@ enum ChaosError {
 
 fn envelope_to_out(env: &MessageEnvelope) -> OutMessage {
     OutMessage {
+        ctx: make_tenant_ctx(env.tenant.clone(), None, Some(env.user_id.clone())),
         tenant: env.tenant.clone(),
         platform: env.platform.clone(),
         chat_id: env.chat_id.clone(),

@@ -54,8 +54,8 @@ async fn main() -> Result<()> {
         let ctx = Arc::clone(&ctx);
         tokio::spawn(async move {
             while let Some(msg) = replay_sub.next().await {
-                match serde_json::from_slice::<MessageEnvelope>(&msg.payload) {
-                    Ok(env) => handle_env(ctx.clone(), env).await,
+                match serde_json::from_slice::<InvocationEnvelope>(&msg.payload) {
+                    Ok(inv) => handle_env(ctx.clone(), inv).await,
                     Err(e) => tracing::warn!("bad replay envelope: {e}"),
                 }
             }
@@ -63,16 +63,16 @@ async fn main() -> Result<()> {
     }
 
     while let Some(msg) = sub.next().await {
-        let env: MessageEnvelope = match serde_json::from_slice(&msg.payload) {
+        let invocation: InvocationEnvelope = match serde_json::from_slice(&msg.payload) {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("bad envelope: {e}");
+                tracing::warn!("bad invocation envelope: {e}");
                 continue;
             }
         };
         let ctx = Arc::clone(&ctx);
         tokio::spawn(async move {
-            handle_env(ctx, env).await;
+            handle_env(ctx, invocation).await;
         });
     }
 
@@ -84,6 +84,7 @@ async fn run_one(
     flow: model::Flow,
     hbs: handlebars::Handlebars<'static>,
     sessions: session::Sessions,
+    tenant_ctx: TenantCtx,
     env: MessageEnvelope,
 ) -> Result<()> {
     let sid = session::SessionId::from_env(&env);
@@ -113,6 +114,7 @@ async fn run_one(
         if let Some(tpl) = &node.template {
             let out = template_node::render_template(tpl, &hbs, &env, &state, &payload)?;
             let outmsg = OutMessage {
+                ctx: tenant_ctx.clone(),
                 tenant: env.tenant.clone(),
                 platform: env.platform.clone(),
                 chat_id: env.chat_id.clone(),
@@ -130,6 +132,7 @@ async fn run_one(
         if let Some(card) = &node.card {
             let card = card_node::render_card(card, &hbs, &env, &state, &payload)?;
             let outmsg = OutMessage {
+                ctx: tenant_ctx.clone(),
                 tenant: env.tenant.clone(),
                 platform: env.platform.clone(),
                 chat_id: env.chat_id.clone(),
@@ -167,17 +170,26 @@ struct ProcessContext {
     dlq: DlqPublisher,
 }
 
-async fn handle_env(ctx: Arc<ProcessContext>, env: MessageEnvelope) {
+async fn handle_env(ctx: Arc<ProcessContext>, invocation: InvocationEnvelope) {
     let nats = ctx.nats.clone();
     let flow = ctx.flow.clone();
     let hbs = ctx.hbs.clone();
     let sessions = ctx.sessions.clone();
-    if let Err(e) = run_one(nats, flow, hbs, sessions, env.clone()).await {
+    let tenant_ctx = invocation.ctx.clone();
+    let env = match MessageEnvelope::try_from(invocation.clone()) {
+        Ok(env) => env,
+        Err(err) => {
+            tracing::error!(error = %err, "failed to decode invocation payload");
+            return;
+        }
+    };
+
+    if let Err(e) = run_one(nats, flow, hbs, sessions, tenant_ctx.clone(), env.clone()).await {
         tracing::error!("run failed: {e}");
         if let Err(err) = ctx
             .dlq
             .publish(
-                &env.tenant,
+                tenant_ctx.tenant.as_str(),
                 env.platform.as_str(),
                 &env.msg_id,
                 1,
@@ -186,7 +198,7 @@ async fn handle_env(ctx: Arc<ProcessContext>, env: MessageEnvelope) {
                     message: e.to_string(),
                     stage: None,
                 },
-                &env,
+                &invocation,
             )
             .await
         {

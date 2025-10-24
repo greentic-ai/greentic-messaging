@@ -1,4 +1,6 @@
-use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform};
+use gsm_core::{
+    make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+};
 use gsm_translator::webex::{
     parse_attachment_action, parse_message, to_webex_payload, WebexInboundEvent,
 };
@@ -7,6 +9,7 @@ use gsm_translator::{Translator, WebexTranslator};
 #[test]
 fn outbound_text_payload() {
     let out = OutMessage {
+        ctx: make_tenant_ctx("acme".into(), None, None),
         tenant: "acme".into(),
         platform: Platform::Webex,
         chat_id: "room-1".into(),
@@ -36,6 +39,7 @@ fn outbound_card_payload() {
         }],
     };
     let out = OutMessage {
+        ctx: make_tenant_ctx("acme".into(), None, None),
         tenant: "acme".into(),
         platform: Platform::Webex,
         chat_id: "room-1".into(),
@@ -58,6 +62,7 @@ fn outbound_card_payload() {
 fn outbound_via_translator_struct() {
     let translator = WebexTranslator::new();
     let out = OutMessage {
+        ctx: make_tenant_ctx("acme".into(), None, None),
         tenant: "acme".into(),
         platform: Platform::Webex,
         chat_id: "room-1".into(),

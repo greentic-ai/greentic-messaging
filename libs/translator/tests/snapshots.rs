@@ -1,10 +1,13 @@
-use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform};
+use gsm_core::{
+    make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+};
 use gsm_translator::{TelegramTranslator, Translator, WebChatTranslator};
 
 #[test]
 fn telegram_text_snapshot() {
     let t = TelegramTranslator::new();
     let out = OutMessage {
+        ctx: make_tenant_ctx("acme".into(), None, None),
         tenant: "acme".into(),
         platform: Platform::Telegram,
         chat_id: "c1".into(),
@@ -22,6 +25,7 @@ fn telegram_text_snapshot() {
 fn telegram_card_snapshot() {
     let t = TelegramTranslator::new();
     let out = OutMessage {
+        ctx: make_tenant_ctx("acme".into(), None, None),
         tenant: "acme".into(),
         platform: Platform::Telegram,
         chat_id: "c1".into(),
@@ -62,6 +66,7 @@ fn telegram_card_snapshot() {
 fn webchat_card_snapshot() {
     let t = WebChatTranslator::new();
     let out = OutMessage {
+        ctx: make_tenant_ctx("acme".into(), None, None),
         tenant: "acme".into(),
         platform: Platform::WebChat,
         chat_id: "c1".into(),

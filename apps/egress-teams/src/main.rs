@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use async_nats::jetstream::AckKind;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutKind, OutMessage, Platform};
+use gsm_core::{OutKind, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
@@ -123,7 +123,7 @@ async fn main() -> Result<()> {
 
         let send_start = Instant::now();
         let send_span = start_send_span(&ctx);
-        let result = deliver(&graph_tenant, &client_id, &client_secret, &out)
+        let result = deliver(&out.ctx, &graph_tenant, &client_id, &client_secret, &out)
             .instrument(send_span)
             .await;
         drop(permit);
@@ -184,7 +184,13 @@ async fn token(tenant: &str, client_id: &str, client_secret: &str) -> Result<Str
     Ok(v["access_token"].as_str().unwrap_or_default().to_string())
 }
 
-async fn deliver(tenant: &str, cid: &str, secret: &str, out: &OutMessage) -> Result<()> {
+async fn deliver(
+    ctx: &TenantCtx,
+    tenant: &str,
+    cid: &str,
+    secret: &str,
+    out: &OutMessage,
+) -> Result<()> {
     let tkn = token(tenant, cid, secret).await?;
     let client = reqwest::Client::new();
     let chat_id = &out.chat_id;
@@ -194,6 +200,7 @@ async fn deliver(tenant: &str, cid: &str, secret: &str, out: &OutMessage) -> Res
             let body = {
                 let translate_span = tracing::info_span!(
                     "translate.run",
+                    env = %ctx.env.as_str(),
                     tenant = %out.tenant,
                     platform = %out.platform.as_str(),
                     chat_id = %out.chat_id,
@@ -212,6 +219,15 @@ async fn deliver(tenant: &str, cid: &str, secret: &str, out: &OutMessage) -> Res
                 .message_card
                 .as_ref()
                 .ok_or_else(|| anyhow!("missing card"))?;
+            let card_span = tracing::info_span!(
+                "translate.run",
+                env = %ctx.env.as_str(),
+                tenant = %out.tenant,
+                platform = %out.platform.as_str(),
+                chat_id = %out.chat_id,
+                msg_id = %out.message_id()
+            );
+            let _guard = card_span.enter();
             let adaptive = to_teams_adaptive(card, out)?;
             let body = json!({
               "subject": null,

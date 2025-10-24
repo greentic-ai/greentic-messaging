@@ -113,10 +113,11 @@ fn card_to_adaptive(out: &OutMessage, card: MessageCard) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gsm_core::{CardBlock, MessageCard, Platform};
+    use gsm_core::{make_tenant_ctx, CardBlock, MessageCard, Platform};
 
     fn sample_out(kind: OutKind, card: Option<MessageCard>) -> OutMessage {
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::Webex,
             chat_id: "room-1".into(),

@@ -156,11 +156,23 @@ async fn receive(
                 );
             }
         }
-        if let Err(e) = state
-            .nats
-            .publish(subject.clone(), serde_json::to_vec(&env).unwrap().into())
-            .await
-        {
+        let invocation = match env.clone().into_invocation() {
+            Ok(envelope) => envelope,
+            Err(err) => {
+                tracing::error!(error = %err, "failed to build invocation envelope");
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        };
+
+        let payload = match serde_json::to_vec(&invocation) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                tracing::error!(error = %err, "failed to serialise invocation");
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        };
+
+        if let Err(e) = state.nats.publish(subject.clone(), payload.into()).await {
             tracing::error!("publish failed on {subject}: {e}");
             if let Err(dlq_err) = state
                 .dlq
@@ -174,7 +186,7 @@ async fn receive(
                         message: e.to_string(),
                         stage: None,
                     },
-                    &env,
+                    &invocation,
                 )
                 .await
             {

@@ -88,10 +88,11 @@ pub mod webex;
 ///
 /// ```
 /// use gsm_translator::{TelegramTranslator, Translator};
-/// use gsm_core::{OutMessage, OutKind, Platform};
+/// use gsm_core::{make_tenant_ctx, OutMessage, OutKind, Platform};
 /// use serde_json::json;
 ///
 /// let mut message = OutMessage {
+///     ctx: make_tenant_ctx("acme".into(), None, None),
 ///     tenant: "acme".into(),
 ///     platform: Platform::Telegram,
 ///     chat_id: "chat-1".into(),
@@ -218,10 +219,11 @@ impl WebChatTranslator {
 ///
 /// ```
 /// use gsm_translator::{WebChatTranslator, Translator};
-/// use gsm_core::{OutMessage, OutKind, Platform};
+/// use gsm_core::{make_tenant_ctx, OutMessage, OutKind, Platform};
 /// use serde_json::json;
 ///
 /// let mut message = OutMessage {
+///     ctx: make_tenant_ctx("acme".into(), None, None),
 ///     tenant: "acme".into(),
 ///     platform: Platform::WebChat,
 ///     chat_id: "thread-42".into(),
@@ -289,7 +291,9 @@ impl Translator for WebexTranslator {
 mod tests {
     use super::*;
     use crate::teams::to_teams_adaptive;
-    use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform};
+    use gsm_core::{
+        make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+    };
     use security::jwt::JwtSigner;
     use std::sync::{Mutex, OnceLock};
 
@@ -300,6 +304,7 @@ mod tests {
 
     fn sample_out_message(kind: OutKind) -> OutMessage {
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::Telegram,
             chat_id: "chat-1".into(),

@@ -50,7 +50,9 @@ fn subjects_helpers_ok() {
 
 #[test]
 fn out_text_and_card_validate() {
+    let ctx = make_tenant_ctx("acme".into(), None, None);
     let mut out = OutMessage {
+        ctx: ctx.clone(),
         tenant: "acme".into(),
         platform: Platform::Teams,
         chat_id: "chat-1".into(),
@@ -73,4 +75,71 @@ fn out_text_and_card_validate() {
         actions: vec![],
     });
     assert!(validate_out(&out).is_ok());
+}
+
+#[test]
+fn current_env_defaults_to_dev() {
+    let prev = std::env::var("GREENTIC_ENV").ok();
+    std::env::remove_var("GREENTIC_ENV");
+    let env = current_env();
+    assert_eq!(env.as_str(), "dev");
+    if let Some(prev) = prev {
+        std::env::set_var("GREENTIC_ENV", prev);
+    }
+}
+
+#[test]
+fn provider_key_hash_matches() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let key_a = ProviderKey {
+        platform: Platform::Teams,
+        env: EnvId::from("prod"),
+        tenant: TenantId::from("acme"),
+        team: Some(TeamId::from("alpha")),
+    };
+    let key_b = ProviderKey {
+        platform: Platform::Teams,
+        env: EnvId::from("prod"),
+        tenant: TenantId::from("acme"),
+        team: Some(TeamId::from("alpha")),
+    };
+    assert_eq!(key_a, key_b);
+
+    let mut hasher_a = DefaultHasher::new();
+    key_a.hash(&mut hasher_a);
+    let mut hasher_b = DefaultHasher::new();
+    key_b.hash(&mut hasher_b);
+    assert_eq!(hasher_a.finish(), hasher_b.finish());
+
+    let key_c = ProviderKey {
+        team: Some(TeamId::from("beta")),
+        ..key_a.clone()
+    };
+    assert_ne!(key_a, key_c);
+}
+
+#[test]
+fn messaging_credentials_path_includes_env() {
+    let prev = std::env::var("GREENTIC_ENV").ok();
+    std::env::set_var("GREENTIC_ENV", "test");
+
+    let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), Some("user-9".into()));
+    let secret = messaging_credentials("telegram", &ctx);
+    let rendered = secret.0.clone();
+    assert!(
+        rendered.contains("messaging"),
+        "path missing messaging segment: {}",
+        rendered
+    );
+    assert!(rendered.contains("/test/"));
+    assert!(rendered.contains("/acme/"));
+    assert!(rendered.contains("/team-1/"));
+
+    if let Some(prev) = prev {
+        std::env::set_var("GREENTIC_ENV", prev);
+    } else {
+        std::env::remove_var("GREENTIC_ENV");
+    }
 }

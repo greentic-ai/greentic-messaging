@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use async_nats::jetstream::AckKind;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutKind, OutMessage, Platform};
+use gsm_core::{OutKind, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
@@ -175,6 +175,7 @@ async fn dispatch_message(http: &reqwest::Client, cfg: &AppConfig, out: &OutMess
     let decision = {
         let translate_span = tracing::info_span!(
             "translate.run",
+            env = %out.ctx.env.as_str(),
             tenant = %out.tenant,
             platform = %out.platform.as_str(),
             chat_id = %chat_id,
@@ -198,8 +199,10 @@ async fn dispatch_message(http: &reqwest::Client, cfg: &AppConfig, out: &OutMess
     };
 
     match decision {
-        Dispatch::Text { text } => send_text(http, cfg, &chat_id, &text).await,
-        Dispatch::Fallback { text } => send_card_fallback(http, cfg, out, &chat_id, &text).await,
+        Dispatch::Text { text } => send_text(http, cfg, &out.ctx, &chat_id, &text).await,
+        Dispatch::Fallback { text } => {
+            send_card_fallback(http, cfg, &out.ctx, out, &chat_id, &text).await
+        }
     }
 }
 
@@ -217,6 +220,7 @@ fn within_session_window(out: &OutMessage) -> bool {
 async fn send_card_fallback(
     http: &reqwest::Client,
     cfg: &AppConfig,
+    ctx: &TenantCtx,
     out: &OutMessage,
     chat_id: &str,
     text: &str,
@@ -235,7 +239,7 @@ async fn send_card_fallback(
     let fallback_url = secure_action_url(out, "fallback", &fallback_raw);
     vars.push(fallback_url.as_str());
 
-    match send_template(http, cfg, chat_id, vars.as_slice()).await {
+    match send_template(http, cfg, ctx, chat_id, vars.as_slice()).await {
         Ok(()) => Ok(()),
         Err(e) => {
             tracing::warn!("template send failed, falling back to text: {e}");
@@ -244,12 +248,18 @@ async fn send_card_fallback(
             } else {
                 format!("{} — {}", text, fallback_url)
             };
-            send_text(http, cfg, chat_id, &fallback_text).await
+            send_text(http, cfg, ctx, chat_id, &fallback_text).await
         }
     }
 }
 
-async fn send_text(http: &reqwest::Client, cfg: &AppConfig, to: &str, body: &str) -> Result<()> {
+async fn send_text(
+    http: &reqwest::Client,
+    cfg: &AppConfig,
+    ctx: &TenantCtx,
+    to: &str,
+    body: &str,
+) -> Result<()> {
     let url = format!(
         "{}/v19.0/{}/messages",
         cfg.api_base.trim_end_matches('/'),
@@ -270,7 +280,13 @@ async fn send_text(http: &reqwest::Client, cfg: &AppConfig, to: &str, body: &str
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        tracing::warn!("wa text err: {} {}", status, text);
+        tracing::warn!(
+            env = %ctx.env.as_str(),
+            tenant = %ctx.tenant.as_str(),
+            "wa text err: {} {}",
+            status,
+            text
+        );
     }
     Ok(())
 }
@@ -278,6 +294,7 @@ async fn send_text(http: &reqwest::Client, cfg: &AppConfig, to: &str, body: &str
 async fn send_template(
     http: &reqwest::Client,
     cfg: &AppConfig,
+    ctx: &TenantCtx,
     to: &str,
     variables: &[&str],
 ) -> Result<()> {
@@ -314,7 +331,13 @@ async fn send_template(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!("wa template err: {} {}", status, text));
+        return Err(anyhow!(
+            "wa template err (env={}, tenant={}) {} {}",
+            ctx.env.as_str(),
+            ctx.tenant.as_str(),
+            status,
+            text
+        ));
     }
     Ok(())
 }
@@ -322,6 +345,7 @@ async fn send_template(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gsm_core::make_tenant_ctx;
 
     fn sample_message(timestamp_offset_hours: i64) -> OutMessage {
         let last = OffsetDateTime::now_utc() - Duration::hours(timestamp_offset_hours);
@@ -333,6 +357,7 @@ mod tests {
                 .unwrap()),
         );
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::WhatsApp,
             chat_id: "12345".into(),

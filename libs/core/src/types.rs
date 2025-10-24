@@ -1,4 +1,9 @@
+use crate::context::make_tenant_ctx;
+use crate::prelude::TenantCtx;
+use greentic_types::safe_json;
+use greentic_types::{InvocationEnvelope, NodeError, NodeResult};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Supported messaging platforms (kept small and stable).
@@ -9,7 +14,7 @@ use std::collections::BTreeMap;
 /// let p = Platform::Telegram;
 /// assert_eq!(p.as_str(), "telegram");
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     Teams,
@@ -68,12 +73,73 @@ pub struct MessageEnvelope {
     pub context: BTreeMap<String, serde_json::Value>, // headers/extra/raw pointers
 }
 
+impl MessageEnvelope {
+    /// Converts the message envelope into the canonical invocation envelope.
+    pub fn into_invocation(self) -> NodeResult<InvocationEnvelope> {
+        let ctx = make_tenant_ctx(self.tenant.clone(), None, Some(self.user_id.clone()));
+        let payload = safe_json(&self)?;
+        let metadata = safe_json(&self.context)?;
+        Ok(InvocationEnvelope {
+            ctx,
+            flow_id: self.platform.as_str().to_string(),
+            node_id: None,
+            op: "on_message".to_string(),
+            payload,
+            metadata,
+        })
+    }
+}
+
+impl TryFrom<InvocationEnvelope> for MessageEnvelope {
+    type Error = NodeError;
+
+    fn try_from(inv: InvocationEnvelope) -> Result<Self, Self::Error> {
+        let InvocationEnvelope {
+            ctx,
+            flow_id: _,
+            node_id: _,
+            op: _,
+            payload,
+            metadata,
+        } = inv;
+
+        let mut env: MessageEnvelope = serde_json::from_value(payload).map_err(|err| {
+            NodeError::new(
+                "DESER_ENVELOPE",
+                "failed to deserialize invocation payload into MessageEnvelope",
+            )
+            .with_source(err)
+        })?;
+
+        if let Some(user) = ctx.user {
+            env.user_id = String::from(user);
+        }
+        env.tenant = ctx.tenant.as_str().to_string();
+
+        if !matches!(metadata, Value::Null) {
+            let context: BTreeMap<String, serde_json::Value> = serde_json::from_value(metadata)
+                .map_err(|err| {
+                    NodeError::new(
+                        "DESER_METADATA",
+                        "failed to deserialize invocation metadata into context",
+                    )
+                    .with_source(err)
+                })?;
+            env.context = context;
+        }
+
+        Ok(env)
+    }
+}
+
 /// What runner emits for egress workers.
 ///
 /// ```
 /// use gsm_core::{OutKind, OutMessage, Platform};
 ///
+/// let ctx = gsm_core::make_tenant_ctx("acme".into(), None, None);
 /// let out = OutMessage {
+///     ctx,
 ///     tenant: "acme".into(),
 ///     platform: Platform::Telegram,
 ///     chat_id: "chat-1".into(),
@@ -86,8 +152,9 @@ pub struct MessageEnvelope {
 ///
 /// assert_eq!(out.kind, OutKind::Text);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutMessage {
+    pub ctx: TenantCtx,
     pub tenant: String,
     pub platform: Platform, // usually same as incoming
     pub chat_id: String,

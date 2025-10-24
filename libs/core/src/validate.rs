@@ -47,9 +47,10 @@ pub fn validate_envelope(env: &MessageEnvelope) -> Result<()> {
 /// Validates an outbound [`OutMessage`] before it is sent to translators.
 ///
 /// ```
-/// use gsm_core::{validate_out, OutKind, OutMessage, Platform};
+/// use gsm_core::{make_tenant_ctx, validate_out, OutKind, OutMessage, Platform};
 ///
 /// let out = OutMessage {
+///     ctx: make_tenant_ctx("acme".into(), None, None),
 ///     tenant: "acme".into(),
 ///     platform: Platform::Telegram,
 ///     chat_id: "chat-1".into(),
@@ -132,7 +133,7 @@ pub fn validate_card(card: &MessageCard) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CardAction, Platform};
+    use crate::{make_tenant_ctx, CardAction, Platform};
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -152,6 +153,7 @@ mod tests {
 
     fn sample_out(kind: OutKind) -> OutMessage {
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::Telegram,
             chat_id: "chat-1".into(),

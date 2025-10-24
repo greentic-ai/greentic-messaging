@@ -22,7 +22,12 @@ use axum::{
     Json, Router,
 };
 use config::load_tenants;
-use gsm_core::*;
+use gsm_core::platforms::telegram::{creds::TelegramCreds, provision::ensure_provisioned};
+use gsm_core::prelude::{DefaultResolver, SecretsResolver};
+use gsm_core::{
+    in_subject, make_tenant_ctx, messaging_credentials, InvocationEnvelope, MessageEnvelope,
+    NodeError, NodeResult, Platform, Provider, ProviderKey, ProviderRegistry, TenantCtx,
+};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::IdKey as IdemKey;
 use gsm_ingress_common::{
@@ -44,15 +49,25 @@ use telegram_api::{HttpTelegramApi, TelegramApi, WebhookInfo};
 use time::OffsetDateTime;
 
 #[derive(Clone)]
+struct TelegramProvider {
+    creds: TelegramCreds,
+}
+
+impl Provider for TelegramProvider {}
+
+#[derive(Clone)]
 struct AppState {
     nats: Nats,
-    tenant: String,
-    secret_token: Option<String>,
     idem_guard: gsm_idempotency::IdempotencyGuard,
     dlq: DlqPublisher,
     tenants: Vec<config::Tenant>,
-    secrets: Arc<dyn SecretsManager>,
+    legacy_secrets: Arc<dyn SecretsManager>,
     telegram_api: Arc<dyn TelegramApi>,
+    registry: Arc<ProviderRegistry<TelegramProvider>>,
+    secrets: Arc<DefaultResolver>,
+    http_client: Arc<reqwest::Client>,
+    base_url: String,
+    api_base: String,
 }
 
 #[derive(Serialize)]
@@ -83,6 +98,13 @@ struct StatusResponse {
     desired_url: String,
     matches: bool,
     info: WebhookInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebhookPath {
+    tenant: String,
+    team: String,
+    secret: String,
 }
 
 fn error_response(
@@ -248,38 +270,54 @@ async fn main() -> Result<()> {
     init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
+    let default_tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let tenant_config_path = std::env::var("TENANT_CONFIG").ok();
-    let tenants = load_tenants(tenant_config_path.as_deref(), &tenant)?;
-    let secrets: Arc<dyn SecretsManager> = Arc::new(EnvSecretsManager::default());
-    let api_base = std::env::var("TELEGRAM_API_BASE").ok();
-    let http_client = Client::new();
-    let telegram_impl = HttpTelegramApi::new(http_client, api_base);
+    let tenants = load_tenants(tenant_config_path.as_deref(), &default_tenant)?;
+    let legacy_secrets: Arc<dyn SecretsManager> = Arc::new(EnvSecretsManager::default());
+
+    let api_base =
+        std::env::var("TELEGRAM_API_BASE").unwrap_or_else(|_| "https://api.telegram.org".into());
+    let public_base = std::env::var("TELEGRAM_WEBHOOK_BASE")
+        .or_else(|_| std::env::var("TELEGRAM_PUBLIC_WEBHOOK_BASE"))
+        .unwrap_or_else(|_| "http://localhost:8080".into());
+
+    let raw_http_client = Client::new();
+    let provisioning_client = Arc::new(raw_http_client.clone());
+    let telegram_impl = HttpTelegramApi::new(raw_http_client, Some(api_base.clone()));
     let telegram_api: Arc<dyn TelegramApi> = Arc::new(telegram_impl);
-    let outcomes =
-        reconcile_all_telegram_webhooks(&tenants, secrets.as_ref(), telegram_api.as_ref()).await;
-    let secret_token = outcomes
-        .iter()
-        .find(|o| o.tenant == tenant)
-        .and_then(|o| o.secret.clone())
-        .or_else(|| std::env::var("TELEGRAM_SECRET_TOKEN").ok());
+    let _outcomes =
+        reconcile_all_telegram_webhooks(&tenants, legacy_secrets.as_ref(), telegram_api.as_ref())
+            .await;
+
+    let secrets_resolver = Arc::new(
+        DefaultResolver::new()
+            .await
+            .map_err(|err| anyhow::anyhow!("failed to initialise secrets resolver: {err}"))?,
+    );
+    let registry = Arc::new(ProviderRegistry::new());
+
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
     let state = AppState {
         nats,
-        tenant: tenant.clone(),
-        secret_token,
         idem_guard,
         dlq,
         tenants: tenants.clone(),
-        secrets: Arc::clone(&secrets),
+        legacy_secrets: Arc::clone(&legacy_secrets),
         telegram_api: Arc::clone(&telegram_api),
+        registry,
+        secrets: Arc::clone(&secrets_resolver),
+        http_client: provisioning_client,
+        base_url: public_base,
+        api_base,
     };
 
     let mut app = Router::new()
-        .route("/telegram/webhook", post(handle_update))
-        .route("/telegram/webhook/{tenant}", post(handle_update_tenant))
+        .route(
+            "/ingress/telegram/:tenant/:team/:secret",
+            post(handle_update_scoped),
+        )
         .route("/admin/telegram/{tenant}/register", post(admin_register))
         .route(
             "/admin/telegram/{tenant}/deregister",
@@ -321,7 +359,7 @@ async fn admin_register(
 ) -> Result<Json<RegisterResponse>, (StatusCode, Json<ErrorResponse>)> {
     register_tenant_op(
         state.tenants.clone(),
-        Arc::clone(&state.secrets),
+        Arc::clone(&state.legacy_secrets),
         Arc::clone(&state.telegram_api),
         tenant_id,
     )
@@ -336,7 +374,7 @@ async fn admin_deregister(
 ) -> Result<Json<DeregisterResponse>, (StatusCode, Json<ErrorResponse>)> {
     deregister_tenant_op(
         state.tenants.clone(),
-        Arc::clone(&state.secrets),
+        Arc::clone(&state.legacy_secrets),
         Arc::clone(&state.telegram_api),
         tenant_id,
     )
@@ -351,7 +389,7 @@ async fn admin_status(
 ) -> Result<Json<StatusResponse>, (StatusCode, Json<ErrorResponse>)> {
     status_tenant_op(
         state.tenants.clone(),
-        Arc::clone(&state.secrets),
+        Arc::clone(&state.legacy_secrets),
         Arc::clone(&state.telegram_api),
         tenant_id,
     )
@@ -401,18 +439,11 @@ struct TelegramUser {
     username: Option<String>,
 }
 
-fn secret_token_valid(expected: &Option<String>, provided: Option<&str>) -> bool {
-    match expected {
-        Some(exp) => provided == Some(exp.as_str()),
-        None => true,
-    }
-}
-
 fn extract_message(update: &TelegramUpdate) -> Option<&TelegramMessage> {
     update.message.as_ref().or(update.edited_message.as_ref())
 }
 
-fn envelope_from_message(tenant: &str, msg: &TelegramMessage) -> MessageEnvelope {
+fn envelope_from_message(ctx: &TenantCtx, msg: &TelegramMessage) -> MessageEnvelope {
     let chat_id = msg.chat.id.to_string();
     let user_id = msg
         .from
@@ -430,7 +461,7 @@ fn envelope_from_message(tenant: &str, msg: &TelegramMessage) -> MessageEnvelope
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
 
     MessageEnvelope {
-        tenant: tenant.to_string(),
+        tenant: ctx.tenant.as_str().to_string(),
         platform: Platform::Telegram,
         chat_id: chat_id.clone(),
         user_id,
@@ -442,50 +473,56 @@ fn envelope_from_message(tenant: &str, msg: &TelegramMessage) -> MessageEnvelope
     }
 }
 
-async fn handle_update(
+async fn handle_update_scoped(
     State(state): State<AppState>,
+    Path(WebhookPath {
+        tenant,
+        team,
+        secret,
+    }): Path<WebhookPath>,
     request_id: Option<Extension<String>>,
-    headers: axum::http::HeaderMap,
     Json(payload): Json<Value>,
 ) -> axum::response::Response {
-    process_update(state, request_id.map(|Extension(id)| id), headers, payload).await
-}
-
-async fn handle_update_tenant(
-    State(state): State<AppState>,
-    Path(path_tenant): Path<String>,
-    request_id: Option<Extension<String>>,
-    headers: axum::http::HeaderMap,
-    Json(payload): Json<Value>,
-) -> axum::response::Response {
-    if path_tenant != state.tenant {
-        return axum::http::StatusCode::NOT_FOUND.into_response();
+    let team = normalize_team(&team);
+    let ctx = make_tenant_ctx(tenant.clone(), team.clone(), None);
+    match resolve_provider(&state, &ctx).await {
+        Ok(provider) => {
+            if provider.creds.webhook_secret != secret {
+                tracing::warn!(
+                    tenant = %tenant,
+                    team = team.as_deref().unwrap_or("default"),
+                    "telegram webhook secret mismatch"
+                );
+                axum::http::StatusCode::UNAUTHORIZED.into_response()
+            } else {
+                drop(provider);
+                process_update(state, ctx, request_id.map(|Extension(id)| id), payload).await
+            }
+        }
+        Err(err) => {
+            tracing::error!(
+                tenant = %tenant,
+                team = team.as_deref().unwrap_or("default"),
+                code = %node_error_code(&err),
+                message = %err,
+                "telegram provider resolution failed"
+            );
+            node_error_response(err)
+        }
     }
-    process_update(state, request_id.map(|Extension(id)| id), headers, payload).await
 }
 
 async fn process_update(
     state: AppState,
+    ctx: TenantCtx,
     request_id: Option<String>,
-    headers: axum::http::HeaderMap,
     payload: Value,
 ) -> axum::response::Response {
     tracing::info!(
         event = "telegram_webhook_request",
-        tenant = %state.tenant
+        tenant = %ctx.tenant.as_str(),
+        team = ctx.team.as_ref().map(|t| t.as_str()).unwrap_or("default"),
     );
-
-    let provided_token = headers
-        .get("X-Telegram-Bot-Api-Secret-Token")
-        .and_then(|v| v.to_str().ok());
-    if !secret_token_valid(&state.secret_token, provided_token) {
-        tracing::warn!(
-            tenant = %state.tenant,
-            event = "telegram_webhook_secret_mismatch",
-            "telegram secret token mismatch"
-        );
-        return axum::http::StatusCode::UNAUTHORIZED.into_response();
-    }
 
     let update: TelegramUpdate = match serde_json::from_value(payload.clone()) {
         Ok(u) => u,
@@ -496,7 +533,13 @@ async fn process_update(
     };
 
     if let Some(msg) = extract_message(&update).cloned() {
-        let env = envelope_from_message(&state.tenant, &msg);
+        let (env, invocation) = match invocation_from_message(&ctx, &msg) {
+            Ok(values) => values,
+            Err(err) => {
+                tracing::error!(error = %err, "failed to build invocation envelope");
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        };
         let span = start_ingress_span(&env);
         let _guard = span.enter();
         let id_key = IdemKey {
@@ -527,39 +570,144 @@ async fn process_update(
                 );
             }
         }
-        let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
-        if let Ok(bytes) = serde_json::to_vec(&env) {
-            if let Err(e) = state.nats.publish(subject.clone(), bytes.into()).await {
-                tracing::error!("publish failed: {e}");
-                if let Err(dlq_err) = state
-                    .dlq
-                    .publish(
-                        &state.tenant,
-                        env.platform.as_str(),
-                        &env.msg_id,
-                        1,
-                        DlqError {
-                            code: "E_PUBLISH".into(),
-                            message: e.to_string(),
-                            stage: None,
-                        },
-                        &env,
-                    )
-                    .await
-                {
-                    tracing::error!("failed to publish dlq entry: {dlq_err}");
-                }
+
+        let subject = in_subject(ctx.tenant.as_str(), env.platform.as_str(), &env.chat_id);
+        let payload = match serde_json::to_vec(&invocation) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                tracing::error!(error = %err, "failed to serialise invocation");
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            } else {
-                tracing::info!("published to {subject}");
-                record_ingress(&env);
             }
+        };
+
+        if let Err(e) = state.nats.publish(subject.clone(), payload.into()).await {
+            tracing::error!("publish failed: {e}");
+            if let Err(dlq_err) = state
+                .dlq
+                .publish(
+                    ctx.tenant.as_str(),
+                    env.platform.as_str(),
+                    &env.msg_id,
+                    1,
+                    DlqError {
+                        code: "E_PUBLISH".into(),
+                        message: e.to_string(),
+                        stage: None,
+                    },
+                    &invocation,
+                )
+                .await
+            {
+                tracing::error!("failed to publish dlq entry: {dlq_err}");
+            }
+            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        } else {
+            tracing::info!("published to {subject}");
+            record_ingress(&env);
         }
 
         return ack_response(request_id.as_ref());
     }
 
     axum::http::StatusCode::OK.into_response()
+}
+
+fn normalize_team(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn provider_key(ctx: &TenantCtx) -> ProviderKey {
+    ProviderKey {
+        platform: Platform::Telegram,
+        env: ctx.env.clone(),
+        tenant: ctx.tenant.clone(),
+        team: ctx.team.clone(),
+    }
+}
+
+async fn resolve_provider(state: &AppState, ctx: &TenantCtx) -> NodeResult<Arc<TelegramProvider>> {
+    let key = provider_key(ctx);
+    if let Some(existing) = state.registry.get(&key) {
+        return Ok(existing);
+    }
+
+    let path = messaging_credentials("telegram", ctx);
+    let mut creds = state
+        .secrets
+        .get_json::<TelegramCreds>(&path, ctx)
+        .await?
+        .ok_or_else(|| {
+            NodeError::new(
+                "missing_creds",
+                format!("No Telegram creds at {}", path.as_str()),
+            )
+        })?;
+
+    if !creds.webhook_set {
+        ensure_provisioned(
+            &state.http_client,
+            ctx,
+            &state.base_url,
+            &state.api_base,
+            state.secrets.as_ref(),
+        )
+        .await?;
+        creds.webhook_set = true;
+    }
+
+    let provider = Arc::new(TelegramProvider {
+        creds: creds.clone(),
+    });
+    state.registry.put(key, Arc::clone(&provider));
+    Ok(provider)
+}
+
+fn node_error_code(err: &NodeError) -> &str {
+    match err {
+        NodeError::Fail { code, .. } => code,
+    }
+}
+
+fn node_error_response(err: NodeError) -> axum::response::Response {
+    match err {
+        NodeError::Fail {
+            code,
+            message,
+            retryable,
+            ..
+        } => {
+            let status = if retryable {
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                axum::http::StatusCode::BAD_REQUEST
+            };
+            (
+                status,
+                Json(json!({
+                    "ok": false,
+                    "code": code,
+                    "message": message,
+                    "retryable": retryable,
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+fn invocation_from_message(
+    ctx: &TenantCtx,
+    msg: &TelegramMessage,
+) -> NodeResult<(MessageEnvelope, InvocationEnvelope)> {
+    let env = envelope_from_message(ctx, msg);
+    let mut invocation = env.clone().into_invocation()?;
+    invocation.ctx = ctx.clone();
+    Ok((env, invocation))
 }
 
 fn ack_response(request_id: Option<&String>) -> axum::response::Response {
@@ -614,7 +762,8 @@ mod tests {
     #[test]
     fn envelope_from_message_maps_fields() {
         let msg = sample_message();
-        let env = envelope_from_message("tenant", &msg);
+        let ctx = make_tenant_ctx("tenant".into(), None, None);
+        let env = envelope_from_message(&ctx, &msg);
         assert_eq!(env.tenant, "tenant");
         assert_eq!(env.chat_id, "123");
         assert_eq!(env.user_id, "99");
@@ -624,20 +773,26 @@ mod tests {
     }
 
     #[test]
-    fn envelope_includes_reply_to_message() {
-        let mut msg = sample_message();
-        msg.reply_to_message = Some(Box::new(ReplyMessageRef { message_id: 21 }));
-        let env = envelope_from_message("tenant", &msg);
-        assert_eq!(env.thread_id.as_deref(), Some("21"));
+    fn invocation_carries_tenant_context() {
+        std::env::set_var("GREENTIC_ENV", "test");
+        let msg = sample_message();
+        let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), Some("user-5".into()));
+        let (_, invocation) = invocation_from_message(&ctx, &msg).expect("invocation");
+        assert_eq!(invocation.ctx.env.as_str(), "test");
+        assert_eq!(invocation.ctx.tenant.as_str(), "acme");
+        assert_eq!(
+            invocation.ctx.team.as_ref().map(|t| t.as_str()),
+            Some("team-1")
+        );
     }
 
     #[test]
-    fn secret_token_validates_values() {
-        let expected = Some("secret".to_string());
-        assert!(secret_token_valid(&expected, Some("secret")));
-        assert!(!secret_token_valid(&expected, Some("wrong")));
-        assert!(!secret_token_valid(&expected, None));
-        assert!(secret_token_valid(&None, None));
+    fn envelope_includes_reply_to_message() {
+        let mut msg = sample_message();
+        msg.reply_to_message = Some(Box::new(ReplyMessageRef { message_id: 21 }));
+        let ctx = make_tenant_ctx("tenant".into(), None, None);
+        let env = envelope_from_message(&ctx, &msg);
+        assert_eq!(env.thread_id.as_deref(), Some("21"));
     }
 
     #[derive(Default)]

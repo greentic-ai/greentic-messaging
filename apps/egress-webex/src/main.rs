@@ -5,7 +5,7 @@ use async_nats::jetstream::{self, AckKind};
 use async_trait::async_trait;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutMessage, Platform};
+use gsm_core::{OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     bootstrap, context_from_out, record_egress_success, start_acquire_span, start_send_span,
@@ -144,7 +144,7 @@ async fn handle_message(
 
     let result = {
         let _guard = send_span.enter();
-        send_with_retries(sender, &out).await
+        send_with_retries(sender, &out.ctx, &out).await
     };
     drop(permit);
 
@@ -194,12 +194,13 @@ enum SendError {
 
 async fn send_with_retries(
     sender: &(dyn WebexSender + Send + Sync),
+    ctx: &TenantCtx,
     out: &OutMessage,
 ) -> Result<(), SendError> {
     let mut attempt = 0;
     loop {
         attempt += 1;
-        match sender.send(out).await {
+        match sender.send(ctx, out).await {
             Ok(()) => return Ok(()),
             Err(WebexError::RateLimited { retry_after, .. }) if attempt < MAX_ATTEMPTS => {
                 let delay = retry_after.unwrap_or_else(|| Duration::from_secs(1));
@@ -208,7 +209,12 @@ async fn send_with_retries(
             }
             Err(WebexError::Server { .. }) if attempt < MAX_ATTEMPTS => {
                 let delay = Duration::from_secs(attempt as u64);
-                warn!(attempt, "webex server error; retrying");
+                warn!(
+                    attempt,
+                    env = %ctx.env.as_str(),
+                    tenant = %ctx.tenant.as_str(),
+                    "webex server error; retrying"
+                );
                 sleep(delay).await;
             }
             Err(err) => return Err(SendError::Webex(err)),
@@ -221,7 +227,7 @@ mod tests {
     use super::*;
     use crate::client::WebexError;
     use gsm_backpressure::{LocalBackpressureLimiter, RateLimits};
-    use gsm_core::OutKind;
+    use gsm_core::{make_tenant_ctx, OutKind};
     use reqwest::StatusCode;
     use serde_json::Value;
     use std::{
@@ -250,7 +256,7 @@ mod tests {
 
     #[async_trait]
     impl WebexSender for MockSender {
-        async fn send(&self, _out: &OutMessage) -> Result<(), WebexError> {
+        async fn send(&self, _ctx: &TenantCtx, _out: &OutMessage) -> Result<(), WebexError> {
             let mut calls = self.calls.lock().await;
             *calls += 1;
             let mut responses = self.responses.lock().await;
@@ -323,6 +329,7 @@ mod tests {
         let mut meta = BTreeMap::new();
         meta.insert("source_msg_id".into(), Value::String("mid-1".into()));
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::Webex,
             chat_id: "room-42".into(),
@@ -347,7 +354,7 @@ mod tests {
         };
         let sender = MockSender::new(vec![Err(retry_err), Ok(())]);
         let out = sample_out();
-        send_with_retries(&sender, &out).await.unwrap();
+        send_with_retries(&sender, &out.ctx, &out).await.unwrap();
         assert_eq!(sender.call_count().await, 2);
     }
 

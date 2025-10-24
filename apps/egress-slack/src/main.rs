@@ -1,10 +1,10 @@
 //! Slack egress adapter that converts normalized messages into Slack API calls.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream::AckKind;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutMessage, Platform};
+use gsm_core::{OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
@@ -110,25 +110,22 @@ async fn main() -> Result<()> {
             let _guard = send_span.enter();
             for mut payload in payloads {
                 merge_channel_info(&mut payload, &out);
-                match http
-                    .post("https://slack.com/api/chat.postMessage")
-                    .bearer_auth(&bot_token)
-                    .json(&payload)
-                    .send()
-                    .await
-                {
-                    Ok(response) if response.status().is_success() => {
-                        tracing::debug!("slack message posted: {}", out.chat_id);
-                    }
-                    Ok(response) => {
-                        let status = response.status();
-                        let text = response.text().await.unwrap_or_default();
-                        tracing::warn!("slack api err {}: {}", status, text);
-                        had_error = true;
-                        last_error = Some(format!("HTTP {}: {}", status, text));
+                match post_message(&out.ctx, &http, &bot_token, &payload).await {
+                    Ok(()) => {
+                        tracing::debug!(
+                            env = %out.ctx.env.as_str(),
+                            tenant = %out.tenant,
+                            chat_id = %out.chat_id,
+                            "slack message posted"
+                        );
                     }
                     Err(error) => {
-                        tracing::warn!("slack http error: {error}");
+                        tracing::warn!(
+                            env = %out.ctx.env.as_str(),
+                            tenant = %out.tenant,
+                            chat_id = %out.chat_id,
+                            "slack send error: {error}"
+                        );
                         had_error = true;
                         last_error = Some(error.to_string());
                     }
@@ -180,14 +177,43 @@ fn merge_channel_info(payload: &mut Value, out: &OutMessage) {
     }
 }
 
+async fn post_message(
+    ctx: &TenantCtx,
+    http: &reqwest::Client,
+    token: &str,
+    payload: &Value,
+) -> Result<()> {
+    let response = http
+        .post("https://slack.com/api/chat.postMessage")
+        .bearer_auth(token)
+        .json(payload)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        Err(anyhow!(
+            "slack api error (env={}, tenant={}): {} {}",
+            ctx.env.as_str(),
+            ctx.tenant.as_str(),
+            status,
+            text
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gsm_core::{OutKind, OutMessage, Platform};
+    use gsm_core::{make_tenant_ctx, OutKind, OutMessage, Platform};
     use serde_json::json;
 
     fn sample_out(thread_id: Option<&str>) -> OutMessage {
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::Slack,
             chat_id: "C123".into(),

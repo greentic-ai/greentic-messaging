@@ -166,7 +166,15 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
                         );
                     }
                 }
-                match serde_json::to_vec(&message) {
+                let invocation = match message.clone().into_invocation() {
+                    Ok(env) => env,
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to build invocation envelope");
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                };
+
+                match serde_json::to_vec(&invocation) {
                     Ok(bytes) => {
                         if let Err(error) = state.nats.publish(subject.clone(), bytes.into()).await
                         {
@@ -183,7 +191,7 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
                                         message: error.to_string(),
                                         stage: None,
                                     },
-                                    &message,
+                                    &invocation,
                                 )
                                 .await
                             {

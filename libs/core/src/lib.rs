@@ -3,12 +3,26 @@
 //! This crate exposes the shared data structures exchanged between ingress, runner, and egress
 //! components. It also provides validation helpers and small utilities for subject naming and
 //! idempotency tracking.
+pub mod context;
 pub mod idempotency;
+pub mod ingress;
+pub mod platforms;
+pub mod prelude;
+pub mod provider;
+pub mod registry;
+pub mod secrets_paths;
 pub mod subjects;
 pub mod types;
 pub mod validate;
 
+pub use context::*;
 pub use idempotency::*;
+pub use ingress::*;
+pub use platforms::*;
+pub use prelude::*;
+pub use provider::*;
+pub use registry::*;
+pub use secrets_paths::*;
 pub use subjects::*;
 pub use types::*;
 pub use validate::*;

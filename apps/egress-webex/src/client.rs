@@ -4,7 +4,7 @@ use reqwest::{header, StatusCode};
 use std::time::Duration;
 use thiserror::Error;
 
-use gsm_core::OutMessage;
+use gsm_core::{OutMessage, TenantCtx};
 use gsm_translator::webex::to_webex_payload;
 
 #[derive(Clone)]
@@ -103,12 +103,19 @@ pub enum WebexError {
 
 #[async_trait]
 pub trait WebexSender: Send + Sync {
-    async fn send(&self, out: &OutMessage) -> Result<(), WebexError>;
+    async fn send(&self, ctx: &TenantCtx, out: &OutMessage) -> Result<(), WebexError>;
 }
 
 #[async_trait]
 impl WebexSender for WebexClient {
-    async fn send(&self, out: &OutMessage) -> Result<(), WebexError> {
+    async fn send(&self, ctx: &TenantCtx, out: &OutMessage) -> Result<(), WebexError> {
+        tracing::debug!(
+            env = %ctx.env.as_str(),
+            tenant = %ctx.tenant.as_str(),
+            chat_id = %out.chat_id,
+            msg_id = %out.message_id(),
+            "sending webex message"
+        );
         self.send_message(out).await
     }
 }

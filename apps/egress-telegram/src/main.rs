@@ -11,7 +11,7 @@ use async_nats::jetstream::{
 };
 use futures::StreamExt;
 use gsm_backpressure::{BackpressureLimiter, HybridLimiter};
-use gsm_core::{OutMessage, Platform};
+use gsm_core::{OutMessage, Platform, TenantCtx};
 use gsm_egress_common::telemetry::{
     context_from_out, record_egress_success, start_acquire_span, start_send_span,
 };
@@ -146,7 +146,7 @@ async fn process_message(
         let _guard = send_span.enter();
         for payload in payloads.iter_mut() {
             enrich_payload(payload, &out);
-            match send_payload(client, api_base, bot_token, payload.clone()).await {
+            match send_payload(&out.ctx, client, api_base, bot_token, payload.clone()).await {
                 Ok(()) => {}
                 Err(SendError::Permanent(reason)) => {
                     tracing::warn!(
@@ -190,6 +190,7 @@ enum SendError {
 }
 
 async fn send_payload(
+    ctx: &TenantCtx,
     client: &reqwest::Client,
     api_base: &str,
     bot_token: &str,
@@ -209,13 +210,18 @@ async fn send_payload(
         let text = res.text().await.unwrap_or_default();
         if status.is_client_error() {
             return Err(SendError::Permanent(format!(
-                "telegram api err {}: {}",
-                status, text
+                "telegram api err {} (env={}, tenant={}): {}",
+                status,
+                ctx.env.as_str(),
+                ctx.tenant.as_str(),
+                text
             )));
         } else {
             return Err(SendError::Transient(anyhow!(
-                "telegram api err {}: {}",
+                "telegram api err {} (env={}, tenant={}): {}",
                 status,
+                ctx.env.as_str(),
+                ctx.tenant.as_str(),
                 text
             )));
         }
@@ -253,11 +259,12 @@ fn build_api_url(api_base: &str, bot_token: &str, method: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gsm_core::OutKind;
+    use gsm_core::{make_tenant_ctx, OutKind};
     use serde_json::json;
 
     fn sample_out(thread: Option<&str>) -> OutMessage {
         OutMessage {
+            ctx: make_tenant_ctx("acme".into(), None, None),
             tenant: "acme".into(),
             platform: Platform::Telegram,
             chat_id: "chat-1".into(),
