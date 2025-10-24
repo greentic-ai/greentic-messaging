@@ -25,24 +25,25 @@ cargo test -p gsm-runner --features chaos -- --ignored chaos
 
 ## Slack Integration
 
-1. Create a Slack app with a Bot User token (Scopes: `app_mentions:read`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `commands`). Enable Event Subscriptions and point it to `/slack/events`.
-2. Export your secrets:
+1. Create a Slack app with a Bot User token (Scopes: `app_mentions:read`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `commands`).
+2. Run the OAuth helper to install the app per tenant/team:
    ```bash
+   export SLACK_CLIENT_ID=...
+   export SLACK_CLIENT_SECRET=...
+   export SLACK_REDIRECT_URI=https://<public-host>/slack/callback
+   export SLACK_SCOPES="app_mentions:read,channels:history,chat:write"
    export SLACK_SIGNING_SECRET=...
-   export SLACK_BOT_TOKEN=xoxb-...
-   # Optional: only set if Slack events for your bot miss bot_id (ingress ignores blank-text messages for this user)
-   # export SLACK_BOT_USER_ID=U0ABCDEF
-   export TENANT=acme
-   export NATS_URL=nats://127.0.0.1:4222
+   cargo run -p gsm-slack-oauth
    ```
+   Visit `/slack/install?tenant=acme&team=support` to initiate an install. When Slack redirects back to `/slack/callback`, the handler stores the workspace credentials at `/{env}/messaging/slack/{tenant}/{team}/workspace/<team_id>.json` (the runtime defaults to `env=dev`).
 3. Start the services:
    ```bash
    make stack-up             # optional: start local nats/docker stack
-   make run-ingress-slack    # verifies URL challenge automatically
+   make run-ingress-slack
    make run-egress-slack
    FLOW=examples/flows/weather_slack.yaml PLATFORM=slack make run-runner
    ```
-4. Send a message to your Slack bot (or mention it in a channel); the runner emits a `MessageCard` and Slack egress renders it as Blocks. Replies with a `thread_ts` keep the conversation threaded.
+4. Point Slack Event Subscriptions to `/ingress/slack/{tenant}/{team}/events`. The ingress verifies the signing secret, emits an `InvocationEnvelope`, and publishes to NATS. Replies with a `thread_ts` keep the conversation threaded.
 
 ## Microsoft Teams Integration
 

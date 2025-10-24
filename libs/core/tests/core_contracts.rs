@@ -143,3 +143,14 @@ fn messaging_credentials_path_includes_env() {
         std::env::remove_var("GREENTIC_ENV");
     }
 }
+
+#[test]
+fn slack_workspace_secret_includes_scope() {
+    let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
+    let path = slack_workspace_secret(&ctx, "T123");
+    let rendered = path.0;
+    assert!(rendered.contains("/messaging/slack/"));
+    assert!(rendered.contains("/acme/"));
+    assert!(rendered.contains("/team-1/"));
+    assert!(rendered.ends_with("/workspace/T123.json"));
+}

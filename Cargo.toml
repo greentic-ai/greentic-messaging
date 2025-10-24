@@ -29,6 +29,7 @@ members = [
   "tools/nats-demo",
   "tools/mock-weather-tool",
   "apps/cli-dlq",
+  "apps/slack_oauth",
 ]
 resolver = "2"
 

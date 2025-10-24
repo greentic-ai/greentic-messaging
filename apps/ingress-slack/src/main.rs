@@ -7,13 +7,15 @@ use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Extension, Router,
 };
-use gsm_core::{in_subject, MessageEnvelope, Platform};
+use gsm_core::{
+    in_subject, make_tenant_ctx, InvocationEnvelope, MessageEnvelope, Platform, TenantCtx,
+};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
 use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
@@ -29,11 +31,16 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Clone)]
 struct AppState {
     nats: Nats,
-    tenant: String,
     signing_secret: String,
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
     bot_user_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackPath {
+    tenant: String,
+    team: String,
 }
 
 #[tokio::main]
@@ -42,7 +49,6 @@ async fn main() -> Result<()> {
     init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let signing_secret =
         std::env::var("SLACK_SIGNING_SECRET").expect("SLACK_SIGNING_SECRET required");
     let bot_user_id = std::env::var("SLACK_BOT_USER_ID").ok();
@@ -51,14 +57,13 @@ async fn main() -> Result<()> {
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
     let state = AppState {
         nats,
-        tenant,
         signing_secret,
         idem_guard,
         dlq,
         bot_user_id,
     };
 
-    let mut app = Router::new().route("/slack/events", post(handle));
+    let mut app = Router::new().route("/ingress/slack/:tenant/:team/events", post(handle));
 
     match ActionContext::from_env(&state.nats).await {
         Ok(ctx) => {
@@ -116,7 +121,12 @@ struct SlackEvent {
     subtype: Option<String>,
 }
 
-async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+async fn handle(
+    State(state): State<AppState>,
+    Path(path): Path<SlackPath>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     if let Some(challenge) = extract_challenge(&body) {
         return (StatusCode::OK, challenge).into_response();
     }
@@ -135,12 +145,13 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
     };
 
     if let Some(event) = envelope.event {
-        match map_slack_event(&state.tenant, state.bot_user_id.as_deref(), event) {
-            Some((subject, message)) => {
+        let ctx = tenant_ctx_from_path(&path);
+        match slack_event_invocation(&ctx, state.bot_user_id.as_deref(), event) {
+            Some((subject, message, invocation)) => {
                 let span = start_ingress_span(&message);
                 let _guard = span.enter();
                 let key = IdemKey {
-                    tenant: message.tenant.clone(),
+                    tenant: ctx.tenant.as_str().to_string(),
                     platform: message.platform.as_str().to_string(),
                     msg_id: message.msg_id.clone(),
                 };
@@ -166,49 +177,46 @@ async fn handle(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
                         );
                     }
                 }
-                let invocation = match message.clone().into_invocation() {
-                    Ok(env) => env,
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to build invocation envelope");
+
+                let payload = match serde_json::to_vec(&invocation) {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        tracing::error!("serialize invocation failed: {error}");
                         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                     }
                 };
 
-                match serde_json::to_vec(&invocation) {
-                    Ok(bytes) => {
-                        if let Err(error) = state.nats.publish(subject.clone(), bytes.into()).await
-                        {
-                            tracing::error!("publish failed on {subject}: {error}");
-                            if let Err(dlq_err) = state
-                                .dlq
-                                .publish(
-                                    &state.tenant,
-                                    message.platform.as_str(),
-                                    &message.msg_id,
-                                    1,
-                                    DlqError {
-                                        code: "E_PUBLISH".into(),
-                                        message: error.to_string(),
-                                        stage: None,
-                                    },
-                                    &invocation,
-                                )
-                                .await
-                            {
-                                tracing::error!("failed to publish dlq entry: {dlq_err}");
-                            }
-                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                        }
-                        tracing::info!("published slack event for {}", message.chat_id);
-                        record_ingress(&message);
+                if let Err(error) = state.nats.publish(subject.clone(), payload.into()).await {
+                    tracing::error!("publish failed on {subject}: {error}");
+                    if let Err(dlq_err) = state
+                        .dlq
+                        .publish(
+                            ctx.tenant.as_str(),
+                            message.platform.as_str(),
+                            &message.msg_id,
+                            1,
+                            DlqError {
+                                code: "E_PUBLISH".into(),
+                                message: error.to_string(),
+                                stage: None,
+                            },
+                            &invocation,
+                        )
+                        .await
+                    {
+                        tracing::error!("failed to publish dlq entry: {dlq_err}");
                     }
-                    Err(error) => {
-                        tracing::error!("serialize envelope failed: {error}");
-                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                    }
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
+
+                tracing::info!("published slack event for {}", message.chat_id);
+                record_ingress(&message);
+                return StatusCode::OK.into_response();
             }
-            None => return StatusCode::OK.into_response(),
+            None => {
+                tracing::debug!("ignored slack event");
+                return StatusCode::OK.into_response();
+            }
         }
     }
 
@@ -223,47 +231,25 @@ fn extract_challenge(body: &[u8]) -> Option<String> {
     None
 }
 
-/// Verifies Slack's signed request using the signing secret.
-///
-/// ```
-/// use axum::http::HeaderMap;
-/// use gsm_ingress_slack::verify_slack_sig;
-///
-/// let mut headers = HeaderMap::new();
-/// headers.insert("X-Slack-Request-Timestamp", "1".parse().unwrap());
-/// headers.insert("X-Slack-Signature", "v0=deadbeef".parse().unwrap());
-/// assert!(!verify_slack_sig("secret", &headers, b"{}"));
-/// ```
-pub fn verify_slack_sig(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool {
-    let timestamp = headers
-        .get("X-Slack-Request-Timestamp")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("");
-    let signature = headers
-        .get("X-Slack-Signature")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("");
-
-    if timestamp.is_empty() || signature.is_empty() {
-        return false;
-    }
-
-    let base_string = format!("v0:{timestamp}:{}", String::from_utf8_lossy(body));
-    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
-        Ok(mac) => mac,
-        Err(_) => return false,
-    };
-    mac.update(base_string.as_bytes());
-    let digest = mac.finalize().into_bytes();
-    let calc = format!("v0={}", hex_encode(digest.as_ref()));
-    subtle_constant_time_eq(&calc, signature)
+fn tenant_ctx_from_path(path: &SlackPath) -> TenantCtx {
+    let team = normalize_team(&path.team);
+    make_tenant_ctx(path.tenant.clone(), team, None)
 }
 
-fn map_slack_event(
-    tenant: &str,
+fn normalize_team(team: &str) -> Option<String> {
+    let trimmed = team.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn slack_event_invocation(
+    ctx: &TenantCtx,
     bot_user_id: Option<&str>,
     event: SlackEvent,
-) -> Option<(String, MessageEnvelope)> {
+) -> Option<(String, MessageEnvelope, InvocationEnvelope)> {
     let SlackEvent {
         r#type,
         text,
@@ -303,10 +289,11 @@ fn map_slack_event(
             return None;
         }
     }
+
     let timestamp = ts.unwrap_or_else(|| "0".into());
     let now = OffsetDateTime::now_utc();
     let envelope = MessageEnvelope {
-        tenant: tenant.to_string(),
+        tenant: ctx.tenant.as_str().to_string(),
         platform: Platform::Slack,
         chat_id: chat_id.clone(),
         user_id,
@@ -319,8 +306,57 @@ fn map_slack_event(
         context: Default::default(),
     };
 
-    let subject = in_subject(tenant, Platform::Slack.as_str(), &chat_id);
-    Some((subject, envelope))
+    let mut invocation = match envelope.clone().into_invocation() {
+        Ok(env) => env,
+        Err(err) => {
+            tracing::error!(error = %err, "failed to build slack invocation");
+            return None;
+        }
+    };
+    invocation.ctx = ctx.clone();
+
+    if !matches!(r#type.as_deref(), Some("message")) {
+        invocation.op = "on_event".into();
+    }
+
+    let subject = in_subject(ctx.tenant.as_str(), Platform::Slack.as_str(), &chat_id);
+    Some((subject, envelope, invocation))
+}
+
+/// Verifies Slack's signed request using the signing secret.
+///
+/// ```
+/// use axum::http::HeaderMap;
+/// use gsm_ingress_slack::verify_slack_sig;
+///
+/// let mut headers = HeaderMap::new();
+/// headers.insert("X-Slack-Request-Timestamp", "1".parse().unwrap());
+/// headers.insert("X-Slack-Signature", "v0=deadbeef".parse().unwrap());
+/// assert!(!verify_slack_sig("secret", &headers, b"{}"));
+/// ```
+pub fn verify_slack_sig(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool {
+    let timestamp = headers
+        .get("X-Slack-Request-Timestamp")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let signature = headers
+        .get("X-Slack-Signature")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+
+    if timestamp.is_empty() || signature.is_empty() {
+        return false;
+    }
+
+    let base_string = format!("v0:{timestamp}:{}", String::from_utf8_lossy(body));
+    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
+        Ok(mac) => mac,
+        Err(_) => return false,
+    };
+    mac.update(base_string.as_bytes());
+    let digest = mac.finalize().into_bytes();
+    let calc = format!("v0={}", hex_encode(digest.as_ref()));
+    subtle_constant_time_eq(&calc, signature)
 }
 
 fn subtle_constant_time_eq(a: &str, b: &str) -> bool {
@@ -376,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn map_slack_event_builds_envelope() {
+    fn slack_event_invocation_builds_envelope() {
         let event = SlackEvent {
             r#type: Some("message".into()),
             text: Some("hello".into()),
@@ -386,16 +422,19 @@ mod tests {
             thread_ts: Some("1700000000.000101".into()),
             ..Default::default()
         };
-        let (subject, envelope) = map_slack_event("acme", None, event).expect("event");
+        let ctx = make_tenant_ctx("acme".into(), Some("team".into()), None);
+        let (subject, envelope, invocation) =
+            slack_event_invocation(&ctx, None, event).expect("event");
         assert_eq!(subject, "greentic.msg.in.acme.slack.C456");
         assert_eq!(envelope.chat_id, "C456");
         assert_eq!(envelope.user_id, "U123");
         assert_eq!(envelope.msg_id, "slack:1700000000.000100");
         assert_eq!(envelope.thread_id.as_deref(), Some("1700000000.000101"));
+        assert_eq!(invocation.ctx.tenant.as_str(), "acme");
     }
 
     #[test]
-    fn map_slack_event_skips_bot_messages() {
+    fn slack_event_invocation_skips_bot_messages() {
         let bot_event = SlackEvent {
             r#type: Some("message".into()),
             text: Some("bot message".into()),
@@ -405,7 +444,8 @@ mod tests {
             bot_id: Some("B999".into()),
             ..Default::default()
         };
-        assert!(map_slack_event("acme", None, bot_event).is_none());
+        let ctx = make_tenant_ctx("acme".into(), None, None);
+        assert!(slack_event_invocation(&ctx, None, bot_event).is_none());
 
         let subtype_event = SlackEvent {
             r#type: Some("message".into()),
@@ -416,7 +456,7 @@ mod tests {
             subtype: Some("bot_message".into()),
             ..Default::default()
         };
-        assert!(map_slack_event("acme", None, subtype_event).is_none());
+        assert!(slack_event_invocation(&ctx, None, subtype_event).is_none());
 
         let bot_user_event = SlackEvent {
             r#type: Some("message".into()),
@@ -426,7 +466,7 @@ mod tests {
             ts: Some("1700000000.000400".into()),
             ..Default::default()
         };
-        assert!(map_slack_event("acme", Some("Ubot"), bot_user_event).is_none());
+        assert!(slack_event_invocation(&ctx, Some("Ubot"), bot_user_event).is_none());
     }
 
     #[test]
