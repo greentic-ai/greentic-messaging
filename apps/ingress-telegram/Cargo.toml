@@ -20,7 +20,7 @@ gsm-idempotency = { path = "../../libs/idempotency" }
 security = { path = "../../libs/security" }
 gsm-telemetry = { path = "../../libs/telemetry" }
 metrics = { workspace = true }
-serde_yaml = "0.9"
+serde_yaml_bw = "2.4.1"
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 rand = { workspace = true }

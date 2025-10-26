@@ -147,7 +147,7 @@ async fn run_one(
                 .await?;
         }
 
-        if let Some(next) = node.routes.get(0) {
+        if let Some(next) = node.routes.first() {
             if next == "end" {
                 break;
             }

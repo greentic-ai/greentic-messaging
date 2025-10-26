@@ -204,7 +204,7 @@ async fn renew_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
                     .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
                 let body = json!({ "expirationDateTime": new_exp });
                 let _ = reqwest::Client::new()
-                    .patch(&format!(
+                    .patch(format!(
                         "https://graph.microsoft.com/v1.0/subscriptions/{}",
                         id
                     ))
@@ -264,7 +264,7 @@ async fn delete_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
                 continue;
             }
             let _ = reqwest::Client::new()
-                .delete(&format!(
+                .delete(format!(
                     "https://graph.microsoft.com/v1.0/subscriptions/{}",
                     id
                 ))

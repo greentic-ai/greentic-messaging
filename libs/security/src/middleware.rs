@@ -67,8 +67,8 @@ where
 {
     type Rejection = Response;
 
-    fn from_request_parts<'a>(
-        parts: &'a mut Parts,
+    fn from_request_parts(
+        parts: &mut Parts,
         _state: &S,
     ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
         let ctx_opt = parts
@@ -232,12 +232,15 @@ mod tests {
 
     #[tokio::test]
     async fn action_success_and_single_use() {
-        let _guard = ENV_GUARD.lock().unwrap();
-        let signer = setup_signer();
-        let store: SharedNonceStore = Arc::new(MemoryStore::default());
-        let ctx = Arc::new(ActionContext::new(signer.clone(), store));
-        let router = build_router(ctx.clone());
-        let (_claims, token) = action_claims(&signer, Some("https://example.com/ok".into()));
+        let (router, token) = {
+            let _guard = ENV_GUARD.lock().unwrap();
+            let signer = setup_signer();
+            let store: SharedNonceStore = Arc::new(MemoryStore::default());
+            let ctx = Arc::new(ActionContext::new(signer.clone(), store));
+            let router = build_router(ctx.clone());
+            let (_claims, token) = action_claims(&signer, Some("https://example.com/ok".into()));
+            (router, token)
+        };
 
         let uri = format!("/a?action={}", urlencoding::encode(&token));
         let response = router
@@ -253,26 +256,30 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
+        let _guard = ENV_GUARD.lock().unwrap();
         teardown_env();
     }
 
     #[tokio::test]
     async fn action_expired_is_rejected() {
-        let _guard = ENV_GUARD.lock().unwrap();
-        let signer = setup_signer();
-        let store: SharedNonceStore = Arc::new(MemoryStore::default());
-        let ctx = Arc::new(ActionContext::new(signer.clone(), store));
-        let router = build_router(ctx);
-        let ttl = Duration::seconds(1);
-        let claims = ActionClaims::new(
-            "chat-2",
-            "tenant-2",
-            "demo.scope",
-            state_hash_parts("tenant-2", "teams", "chat", "msg"),
-            None,
-            ttl,
-        );
-        let token = signer.sign(&claims).expect("token");
+        let (router, token) = {
+            let _guard = ENV_GUARD.lock().unwrap();
+            let signer = setup_signer();
+            let store: SharedNonceStore = Arc::new(MemoryStore::default());
+            let ctx = Arc::new(ActionContext::new(signer.clone(), store));
+            let router = build_router(ctx);
+            let ttl = Duration::seconds(1);
+            let claims = ActionClaims::new(
+                "chat-2",
+                "tenant-2",
+                "demo.scope",
+                state_hash_parts("tenant-2", "teams", "chat", "msg"),
+                None,
+                ttl,
+            );
+            let token = signer.sign(&claims).expect("token");
+            (router, token)
+        };
         let uri = format!("/a?action={}", urlencoding::encode(&token));
         tokio::time::sleep(StdDuration::from_secs(2)).await;
         let response = router
@@ -280,17 +287,21 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
+        let _guard = ENV_GUARD.lock().unwrap();
         teardown_env();
     }
 
     #[tokio::test]
     async fn action_tamper_is_detected() {
-        let _guard = ENV_GUARD.lock().unwrap();
-        let signer = setup_signer();
-        let store: SharedNonceStore = Arc::new(MemoryStore::default());
-        let ctx = Arc::new(ActionContext::new(signer.clone(), store));
-        let router = build_router(ctx);
-        let (_claims, token) = action_claims(&signer, None);
+        let (router, token) = {
+            let _guard = ENV_GUARD.lock().unwrap();
+            let signer = setup_signer();
+            let store: SharedNonceStore = Arc::new(MemoryStore::default());
+            let ctx = Arc::new(ActionContext::new(signer.clone(), store));
+            let router = build_router(ctx);
+            let (_claims, token) = action_claims(&signer, None);
+            (router, token)
+        };
 
         let mut segments: Vec<String> = token.split('.').map(|s| s.to_string()).collect();
         assert_eq!(segments.len(), 3);
@@ -307,6 +318,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
+        let _guard = ENV_GUARD.lock().unwrap();
         teardown_env();
     }
 }

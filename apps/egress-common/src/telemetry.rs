@@ -61,5 +61,5 @@ pub fn record_egress_success(ctx: &MessageContext, latency_ms: f64) {
 }
 
 pub fn record_latency(ctx: &MessageContext, latency_ms: f64) {
-    record_histogram(EGRESS_LATENCY_HISTOGRAM, latency_ms as f64, &ctx.labels);
+    record_histogram(EGRESS_LATENCY_HISTOGRAM, latency_ms, &ctx.labels);
 }

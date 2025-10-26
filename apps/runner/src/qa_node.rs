@@ -33,12 +33,12 @@ pub async fn run_qa(
 
     if !missing.is_empty() {
         if let Some(text) = &env.text {
+            let number_re = Regex::new(r"(?P<n>\d+)").unwrap();
             for q in &cfg.questions {
                 if missing.contains(&q.id.as_str()) {
                     match q.answer_type.as_deref() {
                         Some("number") => {
-                            let re = Regex::new(r"(?P<n>\d+)").unwrap();
-                            if let Some(c) = re.captures(text) {
+                            if let Some(c) = number_re.captures(text) {
                                 if let Some(m) = c.name("n") {
                                     obj.insert(
                                         q.id.clone(),
@@ -114,4 +114,92 @@ async fn call_agent(agent: &AgentCfg, env: &MessageEnvelope) -> Result<serde_jso
     let resp = reqwest::Client::new().post(url).json(&body).send().await?;
     let v: serde_json::Value = resp.json().await.unwrap_or_else(|_| json!({}));
     Ok(v.get("extracted").cloned().unwrap_or_else(|| json!({})))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{QaNode, Question, Validate};
+    use handlebars::Handlebars;
+
+    fn handlebars() -> &'static Handlebars<'static> {
+        Box::leak(Box::new(Handlebars::new()))
+    }
+
+    fn envelope_with_text(text: Option<&str>) -> MessageEnvelope {
+        MessageEnvelope {
+            tenant: "acme".into(),
+            platform: gsm_core::Platform::Slack,
+            chat_id: "C1".into(),
+            user_id: "U1".into(),
+            thread_id: None,
+            msg_id: "msg-1".into(),
+            text: text.map(|t| t.to_string()),
+            timestamp: "2024-01-01T00:00:00Z".into(),
+            context: Default::default(),
+        }
+    }
+
+    fn number_question() -> Question {
+        Question {
+            id: "quantity".into(),
+            prompt: "How many?".into(),
+            answer_type: Some("number".into()),
+            max_words: None,
+            default: None,
+            validate: Some(Validate {
+                range: Some([1.0, 10.0]),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_qa_populates_defaults_and_text() {
+        let qa = QaNode {
+            welcome: None,
+            questions: vec![
+                Question {
+                    id: "name".into(),
+                    prompt: "Name".into(),
+                    answer_type: None,
+                    max_words: Some(3),
+                    default: Some(json!("guest")),
+                    validate: None,
+                },
+                number_question(),
+            ],
+            fallback_agent: None,
+        };
+
+        let env = envelope_with_text(Some("I need 4 adapters"));
+        let mut state = serde_json::Value::Null;
+        run_qa(&qa, &env, &mut state, handlebars()).await.unwrap();
+
+        let obj = state.as_object().expect("state object");
+        assert_eq!(obj.get("name"), Some(&json!("guest")));
+        assert_eq!(obj.get("quantity"), Some(&json!(4.0)));
+    }
+
+    #[tokio::test]
+    async fn run_qa_errors_when_max_words_exceeded() {
+        let qa = QaNode {
+            welcome: None,
+            questions: vec![Question {
+                id: "desc".into(),
+                prompt: "Describe".into(),
+                answer_type: None,
+                max_words: Some(1),
+                default: None,
+                validate: None,
+            }],
+            fallback_agent: None,
+        };
+
+        let env = envelope_with_text(None);
+        let mut state = json!({"desc": "too many words"});
+        let err = run_qa(&qa, &env, &mut state, handlebars())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("max_words"));
+    }
 }

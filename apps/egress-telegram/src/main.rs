@@ -1,6 +1,8 @@
 //! Telegram egress adapter that translates `OutMessage` payloads into Bot API requests.
 
-use anyhow::{anyhow, Context, Result};
+mod sender;
+
+use anyhow::{Context, Result};
 use async_nats::jetstream::{
     consumer::{
         push::{Config as PushConfig, Messages},
@@ -11,12 +13,15 @@ use async_nats::jetstream::{
 };
 use futures::StreamExt;
 use gsm_backpressure::{BackpressureLimiter, HybridLimiter};
-use gsm_core::{OutMessage, Platform, TenantCtx};
+use gsm_core::egress::{EgressSender, OutboundMessage};
+use gsm_core::prelude::{DefaultResolver, SecretsResolver};
+use gsm_core::{NodeError, OutMessage, Platform};
 use gsm_egress_common::telemetry::{
     context_from_out, record_egress_success, start_acquire_span, start_send_span,
 };
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use gsm_translator::{TelegramTranslator, Translator};
+use sender::TelegramSender;
 use serde_json::Value;
 use std::{sync::Arc, time::Instant};
 use tracing::Instrument;
@@ -29,13 +34,17 @@ async fn main() -> Result<()> {
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
-    let bot_token = std::env::var("TELEGRAM_BOT_TOKEN")
-        .expect("TELEGRAM_BOT_TOKEN environment variable required");
-
     let translator = TelegramTranslator::new();
     let client = reqwest::Client::new();
     let api_base =
         std::env::var("TELEGRAM_API_BASE").unwrap_or_else(|_| "https://api.telegram.org".into());
+
+    let resolver = Arc::new(DefaultResolver::new().await?);
+    let sender = Arc::new(TelegramSender::new(
+        client.clone(),
+        resolver,
+        api_base.clone(),
+    ));
 
     let nats = async_nats::connect(nats_url).await?;
     let js = async_nats::jetstream::new(nats.clone());
@@ -56,7 +65,7 @@ async fn main() -> Result<()> {
                 continue;
             }
         };
-        match process_message(&msg, &translator, &client, &api_base, &bot_token, &limiter).await {
+        match process_message(&msg, &translator, sender.as_ref(), &limiter).await {
             Ok(()) => {
                 if let Err(err) = msg.ack().await {
                     tracing::error!("ack failed: {err}");
@@ -81,13 +90,15 @@ async fn init_consumer(
 ) -> Result<(Messages, String, String)> {
     let subject = format!("greentic.msg.out.{}.{}.>", tenant, platform);
     let stream_name = format!("msg-out-{}-{}", tenant, platform);
-    let mut stream_cfg = StreamConfig::default();
-    stream_cfg.name = stream_name.clone();
-    stream_cfg.subjects = vec![subject.clone()];
-    stream_cfg.retention = RetentionPolicy::WorkQueue;
-    stream_cfg.max_messages = -1;
-    stream_cfg.max_messages_per_subject = -1;
-    stream_cfg.max_bytes = -1;
+    let stream_cfg = StreamConfig {
+        name: stream_name.clone(),
+        subjects: vec![subject.clone()],
+        retention: RetentionPolicy::WorkQueue,
+        max_messages: -1,
+        max_messages_per_subject: -1,
+        max_bytes: -1,
+        ..Default::default()
+    };
     let stream = js
         .get_or_create_stream(stream_cfg)
         .await
@@ -116,14 +127,15 @@ async fn init_consumer(
     Ok((messages, stream_name, consumer_name))
 }
 
-async fn process_message(
+async fn process_message<R>(
     msg: &async_nats::jetstream::Message,
     translator: &TelegramTranslator,
-    client: &reqwest::Client,
-    api_base: &str,
-    bot_token: &str,
+    sender: &TelegramSender<R>,
     limiter: &Arc<HybridLimiter>,
-) -> Result<()> {
+) -> Result<()>
+where
+    R: SecretsResolver + Send + Sync,
+{
     let out: OutMessage = serde_json::from_slice(msg.payload.as_ref())
         .context("decode OutMessage from JetStream payload")?;
     if out.platform != Platform::Telegram {
@@ -131,7 +143,7 @@ async fn process_message(
         return Ok(());
     }
     let ctx = context_from_out(&out);
-    let permit = limiter
+    let _permit = limiter
         .acquire(&out.tenant)
         .instrument(start_acquire_span(&ctx))
         .await
@@ -146,27 +158,39 @@ async fn process_message(
         let _guard = send_span.enter();
         for payload in payloads.iter_mut() {
             enrich_payload(payload, &out);
-            match send_payload(&out.ctx, client, api_base, bot_token, payload.clone()).await {
-                Ok(()) => {}
-                Err(SendError::Permanent(reason)) => {
-                    tracing::warn!(
-                        tenant = %out.tenant,
-                        chat_id = %out.chat_id,
-                        event = "telegram_egress_permanent_failure",
-                        %reason,
-                        "telegram permanent failure; acking message to avoid retries"
+            let outbound = OutboundMessage {
+                channel: Some(out.chat_id.clone()),
+                text: out.text.clone(),
+                payload: Some(payload.clone()),
+            };
+            match sender.send(&out.ctx, outbound).await {
+                Ok(_) => {}
+                Err(err) => {
+                    let retryable = matches!(
+                        &err,
+                        NodeError::Fail {
+                            retryable: true,
+                            ..
+                        }
                     );
-                    permanent_failure = Some(reason);
-                    break;
-                }
-                Err(SendError::Transient(err)) => {
-                    let err = err.context(format!("telegram api send chat={}", out.chat_id));
-                    return Err(err);
+                    let err_string = err.to_string();
+                    if retryable {
+                        return Err(err.into());
+                    } else {
+                        tracing::warn!(
+                            tenant = %out.tenant,
+                            chat_id = %out.chat_id,
+                            event = "telegram_egress_permanent_failure",
+                            error = %err_string,
+                            "telegram permanent failure; acking message to avoid retries"
+                        );
+                        permanent_failure = Some(err_string);
+                        break;
+                    }
                 }
             }
         }
     }
-    drop(permit);
     if permanent_failure.is_some() {
         return Ok(());
     }
@@ -182,78 +206,6 @@ fn enrich_payload(payload: &mut Value, out: &OutMessage) {
             obj.insert("reply_to_message_id".into(), thread.clone().into());
         }
     }
-}
-
-enum SendError {
-    Permanent(String),
-    Transient(anyhow::Error),
-}
-
-async fn send_payload(
-    ctx: &TenantCtx,
-    client: &reqwest::Client,
-    api_base: &str,
-    bot_token: &str,
-    mut payload: Value,
-) -> Result<(), SendError> {
-    let method = extract_method(&mut payload).map_err(SendError::Transient)?;
-    let url = build_api_url(api_base, bot_token, &method);
-
-    let res = client
-        .post(url)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|err| SendError::Transient(err.into()))?;
-    let status = res.status();
-    if !status.is_success() {
-        let text = res.text().await.unwrap_or_default();
-        if status.is_client_error() {
-            return Err(SendError::Permanent(format!(
-                "telegram api err {} (env={}, tenant={}): {}",
-                status,
-                ctx.env.as_str(),
-                ctx.tenant.as_str(),
-                text
-            )));
-        } else {
-            return Err(SendError::Transient(anyhow!(
-                "telegram api err {} (env={}, tenant={}): {}",
-                status,
-                ctx.env.as_str(),
-                ctx.tenant.as_str(),
-                text
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn extract_method(payload: &mut Value) -> Result<String> {
-    let obj = payload
-        .as_object_mut()
-        .context("telegram payload must be an object")?;
-    if let Some(method) = obj.remove("method") {
-        let method = method
-            .as_str()
-            .context("telegram payload method must be a string")?;
-        anyhow::ensure!(
-            !method.is_empty(),
-            "telegram payload method cannot be empty"
-        );
-        Ok(method.to_string())
-    } else {
-        Ok("sendMessage".into())
-    }
-}
-
-fn build_api_url(api_base: &str, bot_token: &str, method: &str) -> String {
-    format!(
-        "{}/bot{}/{}",
-        api_base.trim_end_matches('/'),
-        bot_token,
-        method
-    )
 }
 
 #[cfg(test)]
@@ -277,12 +229,6 @@ mod tests {
     }
 
     #[test]
-    fn build_api_url_trims_slash() {
-        let url = build_api_url("https://api.telegram.org/", "token-123", "sendPhoto");
-        assert_eq!(url, "https://api.telegram.org/bottoken-123/sendPhoto");
-    }
-
-    #[test]
     fn enrich_payload_sets_chat_and_reply() {
         let mut payload = json!({"text": "hello"});
         let out = sample_out(Some("42"));
@@ -301,21 +247,5 @@ mod tests {
             .as_object()
             .unwrap()
             .contains_key("reply_to_message_id"));
-    }
-
-    #[test]
-    fn extract_method_defaults_to_send_message() {
-        let mut payload = json!({"text": "hello"});
-        let method = extract_method(&mut payload).unwrap();
-        assert_eq!(method, "sendMessage");
-        assert!(!payload.as_object().unwrap().contains_key("method"));
-    }
-
-    #[test]
-    fn extract_method_uses_custom_method() {
-        let mut payload = json!({"method": "sendPhoto", "photo": "abc"});
-        let method = extract_method(&mut payload).unwrap();
-        assert_eq!(method, "sendPhoto");
-        assert!(!payload.as_object().unwrap().contains_key("method"));
     }
 }

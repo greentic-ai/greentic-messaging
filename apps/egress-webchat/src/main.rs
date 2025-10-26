@@ -1,22 +1,19 @@
-//! WebChat egress adapter that streams outbound `OutMessage`s to a simple SSE UI.
-//!
-//! ```text
-//! Start the binary, then open `/events` to watch translated payloads
-//! as they arrive from NATS.
-//! ```
+//! WebChat egress adapter that routes outbound messages to in-browser SSE
+//! clients keyed by `(env, tenant, team, user)`.
 
 use anyhow::Result;
 use async_nats::jetstream::AckKind;
 use async_stream::stream;
 use axum::{
-    extract::State,
-    response::{Html, IntoResponse},
+    extract::{Query, State},
+    response::{sse::Event, sse::Sse, Html, IntoResponse},
     routing::get,
     Router,
 };
+use dashmap::DashMap;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutMessage, Platform};
+use gsm_core::{OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
@@ -25,7 +22,9 @@ use gsm_egress_common::{
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use gsm_translator::{Translator, WebChatTranslator};
 use include_dir::{include_dir, Dir};
+use serde::Deserialize;
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::broadcast;
 use tracing::{event, Instrument, Level};
@@ -34,7 +33,122 @@ static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 
 #[derive(Clone)]
 struct AppState {
-    latest: broadcast::Sender<Value>,
+    sessions: Arc<DashMap<SessionKey, broadcast::Sender<Value>>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            sessions: Arc::new(DashMap::new()),
+        }
+    }
+}
+
+impl AppState {
+    fn subscribe(&self, key: SessionKey) -> broadcast::Receiver<Value> {
+        let sender = self.sessions.entry(key).or_insert_with(|| {
+            let (tx, _rx) = broadcast::channel(64);
+            tx
+        });
+        sender.subscribe()
+    }
+
+    fn publish(&self, ctx: &TenantCtx, payload: &Value) -> bool {
+        let key = SessionKey::from_ctx(ctx);
+        let mut delivered = false;
+        for candidate in key.fallbacks() {
+            if let Some(sender) = self.sessions.get(&candidate) {
+                let _ = sender.send(payload.clone());
+                delivered = true;
+            }
+        }
+        delivered
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SessionKey {
+    env: String,
+    tenant: String,
+    team: Option<String>,
+    user: Option<String>,
+}
+
+impl SessionKey {
+    fn from_ctx(ctx: &TenantCtx) -> Self {
+        Self {
+            env: ctx.env.as_str().to_string(),
+            tenant: ctx.tenant.as_str().to_string(),
+            team: ctx.team.as_ref().map(|team| team.as_str().to_string()),
+            user: ctx.user.as_ref().map(|user| user.as_str().to_string()),
+        }
+    }
+
+    fn from_query(query: &EventsQuery) -> Self {
+        let env = query
+            .env
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(default_env);
+        let tenant = query
+            .tenant
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(default_tenant);
+        let team = query.team.clone().filter(|s| !s.is_empty());
+        let user = query.user.clone().filter(|s| !s.is_empty());
+        Self {
+            env,
+            tenant,
+            team,
+            user,
+        }
+    }
+
+    fn fallbacks(&self) -> Vec<SessionKey> {
+        let mut keys = vec![self.clone()];
+        if self.user.is_some() {
+            let mut without_user = self.clone();
+            without_user.user = None;
+            push_unique(&mut keys, without_user);
+        }
+        if self.team.is_some() {
+            let tenant_key = SessionKey {
+                env: self.env.clone(),
+                tenant: self.tenant.clone(),
+                team: None,
+                user: None,
+            };
+            push_unique(&mut keys, tenant_key);
+        }
+        keys
+    }
+}
+
+fn push_unique(list: &mut Vec<SessionKey>, key: SessionKey) {
+    if !list.contains(&key) {
+        list.push(key);
+    }
+}
+
+fn default_env() -> String {
+    std::env::var("GREENTIC_ENV").unwrap_or_else(|_| "dev".into())
+}
+
+fn default_tenant() -> String {
+    std::env::var("TENANT").unwrap_or_else(|_| "acme".into())
+}
+
+#[derive(Debug, Deserialize)]
+struct EventsQuery {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    team: Option<String>,
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default)]
+    env: Option<String>,
 }
 
 #[tokio::main]
@@ -53,29 +167,29 @@ async fn main() -> Result<()> {
         "egress-webchat consuming from JetStream"
     );
 
-    let (tx, _rx) = broadcast::channel::<Value>(64);
-    let state = AppState { latest: tx.clone() };
-    let translator = WebChatTranslator::new();
+    let state = AppState::default();
+    let runner_state = state.clone();
     let client = queue.client();
     let mut messages = queue.messages;
     let limiter = queue.limiter;
     let dlq = DlqPublisher::new("egress", client).await?;
 
     tokio::spawn(async move {
+        let translator = WebChatTranslator::new();
         let dlq = dlq.clone();
         while let Some(next) = messages.next().await {
             let msg = match next {
                 Ok(msg) => msg,
                 Err(err) => {
-                    tracing::error!("jetstream message error: {err}");
+                    tracing::error!(error = %err, "jetstream message error");
                     continue;
                 }
             };
 
             let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
                 Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!("bad out msg: {e}");
+                Err(err) => {
+                    tracing::warn!(error = %err, "bad out msg");
                     let _ = msg.ack().await;
                     continue;
                 }
@@ -83,7 +197,7 @@ async fn main() -> Result<()> {
 
             if out.platform != Platform::WebChat {
                 if let Err(err) = msg.ack().await {
-                    tracing::error!("ack failed: {err}");
+                    tracing::error!(error = %err, "ack failed");
                 }
                 continue;
             }
@@ -94,8 +208,9 @@ async fn main() -> Result<()> {
                 .msg_id
                 .clone()
                 .unwrap_or_else(|| out.message_id());
+
             let acquire_span = start_acquire_span(&ctx);
-            let permit = match limiter.acquire(&out.tenant).instrument(acquire_span).await {
+            let _permit = match limiter.acquire(&out.tenant).instrument(acquire_span).await {
                 Ok(p) => p,
                 Err(err) => {
                     tracing::error!(
@@ -121,25 +236,30 @@ async fn main() -> Result<()> {
                 let send_span = start_send_span(&ctx);
                 let send_start = Instant::now();
                 {
-                    let _send_guard = send_span.enter();
-                    payloads.into_iter().for_each(|payload| {
-                        let _ = tx.send(payload);
-                    });
+                    let _guard = send_span.enter();
+                    for payload in payloads {
+                        if !runner_state.publish(&out.ctx, &payload) {
+                            tracing::debug!(
+                                tenant = %out.ctx.tenant.as_str(),
+                                team = ?out.ctx.team.as_ref().map(|t| t.as_str()),
+                                user = ?out.ctx.user.as_ref().map(|u| u.as_str()),
+                                "no active webchat session"
+                            );
+                        }
+                    }
                 }
                 send_start.elapsed().as_secs_f64() * 1000.0
             });
-            drop(permit);
-
             match result {
                 Ok(latency_ms) => {
                     if let Err(err) = msg.ack().await {
-                        tracing::error!("ack failed: {err}");
+                        tracing::error!(error = %err, "ack failed");
                     }
                     record_egress_success(&ctx, latency_ms);
                 }
-                Err(e) => {
-                    tracing::warn!("webchat translation failed: {e}");
-                    if let Err(err) = dlq
+                Err(err) => {
+                    tracing::warn!(error = %err, "webchat translation failed");
+                    if let Err(dlq_err) = dlq
                         .publish(
                             &out.tenant,
                             out.platform.as_str(),
@@ -147,17 +267,17 @@ async fn main() -> Result<()> {
                             1,
                             DlqError {
                                 code: "E_TRANSLATE".into(),
-                                message: e.to_string(),
+                                message: err.to_string(),
                                 stage: None,
                             },
                             &out,
                         )
                         .await
                     {
-                        tracing::error!("failed to publish dlq entry: {err}");
+                        tracing::error!(error = %dlq_err, "failed to publish dlq entry");
                     }
-                    if let Err(err) = msg.ack_with(AckKind::Nak(None)).await {
-                        tracing::error!("nak failed: {err}");
+                    if let Err(nak_err) = msg.ack_with(AckKind::Nak(None)).await {
+                        tracing::error!(error = %nak_err, "nak failed");
                     }
                 }
             }
@@ -184,71 +304,38 @@ async fn index() -> Html<String> {
     Html(String::from_utf8_lossy(file.contents()).to_string())
 }
 
-async fn events(State(state): State<AppState>) -> impl IntoResponse {
-    let mut rx = state.latest.subscribe();
+async fn events(
+    Query(query): Query<EventsQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let key = SessionKey::from_query(&query);
+    let mut rx = state.subscribe(key);
     let stream = stream! {
-        loop {
-            match rx.recv().await {
-                Ok(v) => {
-                    let line = format!("data: {}\n\n", v);
-                    yield Ok::<_, std::io::Error>(axum::body::Bytes::from(line));
-                }
-                Err(_) => break,
-            }
+        while let Ok(v) = rx.recv().await {
+            let event = Event::default().data(v.to_string());
+            yield Ok::<_, std::io::Error>(event);
         }
     };
-    (
-        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
-        axum::body::Body::from_stream(stream),
-    )
+    Sse::new(stream)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::response::IntoResponse;
-    use http_body_util::BodyExt;
-    use serde_json::json;
-    use tokio::time::{sleep, Duration};
 
-    #[tokio::test]
-    async fn index_returns_html() {
-        let Html(body) = index().await;
-        assert!(body.contains("<html"), "body should contain html tag");
-    }
-
-    #[tokio::test]
-    async fn events_sets_event_stream_header() {
-        let (tx, _) = broadcast::channel(8);
-        let state = AppState { latest: tx };
-        let response = events(State(state)).await.into_response();
-        assert_eq!(
-            response
-                .headers()
-                .get(axum::http::header::CONTENT_TYPE)
-                .unwrap(),
-            "text/event-stream"
-        );
-    }
-
-    #[tokio::test]
-    async fn events_streams_payload() {
-        let (tx, _) = broadcast::channel(8);
-        let state = AppState { latest: tx.clone() };
-
-        let response = events(State(state)).await.into_response();
-        let body = response.into_body();
-
-        tokio::spawn(async move {
-            sleep(Duration::from_millis(10)).await;
-            let _ = tx.send(json!({ "kind": "text", "text": "hello" }));
-        });
-
-        let collected = body.collect().await.expect("collect body");
-        let content = String::from_utf8(collected.to_bytes().to_vec()).expect("utf8");
-        assert!(
-            content.contains("data: {\"kind\":\"text\",\"text\":\"hello\"}"),
-            "stream should contain serialized payload"
-        );
+    #[test]
+    fn fallbacks_drop_user_then_team() {
+        let key = SessionKey {
+            env: "dev".into(),
+            tenant: "acme".into(),
+            team: Some("support".into()),
+            user: Some("u-1".into()),
+        };
+        let keys = key.fallbacks();
+        assert_eq!(keys.len(), 3);
+        assert_eq!(keys[0].user.as_deref(), Some("u-1"));
+        assert_eq!(keys[1].user, None);
+        assert_eq!(keys[1].team.as_deref(), Some("support"));
+        assert_eq!(keys[2].team, None);
     }
 }

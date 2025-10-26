@@ -109,8 +109,8 @@ mod tests {
             chat_id: "c1".into(),
             msg_id: "m1".into(),
         };
-        assert_eq!(s.seen_or_insert(&k), false);
-        assert_eq!(s.seen_or_insert(&k), true);
+        assert!(!s.seen_or_insert(&k));
+        assert!(s.seen_or_insert(&k));
     }
 
     #[test]

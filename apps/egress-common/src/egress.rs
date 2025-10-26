@@ -34,19 +34,6 @@ impl QueueConsumer {
 }
 
 /// Connect to NATS JetStream and prepare a queue-group consumer for the egress worker.
-///
-/// ```no_run
-/// use gsm_egress_common::bootstrap;
-///
-/// # fn main() -> anyhow::Result<()> {
-/// # let rt = tokio::runtime::Runtime::new()?;
-/// rt.block_on(async {
-///     let consumer = bootstrap("nats://127.0.0.1:4222", "acme", "webex").await?;
-///     println!("stream={} consumer={}", consumer.stream, consumer.consumer);
-///     anyhow::Ok(())
-/// })
-/// # }
-/// ```
 pub async fn bootstrap(nats_url: &str, tenant: &str, platform: &str) -> Result<QueueConsumer> {
     let client = async_nats::connect(nats_url).await?;
     let js = async_nats::jetstream::new(client.clone());
@@ -54,13 +41,15 @@ pub async fn bootstrap(nats_url: &str, tenant: &str, platform: &str) -> Result<Q
 
     let subject = format!("greentic.msg.out.{}.{}.>", tenant, platform);
     let stream_name = format!("msg-out-{}-{}", tenant, platform);
-    let mut stream_cfg = StreamConfig::default();
-    stream_cfg.name = stream_name.clone();
-    stream_cfg.subjects = vec![subject.clone()];
-    stream_cfg.retention = RetentionPolicy::WorkQueue;
-    stream_cfg.max_messages = -1;
-    stream_cfg.max_messages_per_subject = -1;
-    stream_cfg.max_bytes = -1;
+    let stream_cfg = StreamConfig {
+        name: stream_name.clone(),
+        subjects: vec![subject.clone()],
+        retention: RetentionPolicy::WorkQueue,
+        max_messages: -1,
+        max_messages_per_subject: -1,
+        max_bytes: -1,
+        ..Default::default()
+    };
 
     let stream = js
         .get_or_create_stream(stream_cfg)

@@ -69,3 +69,86 @@ fn parse_environment_from_resource(value: String) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn clear_env(keys: &[&str]) {
+        for key in keys {
+            std::env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn from_env_uses_defaults_when_unset() {
+        let _guard = env_lock().lock().unwrap();
+        clear_env(&[
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_PROTOCOL",
+            "OTEL_SERVICE_NAME",
+            "OTEL_SERVICE_VERSION",
+            "OTEL_RESOURCE_ATTRIBUTES",
+            "DEPLOYMENT_ENV",
+            "LOG_FORMAT",
+            "ENABLE_OTEL",
+        ]);
+
+        let cfg = TelemetryConfig::from_env("svc", "1.0.0");
+        assert_eq!(cfg.service_name, "svc");
+        assert_eq!(cfg.service_version, "1.0.0");
+        assert_eq!(cfg.environment, "dev");
+        assert!(!cfg.exporter_enabled());
+        assert!(cfg.json_logs);
+        assert!(matches!(cfg.protocol, TelemetryProtocol::Grpc));
+    }
+
+    #[test]
+    fn from_env_reads_protocol_and_flags() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "https://otel.local");
+        std::env::set_var("OTEL_EXPORTER_OTLP_PROTOCOL", "http");
+        std::env::set_var("OTEL_SERVICE_NAME", "svc-http");
+        std::env::set_var("OTEL_SERVICE_VERSION", "2.0.0");
+        std::env::set_var(
+            "OTEL_RESOURCE_ATTRIBUTES",
+            "foo=bar,deployment.environment=prod",
+        );
+        std::env::set_var("LOG_FORMAT", "text");
+        std::env::set_var("ENABLE_OTEL", "true");
+
+        let cfg = TelemetryConfig::from_env("svc", "1.0.0");
+        assert!(cfg.exporter_enabled());
+        assert_eq!(cfg.endpoint, "https://otel.local");
+        assert!(matches!(cfg.protocol, TelemetryProtocol::HttpProtobuf));
+        assert_eq!(cfg.environment, "prod");
+        assert!(!cfg.json_logs);
+        assert_eq!(cfg.service_name, "svc-http");
+        assert_eq!(cfg.service_version, "2.0.0");
+
+        clear_env(&[
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_PROTOCOL",
+            "OTEL_SERVICE_NAME",
+            "OTEL_SERVICE_VERSION",
+            "OTEL_RESOURCE_ATTRIBUTES",
+            "LOG_FORMAT",
+            "ENABLE_OTEL",
+        ]);
+    }
+
+    #[test]
+    fn parse_environment_handles_missing() {
+        assert_eq!(parse_environment_from_resource("foo=bar".into()), None);
+        assert_eq!(
+            parse_environment_from_resource("deployment.environment=stage".into()),
+            Some("stage".into())
+        );
+    }
+}

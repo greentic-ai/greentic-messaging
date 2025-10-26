@@ -15,6 +15,20 @@ cargo test
 cargo test -p gsm-runner --features chaos -- --ignored chaos
 ```
 
+## Test Coverage
+
+Automated coverage runs in CI through `cargo-tarpaulin`; every push and pull
+request uploads an LCOV report as a build artifact. To reproduce the numbers
+locally:
+
+```bash
+cargo install cargo-tarpaulin
+cargo tarpaulin --workspace --all-features --out Lcov --output-dir coverage
+```
+
+The generated `coverage/` directory contains the LCOV output that mirrors the
+artifact uploaded by GitHub Actions.
+
 ## Environment & Tenant Context
 
 - `GREENTIC_ENV` selects the environment scope for a deployment (`dev`, `test`, `prod`). When unset, the runtime defaults to `dev` so local flows continue to work without extra configuration.
@@ -22,6 +36,43 @@ cargo test -p gsm-runner --features chaos -- --ignored chaos
 - Export `TENANT` (and optionally `TEAM`) alongside channel-specific secrets when running locally so worker subjects resolve correctly.
 - Secrets resolvers and egress senders consume the shared context, making it safe to host multiple environments or teams within a single process.
 - Provider credentials live under `secret://{env}/{tenant}/{team|default}/messaging/{platform}-{team|default}-credentials.json`, so each environment stays isolated by design.
+
+## Sending Messages
+
+All egress adapters now share a common interface: pass a `TenantCtx` alongside an
+`OutboundMessage` and the sender selects the scoped credentials automatically.
+
+```rust
+use std::sync::Arc;
+
+use gsm_core::egress::{OutboundMessage, SendResult};
+use gsm_core::platforms::slack::sender::SlackSender;
+use gsm_core::prelude::{make_tenant_ctx, DefaultResolver};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // GREENTIC_ENV defaults to "dev" but can be overridden for other scopes.
+    std::env::set_var("GREENTIC_ENV", "dev");
+
+    let ctx = make_tenant_ctx("acme".into(), Some("support".into()), None);
+    let resolver = Arc::new(DefaultResolver::new().await?);
+    let sender = SlackSender::new(reqwest::Client::new(), resolver, None);
+
+    let msg = OutboundMessage {
+        channel: Some("C123".into()),
+        text: Some("Hello from Greentic".into()),
+        payload: None,
+    };
+
+    let SendResult { message_id, .. } = sender.send(&ctx, msg).await?;
+    println!("posted message id: {:?}", message_id);
+    Ok(())
+}
+```
+
+For testing, each egress binary exposes a `mock-http` Cargo feature that swaps
+remote API calls for in-memory mocks (`cargo test -p gsm-egress-slack --features
+mock-http`).
 
 ## Slack Integration
 
@@ -130,11 +181,15 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
 
 ## WebChat Integration
 
-1. WebChat ingress/egress uses a minimal HTTP JSON interface; no external configuration is required beyond a public endpoint.
-2. Export the usual runtime variables:
+1. Embed the widget script on any page and provide tenant context via data attributes:
+   ```html
+   <script src="https://<your-ingress>/widget.js" data-tenant="acme" data-team="support" data-env="dev"></script>
+   ```
+   The widget automatically includes these values in `channelData` when posting to the ingress.
+2. Export the runtime variables (egress still uses `TENANT` to select the outbound subject):
    ```bash
-   export TENANT=acme
    export NATS_URL=nats://127.0.0.1:4222
+   export TENANT=acme
    ```
 3. Launch the services:
    ```bash
@@ -142,28 +197,48 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    make run-egress-webchat
    FLOW=examples/flows/weather_slack.yaml PLATFORM=webchat make run-runner
    ```
-4. POST inbound messages to `/webhook` (JSON: `chat_id`, `user_id`, `text`) and open `http://localhost:8090` to view outbound updates streamed via Server-Sent Events.
+4. POST inbound messages to `/webhook` with camelCase keys:
+   ```json
+   {
+     "chatId": "chat-1",
+     "userId": "user-42",
+     "text": "Hello",
+     "channelData": {
+       "tenant": "acme",
+       "team": "support",
+       "env": "dev"
+     }
+   }
+   ```
+   Tenant is required; team is optional. Open `http://localhost:8090` to try the sample form that ships with the ingress.
 
 ## WhatsApp Integration
 
-1. Create a WhatsApp Business App, obtain the phone number ID, and generate a permanent user access token. Configure the webhook verify token and app secret.
-2. Export the required environment variables:
+1. Create a WhatsApp Business App, obtain the phone number ID, and generate a permanent user access token. Pick a webhook verify token and note the app secret.
+2. Store the credentials in your secrets backend (example uses `greentic-secrets` and the `dev` environment):
    ```bash
-   export WA_VERIFY_TOKEN=verify-token
-   export WA_APP_SECRET=meta-app-secret
-   export WA_PHONE_ID=1234567890
-   export WA_USER_TOKEN=EAA...
+   cat <<'JSON' | greentic-secrets put secret://dev/messaging/whatsapp/acme/credentials.json
+   {
+     "phone_id": "1234567890",
+     "wa_user_token": "EAA...",
+     "app_secret": "meta-app-secret",
+     "verify_token": "verify-token"
+   }
+   JSON
+   ```
+3. Export the runtime configuration for local egress (credentials are read from the secret; templates are optional overrides):
+   ```bash
    export WA_TEMPLATE_NAME=weather_update
    export WA_TEMPLATE_LANG=en
    export TENANT=acme
    export NATS_URL=nats://127.0.0.1:4222
    ```
-3. Run ingress and egress:
+4. Run ingress and egress (pass `--features mock-http` to the binaries if you want to stub outbound calls during testing):
    ```bash
    make run-ingress-whatsapp
    make run-egress-whatsapp
    ```
-4. Configure Meta to call `/whatsapp/webhook` with your verify token. Inbound messages publish to NATS and are delivered via egress; card responses automatically fall back to templates or deep links when the 24-hour session window has expired.
+5. Configure Meta to call `/ingress/whatsapp/{tenant}` with your verify token. Inbound messages publish to NATS and are delivered via egress; card responses automatically fall back to templates or deep links when the 24-hour session window has expired.
 
 ## Webex Integration
 

@@ -15,3 +15,34 @@ pub fn slack_workspace_secret(ctx: &TenantCtx, workspace_id: &str) -> SecretPath
         ctx.env.0, ctx.tenant.0, team, workspace_id
     ))
 }
+
+pub fn slack_workspace_index(ctx: &TenantCtx) -> SecretPath {
+    let team = ctx.team.as_ref().map(|t| t.0.as_str()).unwrap_or("default");
+    SecretPath(format!(
+        "/{}/messaging/slack/{}/{}/workspace/index.json",
+        ctx.env.0, ctx.tenant.0, team
+    ))
+}
+
+pub fn teams_conversations_secret(ctx: &TenantCtx) -> SecretPath {
+    let team = ctx.team.as_ref().map(|t| t.0.as_str()).unwrap_or("default");
+    SecretPath(format!(
+        "/{}/messaging/teams/{}/{}/conversations.json",
+        ctx.env.0, ctx.tenant.0, team
+    ))
+}
+
+pub fn webex_credentials(ctx: &TenantCtx) -> SecretPath {
+    let team = ctx.team.as_ref().map(|t| t.0.as_str()).unwrap_or("default");
+    SecretPath(format!(
+        "/{}/messaging/webex/{}/{}/credentials.json",
+        ctx.env.0, ctx.tenant.0, team
+    ))
+}
+
+pub fn whatsapp_credentials(ctx: &TenantCtx) -> SecretPath {
+    SecretPath(format!(
+        "/{}/messaging/whatsapp/{}/credentials.json",
+        ctx.env.0, ctx.tenant.0
+    ))
+}

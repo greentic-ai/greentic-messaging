@@ -65,10 +65,8 @@ fn slugify(input: &str) -> String {
     for ch in input.chars() {
         if ch.is_ascii_alphanumeric() {
             slug.push(ch.to_ascii_lowercase());
-        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
-            if !slug.ends_with('-') {
-                slug.push('-');
-            }
+        } else if (ch.is_whitespace() || ch == '-' || ch == '_') && !slug.ends_with('-') {
+            slug.push('-');
         }
     }
     let trimmed = slug.trim_matches('-');
@@ -175,6 +173,12 @@ impl TelegramTranslator {
     }
 }
 
+impl Default for TelegramTranslator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Translator for TelegramTranslator {
     fn to_platform(&self, out: &OutMessage) -> Result<Vec<Value>> {
         translate_with_span(out, "telegram", || match out.kind {
@@ -212,6 +216,12 @@ impl WebChatTranslator {
     /// Creates a new instance of the WebChat translator.
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for WebChatTranslator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -277,6 +287,12 @@ pub struct WebexTranslator;
 impl WebexTranslator {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for WebexTranslator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

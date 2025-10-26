@@ -273,7 +273,7 @@ async fn main() -> Result<()> {
     let default_tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let tenant_config_path = std::env::var("TENANT_CONFIG").ok();
     let tenants = load_tenants(tenant_config_path.as_deref(), &default_tenant)?;
-    let legacy_secrets: Arc<dyn SecretsManager> = Arc::new(EnvSecretsManager::default());
+    let legacy_secrets: Arc<dyn SecretsManager> = Arc::new(EnvSecretsManager);
 
     let api_base =
         std::env::var("TELEGRAM_API_BASE").unwrap_or_else(|_| "https://api.telegram.org".into());
@@ -455,7 +455,7 @@ fn envelope_from_message(ctx: &TenantCtx, msg: &TelegramMessage) -> MessageEnvel
         .as_ref()
         .map(|reply| reply.message_id.to_string())
         .or_else(|| msg.message_thread_id.map(|id| id.to_string()));
-    let ts = OffsetDateTime::from_unix_timestamp(msg.date as i64)
+    let ts = OffsetDateTime::from_unix_timestamp(msg.date)
         .unwrap_or_else(|_| OffsetDateTime::now_utc())
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
@@ -950,7 +950,7 @@ mod tests {
         assert!(result.ok);
         let deletes = api.delete_calls.lock().await;
         assert_eq!(deletes.len(), 1);
-        assert_eq!(deletes[0].1, true);
+        assert!(deletes[0].1);
     }
 
     #[tracing_test::traced_test]

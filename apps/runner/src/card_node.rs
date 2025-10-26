@@ -87,3 +87,80 @@ pub fn render_card(
         actions,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{CardAction, CardBlock, CardNode};
+    use gsm_core::{MessageEnvelope, Platform};
+
+    fn handlebars() -> &'static Handlebars<'static> {
+        let mut hbs = Handlebars::new();
+        hbs.register_escape_fn(handlebars::no_escape);
+        Box::leak(Box::new(hbs))
+    }
+
+    fn sample_envelope() -> MessageEnvelope {
+        MessageEnvelope {
+            tenant: "acme".into(),
+            platform: Platform::Slack,
+            chat_id: "C123".into(),
+            user_id: "user".into(),
+            thread_id: None,
+            msg_id: "msg-1".into(),
+            text: Some("Hello".into()),
+            timestamp: "2024-01-01T00:00:00Z".into(),
+            context: Default::default(),
+        }
+    }
+
+    #[test]
+    fn render_card_applies_templates() {
+        let card = CardNode {
+            title: Some("Ticket for {{envelope.chat_id}}".into()),
+            body: vec![
+                CardBlock::Text {
+                    text: "Score: {{state.score}}".into(),
+                    markdown: Some(true),
+                },
+                CardBlock::Fact {
+                    label: "Link".into(),
+                    value: "{{payload.url}}".into(),
+                },
+            ],
+            actions: vec![
+                CardAction::OpenUrl {
+                    title: "Open".into(),
+                    url: "{{payload.url}}".into(),
+                    jwt: Some(false),
+                },
+                CardAction::Postback {
+                    title: "Ack".into(),
+                    data: serde_json::json!({"done": true}),
+                },
+            ],
+        };
+
+        let env = sample_envelope();
+        let state = serde_json::json!({"score": 42});
+        let payload = serde_json::json!({"url": "https://example.com"});
+        let rendered = render_card(&card, handlebars(), &env, &state, &payload).unwrap();
+
+        assert_eq!(rendered.title.as_deref(), Some("Ticket for C123"));
+        assert_eq!(rendered.body.len(), 2);
+        assert_eq!(rendered.actions.len(), 2);
+
+        match &rendered.body[0] {
+            CoreBlock::Text { text, .. } => assert_eq!(text, "Score: 42"),
+            _ => panic!("expected text block"),
+        }
+        match &rendered.body[1] {
+            CoreBlock::Fact { value, .. } => assert_eq!(value, "https://example.com"),
+            _ => panic!("expected fact block"),
+        }
+        match &rendered.actions[0] {
+            CoreAction::OpenUrl { url, .. } => assert_eq!(url, "https://example.com"),
+            _ => panic!("expected open url action"),
+        }
+    }
+}

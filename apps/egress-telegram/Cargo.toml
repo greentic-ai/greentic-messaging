@@ -18,3 +18,8 @@ gsm-backpressure = { path = "../../libs/backpressure" }
 metrics = { workspace = true }
 gsm-telemetry = { path = "../../libs/telemetry" }
 gsm-egress-common = { path = "../egress-common" }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

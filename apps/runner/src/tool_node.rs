@@ -28,7 +28,7 @@ pub async fn run_tool(
     let base = cfg.delay_secs.unwrap_or(1);
 
     for attempt in 0..=retries {
-        let resp = tokio::time::timeout(Duration::from_secs(timeout as u64), async {
+        let resp = tokio::time::timeout(Duration::from_secs(timeout), async {
             reqwest::Client::new().post(&url).json(&input).send().await
         })
         .await;

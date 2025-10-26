@@ -14,6 +14,16 @@
 </head>
 <body>
   <h2>WebChat Egress</h2>
+  <section>
+    <form id="filter-form">
+      <label>Env <input id="env" name="env" /></label>
+      <label>Tenant <input id="tenant" name="tenant" /></label>
+      <label>Team <input id="team" name="team" placeholder="optional" /></label>
+      <label>User <input id="user" name="user" placeholder="optional" /></label>
+      <button type="submit">Connect</button>
+    </form>
+    <p class="fact">Listening for <span id="target"></span></p>
+  </section>
   <div id="log"></div>
 
   <script>
@@ -49,8 +59,38 @@
       }
       return box;
     }
+    const defaults = {
+      env: 'dev',
+      tenant: 'acme',
+    };
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('env')) params.set('env', defaults.env);
+    if (!params.has('tenant')) params.set('tenant', defaults.tenant);
+    const form = document.getElementById('filter-form');
+    ['env','tenant','team','user'].forEach(name => {
+      const input = document.getElementById(name);
+      if (input) {
+        input.value = params.get(name) || '';
+      }
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const next = new URLSearchParams();
+      ['env','tenant','team','user'].forEach(name => {
+        const value = document.getElementById(name).value.trim();
+        if (value) {
+          next.set(name, value);
+        }
+      });
+      window.location.search = next.toString();
+    });
+
+    const target = document.getElementById('target');
+    const summary = [params.get('env'), params.get('tenant'), params.get('team') || '-', params.get('user') || '-'].join(' / ');
+    target.textContent = summary;
+
     const log = document.getElementById('log');
-    const es = new EventSource('/events');
+    const es = new EventSource('/events?' + params.toString());
     es.onmessage = (e) => {
       const payload = JSON.parse(e.data);
       log.prepend(render(payload));

@@ -154,3 +154,46 @@ fn slack_workspace_secret_includes_scope() {
     assert!(rendered.contains("/team-1/"));
     assert!(rendered.ends_with("/workspace/T123.json"));
 }
+
+#[test]
+fn slack_workspace_index_includes_scope() {
+    let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
+    let path = crate::slack_workspace_index(&ctx);
+    let rendered = path.0;
+    assert!(rendered.contains("/messaging/slack/"));
+    assert!(rendered.contains("/acme/"));
+    assert!(rendered.contains("/team-1/"));
+    assert!(rendered.ends_with("/workspace/index.json"));
+}
+
+#[test]
+fn teams_conversations_secret_includes_scope() {
+    let ctx = make_tenant_ctx("acme".into(), Some("support".into()), None);
+    let path = crate::teams_conversations_secret(&ctx);
+    let rendered = path.0;
+    assert!(rendered.contains("/messaging/teams/"));
+    assert!(rendered.contains("/acme/"));
+    assert!(rendered.contains("/support/"));
+    assert!(rendered.ends_with("/conversations.json"));
+}
+
+#[test]
+fn webex_credentials_path_includes_scope() {
+    let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
+    let path = webex_credentials(&ctx);
+    let rendered = path.0;
+    assert!(rendered.contains("/messaging/webex/"));
+    assert!(rendered.contains("/acme/"));
+    assert!(rendered.contains("/team-1/"));
+    assert!(rendered.ends_with("/credentials.json"));
+}
+
+#[test]
+fn whatsapp_credentials_path_includes_scope() {
+    let ctx = make_tenant_ctx("acme".into(), None, None);
+    let path = whatsapp_credentials(&ctx);
+    let rendered = path.0;
+    assert!(rendered.contains("/messaging/whatsapp/"));
+    assert!(rendered.contains("/acme/"));
+    assert!(rendered.ends_with("/credentials.json"));
+}

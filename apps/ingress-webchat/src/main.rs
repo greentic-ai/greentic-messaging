@@ -26,6 +26,8 @@ use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use include_dir::{include_dir, Dir};
 use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
 static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
@@ -33,7 +35,6 @@ static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 #[derive(Clone)]
 struct AppState {
     nats: Nats,
-    tenant: String,
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
 }
@@ -44,13 +45,11 @@ async fn main() -> Result<()> {
     init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
     let state = AppState {
         nats,
-        tenant,
         idem_guard,
         dlq,
     };
@@ -90,14 +89,41 @@ async fn index() -> Html<String> {
     Html(String::from_utf8_lossy(file.contents()).to_string())
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ChannelData {
+    tenant: String,
+    #[serde(default)]
+    team: Option<String>,
+    #[serde(default)]
+    env: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct WebMsg {
     chat_id: String,
     user_id: String,
     text: String,
+    #[serde(default)]
+    channel_data: Option<ChannelData>,
 }
 
-fn envelope_from_webmsg(tenant: &str, msg: &WebMsg, now: OffsetDateTime) -> MessageEnvelope {
+fn envelope_from_webmsg(
+    tenant: &str,
+    team: Option<&str>,
+    msg: &WebMsg,
+    now: OffsetDateTime,
+) -> MessageEnvelope {
+    let mut context = BTreeMap::new();
+    if let Some(channel) = msg.channel_data.clone() {
+        if let Ok(value) = serde_json::to_value(&channel) {
+            context.insert("channel_data".into(), value);
+        }
+    }
+    if let Some(team_id) = team {
+        context.insert("team".into(), JsonValue::String(team_id.to_string()));
+    }
     MessageEnvelope {
         tenant: tenant.to_string(),
         platform: Platform::WebChat,
@@ -109,8 +135,28 @@ fn envelope_from_webmsg(tenant: &str, msg: &WebMsg, now: OffsetDateTime) -> Mess
         timestamp: now
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into()),
-        context: Default::default(),
+        context,
     }
+}
+
+fn extract_scope(msg: &WebMsg) -> Result<(String, Option<String>), &'static str> {
+    let channel = msg
+        .channel_data
+        .as_ref()
+        .ok_or("channelData.tenant is required")?;
+    let tenant = channel.tenant.trim();
+    if tenant.is_empty() {
+        return Err("channelData.tenant is required");
+    }
+    let team = channel.team.as_ref().and_then(|t| {
+        let trimmed = t.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    Ok((tenant.to_string(), team))
 }
 
 async fn webhook(
@@ -118,12 +164,23 @@ async fn webhook(
     State(state): State<AppState>,
     Json(msg): Json<WebMsg>,
 ) -> axum::response::Response {
+    let (tenant, team) = match extract_scope(&msg) {
+        Ok(scope) => scope,
+        Err(err) => {
+            tracing::warn!("{err}");
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(JsonValue::String(err.to_string())),
+            )
+                .into_response();
+        }
+    };
     let now = OffsetDateTime::now_utc();
-    let env = envelope_from_webmsg(&state.tenant, &msg, now);
+    let env = envelope_from_webmsg(&tenant, team.as_deref(), &msg, now);
     let span = start_ingress_span(&env);
     let _guard = span.enter();
 
-    let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
+    let subject = in_subject(&tenant, env.platform.as_str(), &env.chat_id);
     let key = IdemKey {
         tenant: env.tenant.clone(),
         platform: env.platform.as_str().to_string(),
@@ -153,13 +210,16 @@ async fn webhook(
         }
     }
 
-    let invocation = match env.clone().into_invocation() {
+    let mut invocation = match env.clone().into_invocation() {
         Ok(envelope) => envelope,
         Err(err) => {
             tracing::error!(error = %err, "failed to build invocation envelope");
             return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
+    if let Some(team) = team {
+        invocation.ctx.team = Some(TeamId::from(team));
+    }
 
     let payload = match serde_json::to_vec(&invocation) {
         Ok(bytes) => bytes,
@@ -174,7 +234,7 @@ async fn webhook(
         if let Err(dlq_err) = state
             .dlq
             .publish(
-                &state.tenant,
+                &env.tenant,
                 env.platform.as_str(),
                 &env.msg_id,
                 1,
@@ -208,14 +268,21 @@ mod tests {
             chat_id: "chat-1".into(),
             user_id: "user-2".into(),
             text: "hi".into(),
+            channel_data: Some(ChannelData {
+                tenant: "acme".into(),
+                team: None,
+                env: Some("dev".into()),
+            }),
         };
         let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
-        let env = envelope_from_webmsg("tenant", &msg, now);
-        assert_eq!(env.tenant, "tenant");
+        let (tenant, team) = extract_scope(&msg).expect("scope");
+        let env = envelope_from_webmsg(&tenant, team.as_deref(), &msg, now);
+        assert_eq!(env.tenant, "acme");
         assert_eq!(env.chat_id, "chat-1");
         assert_eq!(env.user_id, "user-2");
         assert_eq!(env.text.as_deref(), Some("hi"));
         assert!(env.msg_id.starts_with("web:"));
+        assert!(env.context.contains_key("channel_data"));
     }
 
     #[test]
@@ -224,9 +291,15 @@ mod tests {
             chat_id: "chat-1".into(),
             user_id: "user-2".into(),
             text: "hi".into(),
+            channel_data: Some(ChannelData {
+                tenant: "acme".into(),
+                team: Some("support".into()),
+                env: None,
+            }),
         };
         let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
-        let env = envelope_from_webmsg("tenant", &msg, now);
+        let (tenant, team) = extract_scope(&msg).expect("scope");
+        let env = envelope_from_webmsg(&tenant, team.as_deref(), &msg, now);
         assert_eq!(env.timestamp, "2023-11-14T22:13:20Z");
     }
 
@@ -236,11 +309,45 @@ mod tests {
             chat_id: "chat".into(),
             user_id: "user".into(),
             text: "hello".into(),
+            channel_data: Some(ChannelData {
+                tenant: "acme".into(),
+                team: Some("support".into()),
+                env: Some("dev".into()),
+            }),
         };
         let json = serde_json::to_string(&original).unwrap();
         let parsed: WebMsg = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.chat_id, "chat");
         assert_eq!(parsed.user_id, "user");
         assert_eq!(parsed.text, "hello");
+        assert_eq!(parsed.channel_data.unwrap().tenant, "acme");
+    }
+
+    #[test]
+    fn extract_scope_requires_tenant() {
+        let msg = WebMsg {
+            chat_id: "chat".into(),
+            user_id: "user".into(),
+            text: "hello".into(),
+            channel_data: None,
+        };
+        assert!(extract_scope(&msg).is_err());
+    }
+
+    #[test]
+    fn extract_scope_trims_team() {
+        let msg = WebMsg {
+            chat_id: "chat".into(),
+            user_id: "user".into(),
+            text: "hello".into(),
+            channel_data: Some(ChannelData {
+                tenant: " acme ".into(),
+                team: Some("  support  ".into()),
+                env: None,
+            }),
+        };
+        let (tenant, team) = extract_scope(&msg).expect("scope");
+        assert_eq!(tenant, "acme");
+        assert_eq!(team.as_deref(), Some("support"));
     }
 }

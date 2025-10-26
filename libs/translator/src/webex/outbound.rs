@@ -26,7 +26,7 @@ fn build_payload(out: &OutMessage) -> Result<Value> {
                 .message_card
                 .clone()
                 .ok_or_else(|| anyhow!("missing message card for card payload"))?;
-            let markdown = out.text.clone().unwrap_or_else(|| "".to_string());
+            let markdown = out.text.clone().unwrap_or_default();
             if !markdown.is_empty() {
                 map.insert("markdown".into(), Value::String(markdown));
             }

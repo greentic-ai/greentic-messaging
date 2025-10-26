@@ -1,21 +1,22 @@
-mod client;
-
 use anyhow::{anyhow, Result};
 use async_nats::jetstream::{self, AckKind};
 use async_trait::async_trait;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutMessage, Platform, TenantCtx};
+use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
+use gsm_core::platforms::webex::sender::WebexSender;
+use gsm_core::prelude::DefaultResolver;
+use gsm_core::NodeResult;
+use gsm_core::{NodeError, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     bootstrap, context_from_out, record_egress_success, start_acquire_span, start_send_span,
 };
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_translator::webex::to_webex_payload;
 use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 use tracing::{error, info, warn, Instrument};
-
-use crate::client::{WebexClient, WebexError, WebexSender};
 
 const MAX_ATTEMPTS: usize = 3;
 
@@ -26,7 +27,10 @@ async fn main() -> Result<()> {
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
-    let token = std::env::var("WEBEX_BOT_TOKEN").expect("WEBEX_BOT_TOKEN env var required");
+    #[cfg(feature = "mock-http")]
+    // Short-circuit outbound Webex traffic during tests.
+    let api_base = Some("mock://webex".into());
+    #[cfg(not(feature = "mock-http"))]
     let api_base = std::env::var("WEBEX_API_BASE").ok();
 
     let queue = bootstrap(&nats_url, &tenant, Platform::Webex.as_str()).await?;
@@ -34,7 +38,12 @@ async fn main() -> Result<()> {
 
     let dlq = Arc::new(DlqPublisher::new("egress", queue.client()).await?);
     let limiter = queue.limiter.clone();
-    let client = Arc::new(WebexClient::new(token, api_base)?);
+    let resolver = Arc::new(DefaultResolver::new().await?);
+    let sender = Arc::new(WebexSender::new(
+        reqwest::Client::new(),
+        resolver,
+        api_base.clone(),
+    ));
 
     let mut messages = queue.messages;
 
@@ -50,7 +59,7 @@ async fn main() -> Result<()> {
         if let Err(err) = handle_message(
             &tenant,
             limiter.as_ref(),
-            client.as_ref(),
+            sender.as_ref(),
             dlq.as_ref(),
             &msg,
         )
@@ -97,6 +106,7 @@ impl DlqSink for DlqPublisher {
 trait DeliveryMessage {
     fn payload(&self) -> &[u8];
     async fn ack(&self) -> Result<()>;
+    async fn ack_with(&self, kind: AckKind) -> Result<()>;
 }
 
 #[async_trait]
@@ -109,12 +119,17 @@ impl DeliveryMessage for jetstream::Message {
         self.ack().await.map_err(|err| anyhow!(err))?;
         Ok(())
     }
+
+    async fn ack_with(&self, kind: AckKind) -> Result<()> {
+        self.ack_with(kind).await.map_err(|err| anyhow!(err))?;
+        Ok(())
+    }
 }
 
 async fn handle_message(
     tenant: &str,
     limiter: &dyn BackpressureLimiter,
-    sender: &(dyn WebexSender + Send + Sync),
+    sender: &(dyn EgressSender + Send + Sync),
     dlq: &(dyn DlqSink + Send + Sync),
     msg: &(dyn DeliveryMessage + Send + Sync),
 ) -> Result<()> {
@@ -134,7 +149,7 @@ async fn handle_message(
 
     let ctx = context_from_out(&out);
     let acquire_span = start_acquire_span(&ctx);
-    let permit = limiter
+    let _permit = limiter
         .acquire(&out.tenant)
         .instrument(acquire_span)
         .await?;
@@ -142,82 +157,108 @@ async fn handle_message(
     let send_span = start_send_span(&ctx);
     let start_time = std::time::Instant::now();
 
+    let payload = match to_webex_payload(&out) {
+        Ok(payload) => payload,
+        Err(err) => {
+            warn!(error = %err, "webex payload translation failed");
+            msg.ack().await?;
+            return Ok(());
+        }
+    };
+
+    let outbound = OutboundMessage {
+        channel: Some(out.chat_id.clone()),
+        text: out.text.clone(),
+        payload: Some(payload),
+    };
+
     let result = {
         let _guard = send_span.enter();
-        send_with_retries(sender, &out.ctx, &out).await
+        send_with_retries(sender, &out.ctx, &outbound).await
     };
-    drop(permit);
-
     match result {
-        Ok(()) => {
+        Ok(send_result) => {
             msg.ack().await?;
             let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
             record_egress_success(&ctx, elapsed_ms);
-            info!(chat_id = %out.chat_id, "webex message sent");
+            info!(
+                chat_id = %out.chat_id,
+                message_id = ?send_result.message_id,
+                "webex message sent"
+            );
         }
-        Err(err) => {
-            error!(error = %err, "webex send failed");
-            let dlq_err = DlqError {
-                code: match &err {
-                    SendError::Webex(WebexError::RateLimited { .. }) => "E_RATE".into(),
-                    SendError::Webex(WebexError::Server { .. }) => "E_SERVER".into(),
-                    SendError::Webex(WebexError::Client { .. }) => "E_CLIENT".into(),
-                    SendError::Webex(WebexError::Serialization(_)) => "E_SERIAL".into(),
-                    SendError::Webex(WebexError::Transport(_)) => "E_TRANSPORT".into(),
-                    SendError::Other(_) => "E_UNKNOWN".into(),
-                },
-                message: err.to_string(),
-                stage: None,
-            };
-            dlq.publish_dlq(
-                tenant,
-                out.platform.as_str(),
-                &out.message_id(),
-                dlq_err,
-                &out,
-            )
-            .await?;
-            msg.ack().await?;
-        }
+        Err(err) => match err {
+            NodeError::Fail {
+                retryable: true, ..
+            } => {
+                warn!(
+                    tenant = tenant,
+                    chat_id = %out.chat_id,
+                    "webex retryable failure, nacking"
+                );
+                msg.ack_with(AckKind::Nak(None)).await?;
+            }
+            NodeError::Fail { code, message, .. } => {
+                error!(
+                    tenant = tenant,
+                    chat_id = %out.chat_id,
+                    code = %code,
+                    %message,
+                    "webex send failed"
+                );
+                let dlq_err = DlqError {
+                    code: code.clone(),
+                    message: message.clone(),
+                    stage: None,
+                };
+                dlq.publish_dlq(
+                    tenant,
+                    out.platform.as_str(),
+                    &out.message_id(),
+                    dlq_err,
+                    &out,
+                )
+                .await?;
+                msg.ack().await?;
+            }
+        },
     }
 
     Ok(())
 }
 
-#[derive(thiserror::Error, Debug)]
-enum SendError {
-    #[error("webex error: {0}")]
-    Webex(#[from] WebexError),
-    #[error("other error: {0}")]
-    Other(#[from] anyhow::Error),
-}
-
 async fn send_with_retries(
-    sender: &(dyn WebexSender + Send + Sync),
+    sender: &(dyn EgressSender + Send + Sync),
     ctx: &TenantCtx,
-    out: &OutMessage,
-) -> Result<(), SendError> {
+    msg: &OutboundMessage,
+) -> NodeResult<SendResult> {
     let mut attempt = 0;
     loop {
         attempt += 1;
-        match sender.send(ctx, out).await {
-            Ok(()) => return Ok(()),
-            Err(WebexError::RateLimited { retry_after, .. }) if attempt < MAX_ATTEMPTS => {
-                let delay = retry_after.unwrap_or_else(|| Duration::from_secs(1));
-                warn!(attempt, ?delay, "webex rate limited; retrying");
-                sleep(delay).await;
-            }
-            Err(WebexError::Server { .. }) if attempt < MAX_ATTEMPTS => {
-                let delay = Duration::from_secs(attempt as u64);
-                warn!(
-                    attempt,
-                    env = %ctx.env.as_str(),
-                    tenant = %ctx.tenant.as_str(),
-                    "webex server error; retrying"
+        match sender.send(ctx, msg.clone()).await {
+            Ok(result) => return Ok(result),
+            Err(err) => {
+                let retryable = matches!(
+                    err,
+                    NodeError::Fail {
+                        retryable: true,
+                        ..
+                    }
                 );
-                sleep(delay).await;
+                let backoff_ms = match &err {
+                    NodeError::Fail { backoff_ms, .. } => *backoff_ms,
+                };
+                if retryable && attempt < MAX_ATTEMPTS {
+                    let delay = backoff_ms
+                        .map(Duration::from_millis)
+                        .unwrap_or_else(|| Duration::from_secs(attempt as u64));
+                    warn!(attempt, delay_ms = delay.as_millis(), "webex retry");
+                    sleep(delay).await;
+                    continue;
+                } else {
+                    return Err(err);
+                }
             }
-            Err(err) => return Err(SendError::Webex(err)),
         }
     }
 }
@@ -225,11 +266,9 @@ async fn send_with_retries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::WebexError;
     use gsm_backpressure::{LocalBackpressureLimiter, RateLimits};
     use gsm_core::{make_tenant_ctx, OutKind};
-    use reqwest::StatusCode;
-    use serde_json::Value;
+    use serde_json::{json, Value};
     use std::{
         collections::BTreeMap,
         sync::{Arc, Mutex},
@@ -237,12 +276,12 @@ mod tests {
     use tokio::sync::Mutex as AsyncMutex;
 
     struct MockSender {
-        responses: AsyncMutex<Vec<Result<(), WebexError>>>,
+        responses: AsyncMutex<Vec<NodeResult<SendResult>>>,
         calls: AsyncMutex<usize>,
     }
 
     impl MockSender {
-        fn new(responses: Vec<Result<(), WebexError>>) -> Self {
+        fn new(responses: Vec<NodeResult<SendResult>>) -> Self {
             Self {
                 responses: AsyncMutex::new(responses),
                 calls: AsyncMutex::new(0),
@@ -255,13 +294,13 @@ mod tests {
     }
 
     #[async_trait]
-    impl WebexSender for MockSender {
-        async fn send(&self, _ctx: &TenantCtx, _out: &OutMessage) -> Result<(), WebexError> {
+    impl EgressSender for MockSender {
+        async fn send(&self, _ctx: &TenantCtx, _msg: OutboundMessage) -> NodeResult<SendResult> {
             let mut calls = self.calls.lock().await;
             *calls += 1;
             let mut responses = self.responses.lock().await;
             if responses.is_empty() {
-                Ok(())
+                Ok(SendResult::default())
             } else {
                 responses.remove(0)
             }
@@ -323,6 +362,11 @@ mod tests {
             *self.acked.lock().unwrap() = true;
             Ok(())
         }
+
+        async fn ack_with(&self, _kind: AckKind) -> Result<()> {
+            *self.acked.lock().unwrap() = true;
+            Ok(())
+        }
     }
 
     fn sample_out() -> OutMessage {
@@ -348,19 +392,23 @@ mod tests {
 
     #[tokio::test]
     async fn retries_on_rate_limit_then_succeeds() {
-        let retry_err = WebexError::RateLimited {
-            retry_after: Some(Duration::from_millis(1)),
-            body: "limit".into(),
-        };
-        let sender = MockSender::new(vec![Err(retry_err), Ok(())]);
+        let retry_err = NodeError::new("webex_send_failed", "limit").with_retry(Some(1));
+        let sender = MockSender::new(vec![Err(retry_err), Ok(SendResult::default())]);
         let out = sample_out();
-        send_with_retries(&sender, &out.ctx, &out).await.unwrap();
+        let outbound = OutboundMessage {
+            channel: Some(out.chat_id.clone()),
+            text: out.text.clone(),
+            payload: Some(json!({"roomId": out.chat_id})),
+        };
+        send_with_retries(&sender, &out.ctx, &outbound)
+            .await
+            .unwrap();
         assert_eq!(sender.call_count().await, 2);
     }
 
     #[tokio::test]
     async fn handle_message_success_ack() {
-        let sender = MockSender::new(vec![Ok(())]);
+        let sender = MockSender::new(vec![Ok(SendResult::default())]);
         let dlq = MockDlq::new();
         let lim = limiter();
         let out = sample_out();
@@ -377,10 +425,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_message_dlq_on_failure() {
-        let sender = MockSender::new(vec![Err(WebexError::Client {
-            status: StatusCode::BAD_REQUEST,
-            body: "bad".into(),
-        })]);
+        let sender = MockSender::new(vec![Err(NodeError::new("webex_send_failed", "bad"))]);
         let dlq = MockDlq::new();
         let lim = limiter();
         let out = sample_out();
@@ -391,10 +436,11 @@ mod tests {
             .unwrap();
 
         assert!(message.acked());
-        let entries = dlq.entries.lock().unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].code, "E_CLIENT");
-        drop(entries);
+        {
+            let entries = dlq.entries.lock().unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].code, "webex_send_failed");
+        }
         assert_eq!(sender.call_count().await, 1);
     }
 }

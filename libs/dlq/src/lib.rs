@@ -175,14 +175,16 @@ async fn ensure_stream(js: &JsContext, subject_fmt: &str) -> Result<()> {
         .replace("{tenant}", "*")
         .replace("{stage}", "*")
         .replace("{platform}", "*");
-    let mut cfg = StreamConfig::default();
-    cfg.name = DLQ_STREAM_NAME.into();
-    cfg.subjects = vec![pattern];
-    cfg.retention = RetentionPolicy::WorkQueue;
-    cfg.max_messages_per_subject = -1;
-    cfg.max_messages = -1;
-    cfg.max_bytes = -1;
-    cfg.description = Some("Greentic DLQ".into());
+    let cfg = StreamConfig {
+        name: DLQ_STREAM_NAME.into(),
+        subjects: vec![pattern],
+        retention: RetentionPolicy::WorkQueue,
+        max_messages_per_subject: -1,
+        max_messages: -1,
+        max_bytes: -1,
+        description: Some("Greentic DLQ".into()),
+        ..StreamConfig::default()
+    };
 
     match js.get_stream(DLQ_STREAM_NAME).await {
         Ok(_) => Ok(()),
@@ -370,9 +372,15 @@ pub async fn replay_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
-    fn subject_formatting_works() {
+    fn format_subject_inserts_placeholders() {
         let s = format_subject(
             "dlq.{tenant}.{stage}.{platform}",
             "t1",
@@ -380,6 +388,24 @@ mod tests {
             Some("slack"),
         );
         assert_eq!(s, "dlq.t1.egress.slack");
+    }
+
+    #[test]
+    fn format_subject_handles_missing_platform() {
+        let s = format_subject("dlq.{tenant}.{stage}.{platform}", "t1", "egress", None);
+        assert_eq!(s, "dlq.t1.egress.");
+    }
+
+    #[test]
+    fn replay_subject_uses_env_override() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var(REPLAY_SUBJECT_FMT_ENV, "replay.{tenant}.{stage}");
+        assert_eq!(replay_subject("acme", "translate"), "replay.acme.translate");
+        std::env::remove_var(REPLAY_SUBJECT_FMT_ENV);
+    }
+
+    #[test]
+    fn subject_formatting_works() {
         let r = format_subject("replay.{tenant}.{stage}", "t1", "translate", None);
         assert_eq!(r, "replay.t1.translate");
     }

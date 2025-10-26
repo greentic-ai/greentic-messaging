@@ -32,7 +32,7 @@ run-ingress-telegram:
 	RUST_LOG=info TENANT=$${TENANT:-acme} NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} \
 	TELEGRAM_SECRET_TOKEN=$${TELEGRAM_SECRET_TOKEN:-dev} cargo run -p gsm-ingress-telegram
 run-ingress-webchat:
-	RUST_LOG=info TENANT=$${TENANT:-acme} NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} cargo run -p gsm-ingress-webchat
+	RUST_LOG=info NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} cargo run -p gsm-ingress-webchat
 run-egress-webchat:
 	RUST_LOG=info TENANT=$${TENANT:-acme} PLATFORM=$${PLATFORM:-webchat} NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} \
 	cargo run -p gsm-egress-webchat
@@ -45,8 +45,7 @@ run-ingress-slack:
 	RUST_LOG=info TENANT=$${TENANT:-acme} SLACK_SIGNING_SECRET=$${SLACK_SIGNING_SECRET} \
 	NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} cargo run -p gsm-ingress-slack
 run-ingress-whatsapp:
-	RUST_LOG=info TENANT=$${TENANT:-acme} WA_VERIFY_TOKEN=$${WA_VERIFY_TOKEN} WA_APP_SECRET=$${WA_APP_SECRET} \
-	NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} cargo run -p gsm-ingress-whatsapp
+	RUST_LOG=info NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} cargo run -p gsm-ingress-whatsapp
 
 run-egress-slack:
 	RUST_LOG=info TENANT=$${TENANT:-acme} SLACK_BOT_TOKEN=$${SLACK_BOT_TOKEN} \

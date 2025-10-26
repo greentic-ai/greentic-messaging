@@ -7,12 +7,15 @@ use axum::{
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use gsm_core::platforms::slack::workspace::SlackWorkspace;
+use gsm_core::platforms::slack::workspace::{SlackWorkspace, SlackWorkspaceIndex};
 use gsm_core::{
-    make_tenant_ctx, slack_workspace_secret, DefaultResolver, NodeResult, SecretsResolver,
-    TenantCtx,
+    make_tenant_ctx, slack_workspace_index, slack_workspace_secret, DefaultResolver, NodeResult,
+    SecretsResolver, TenantCtx,
 };
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{
+    distr::{Alphanumeric, SampleString},
+    rng,
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -45,7 +48,19 @@ trait WorkspaceStore: Send + Sync {
 impl WorkspaceStore for DefaultResolver {
     async fn put_workspace(&self, ctx: &TenantCtx, workspace: &SlackWorkspace) -> NodeResult<()> {
         let path = slack_workspace_secret(ctx, &workspace.workspace_id);
-        self.put_json(&path, ctx, workspace).await
+        self.put_json(&path, ctx, workspace).await?;
+
+        let index_path = slack_workspace_index(ctx);
+        let mut index = self
+            .get_json::<SlackWorkspaceIndex>(&index_path, ctx)
+            .await?
+            .unwrap_or_default();
+        let changed = index.insert(&workspace.workspace_id);
+        if changed {
+            self.put_json(&index_path, ctx, &index).await?;
+        }
+
+        Ok(())
     }
 
     async fn get_workspace(
@@ -118,11 +133,8 @@ async fn install(
 ) -> impl IntoResponse {
     let tenant = query.tenant;
     let team = query.team.unwrap_or_else(|| "default".into());
-    let nonce: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(12)
-        .map(char::from)
-        .collect();
+    let mut rng = rng();
+    let nonce: String = Alphanumeric.sample_string(&mut rng, 12);
     let payload = format!("{}|{}|{}", tenant, team, nonce);
     let encoded_state = URL_SAFE_NO_PAD.encode(payload);
 
@@ -286,11 +298,16 @@ mod tests {
     use http_body_util::BodyExt;
     use std::collections::HashMap;
     use std::sync::Mutex;
+    type WorkspaceKey = (String, Option<String>, String);
+    type TenantKey = (String, Option<String>);
+    type WorkspaceMap = Mutex<HashMap<WorkspaceKey, SlackWorkspace>>;
+    type WorkspaceIndexMap = Mutex<HashMap<TenantKey, SlackWorkspaceIndex>>;
     use tower::ServiceExt;
 
     #[derive(Default)]
     struct InMemoryStore {
-        data: Mutex<HashMap<(String, Option<String>, String), SlackWorkspace>>,
+        data: WorkspaceMap,
+        index: WorkspaceIndexMap,
     }
 
     #[async_trait]
@@ -300,8 +317,8 @@ mod tests {
             ctx: &TenantCtx,
             workspace: &SlackWorkspace,
         ) -> NodeResult<()> {
-            let mut guard = self.data.lock().unwrap();
-            guard.insert(
+            let mut data_guard = self.data.lock().unwrap();
+            data_guard.insert(
                 (
                     ctx.tenant.as_str().to_string(),
                     ctx.team.as_ref().map(|t| t.as_str().to_string()),
@@ -309,6 +326,14 @@ mod tests {
                 ),
                 workspace.clone(),
             );
+
+            let mut index_guard = self.index.lock().unwrap();
+            let key = (
+                ctx.tenant.as_str().to_string(),
+                ctx.team.as_ref().map(|t| t.as_str().to_string()),
+            );
+            let entry = index_guard.entry(key).or_default();
+            entry.insert(&workspace.workspace_id);
             Ok(())
         }
 
@@ -325,6 +350,19 @@ mod tests {
                     workspace_id.to_string(),
                 ))
                 .cloned())
+        }
+    }
+
+    impl InMemoryStore {
+        fn listed_workspaces(&self, ctx: &TenantCtx) -> Vec<String> {
+            let guard = self.index.lock().unwrap();
+            guard
+                .get(&(
+                    ctx.tenant.as_str().to_string(),
+                    ctx.team.as_ref().map(|t| t.as_str().to_string()),
+                ))
+                .map(|idx| idx.workspaces.clone())
+                .unwrap_or_default()
         }
     }
 
@@ -407,5 +445,8 @@ mod tests {
             .unwrap()
             .expect("stored");
         assert_eq!(stored.bot_token, "xoxb-mock");
+
+        let listed = store.listed_workspaces(&ctx);
+        assert_eq!(listed, vec!["T123".to_string()]);
     }
 }

@@ -49,17 +49,25 @@ mod tests {
 
     #[tokio::test]
     async fn env_manager_reads_uppercase_keys() {
-        let _guard = env_lock().lock().unwrap();
-        std::env::set_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN", "abc");
-        let mgr = EnvSecretsManager::default();
-        let value = mgr.get("tenants/acme/telegram/secret_token").await.unwrap();
+        {
+            let _guard = env_lock().lock().unwrap();
+            std::env::set_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN", "abc");
+        }
+        let mgr = EnvSecretsManager;
+        let value = mgr
+            .get("tenants/acme/telegram/secret_token")
+            .await
+            .unwrap();
         assert_eq!(value, Some("abc".into()));
-        std::env::remove_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN");
+        {
+            let _guard = env_lock().lock().unwrap();
+            std::env::remove_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN");
+        }
     }
 
     #[tokio::test]
     async fn env_manager_is_read_only() {
-        let mgr = EnvSecretsManager::default();
+        let mgr = EnvSecretsManager;
         let err = mgr.put("k", "v").await.unwrap_err();
         assert!(err.to_string().contains("read-only"));
     }

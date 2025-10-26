@@ -173,7 +173,7 @@ impl ChaosHarness {
 
         let out = envelope_to_out(&env);
         let start = Instant::now();
-        let permit = match self.limiter.acquire(&env.tenant).await {
+        let _permit = match self.limiter.acquire(&env.tenant).await {
             Ok(permit) => permit,
             Err(err) => {
                 tracing::warn!(
@@ -185,7 +185,6 @@ impl ChaosHarness {
             }
         };
         let waited = start.elapsed();
-        drop(permit);
 
         {
             let mut stats = self.stats.lock().await;

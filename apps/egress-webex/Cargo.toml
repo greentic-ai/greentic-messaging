@@ -3,6 +3,10 @@ name = "gsm-egress-webex"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+mock-http = []
+
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
@@ -22,7 +26,6 @@ gsm-dlq = { path = "../../libs/dlq" }
 gsm-telemetry = { path = "../../libs/telemetry" }
 async-trait = { workspace = true }
 metrics = { workspace = true }
-thiserror = { workspace = true }
 futures = "0.3"
 
 [dev-dependencies]

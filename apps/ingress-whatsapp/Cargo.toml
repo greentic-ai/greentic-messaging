@@ -22,3 +22,5 @@ sha2 = "0.10"
 security = { path = "../../libs/security" }
 gsm-telemetry = { path = "../../libs/telemetry" }
 metrics = { workspace = true }
+reqwest = { workspace = true }
+async-trait = { workspace = true }

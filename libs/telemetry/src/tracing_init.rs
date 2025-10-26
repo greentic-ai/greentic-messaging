@@ -48,12 +48,12 @@ pub fn telemetry_enabled() -> bool {
 }
 
 pub fn with_common_fields(span: &Span, tenant: &str, chat_id: Option<&str>, msg_id: Option<&str>) {
-    span.record("tenant", &tracing::field::display(tenant));
+    span.record("tenant", tracing::field::display(tenant));
     if let Some(chat_id) = chat_id {
-        span.record("chat_id", &tracing::field::display(chat_id));
+        span.record("chat_id", tracing::field::display(chat_id));
     }
     if let Some(msg_id) = msg_id {
-        span.record("msg_id", &tracing::field::display(msg_id));
+        span.record("msg_id", tracing::field::display(msg_id));
     }
 }
 

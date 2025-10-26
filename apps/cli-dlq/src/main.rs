@@ -82,12 +82,10 @@ async fn main() -> Result<()> {
             if cli.json {
                 let payload: Vec<_> = entries.iter().map(list_entry).collect();
                 println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else if entries.is_empty() {
+                println!("No DLQ entries for tenant={tenant} stage={stage}");
             } else {
-                if entries.is_empty() {
-                    println!("No DLQ entries for tenant={tenant} stage={stage}");
-                } else {
-                    print_table(&entries);
-                }
+                print_table(&entries);
             }
         }
         Commands::Show { sequence } => {
@@ -129,13 +127,11 @@ async fn main() -> Result<()> {
                     processed: processed.iter().map(list_entry).collect(),
                 };
                 println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else if processed.is_empty() {
+                println!("No DLQ entries replayed for tenant={tenant} stage={stage}");
             } else {
-                if processed.is_empty() {
-                    println!("No DLQ entries replayed for tenant={tenant} stage={stage}");
-                } else {
-                    println!("Replayed {} entries to stage {to}", processed.len());
-                    print_table(&processed);
-                }
+                println!("Replayed {} entries to stage {to}", processed.len());
+                print_table(&processed);
             }
         }
     }
@@ -158,7 +154,7 @@ fn list_entry(entry: &DlqEntry) -> ListEntry {
 
 fn print_table(entries: &[DlqEntry]) {
     println!(
-        "{:<8} {:<8} {:<8} {:<10} {:<8} {:<7} {}",
+        "{:<8} {:<8} {:<8} {:<10} {:<8} {:<7} {:<}",
         "SEQ", "TENANT", "STAGE", "PLATFORM", "CODE", "RETRY", "TS"
     );
     for entry in entries {

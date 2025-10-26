@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use gsm_core::{MessageEnvelope, Platform};
+use gsm_core::{MessageEnvelope, Platform, TenantCtx};
 use gsm_translator::webex::{parse_attachment_action, parse_message, WebexInboundEvent};
 use serde::Deserialize;
 use serde_json::Value;
@@ -38,7 +38,7 @@ pub struct WebexData {
     pub additional_data: BTreeMap<String, Value>,
 }
 
-pub fn normalise_webhook(tenant: &str, raw: &Value) -> Result<MessageEnvelope> {
+pub fn normalise_webhook(ctx: &TenantCtx, raw: &Value) -> Result<MessageEnvelope> {
     let payload: WebexWebhook =
         serde_json::from_value(raw.clone()).context("failed to decode webex webhook json")?;
 
@@ -64,7 +64,7 @@ pub fn normalise_webhook(tenant: &str, raw: &Value) -> Result<MessageEnvelope> {
     }
 
     let mut envelope = MessageEnvelope {
-        tenant: tenant.to_string(),
+        tenant: ctx.tenant.as_str().to_string(),
         platform: Platform::Webex,
         chat_id: data.room_id.clone(),
         user_id: data.person_id.clone(),
@@ -124,6 +124,7 @@ fn enrich_with_events(envelope: &mut MessageEnvelope, raw: &Value) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gsm_core::make_tenant_ctx;
 
     #[test]
     fn normalises_basic_payload() {
@@ -139,7 +140,8 @@ mod tests {
             }
         }"#;
         let raw: Value = serde_json::from_str(body).unwrap();
-        let env = normalise_webhook("acme", &raw).expect("envelope");
+        let ctx = make_tenant_ctx("acme".into(), None, None);
+        let env = normalise_webhook(&ctx, &raw).expect("envelope");
         assert_eq!(env.platform, Platform::Webex);
         assert_eq!(env.tenant, "acme");
         assert_eq!(env.chat_id, "room-1");
@@ -178,7 +180,8 @@ mod tests {
             }
         }"#;
         let raw: Value = serde_json::from_str(json).unwrap();
-        let env = normalise_webhook("acme", &raw).expect("envelope");
+        let ctx = make_tenant_ctx("acme".into(), None, None);
+        let env = normalise_webhook(&ctx, &raw).expect("envelope");
         assert_eq!(env.context["card"]["title"], "Card");
     }
 
@@ -196,7 +199,8 @@ mod tests {
             }
         }"#;
         let raw: Value = serde_json::from_str(json).unwrap();
-        let env = normalise_webhook("acme", &raw).expect("envelope");
+        let ctx = make_tenant_ctx("acme".into(), None, None);
+        let env = normalise_webhook(&ctx, &raw).expect("envelope");
         assert_eq!(env.context["postback"]["action"], "ack");
     }
 }

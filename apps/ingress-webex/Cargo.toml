@@ -25,6 +25,7 @@ gsm-ingress-common = { path = "../ingress-common" }
 gsm-telemetry = { path = "../../libs/telemetry" }
 gsm-translator = { path = "../../libs/translator" }
 metrics = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["macros"] }

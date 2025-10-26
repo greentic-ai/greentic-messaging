@@ -1,17 +1,15 @@
-//! Microsoft Teams egress adapter. Listens on NATS for `OutMessage`s, renders
-//! Adaptive Cards, and posts them via the Graph API.
-//!
-//! ```
-//! // Run with MS_GRAPH_* credentials set; messages published to
-//! // `greentic.msg.out.{tenant}.teams.*` are delivered via chat.postMessage
-//! // equivalents.
-//! ```
+//! Microsoft Teams egress adapter. Listens on NATS, renders payloads, and posts
+//! them via the Graph API using per-tenant credentials resolved from secrets.
 
-use anyhow::{anyhow, Result};
-use async_nats::jetstream::AckKind;
+use anyhow::Result;
+use async_nats::jetstream::{self, AckKind};
+use async_trait::async_trait;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutKind, OutMessage, Platform, TenantCtx};
+use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
+use gsm_core::platforms::teams::TeamsSender;
+use gsm_core::prelude::DefaultResolver;
+use gsm_core::{NodeError, OutKind, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
@@ -19,31 +17,12 @@ use gsm_egress_common::{
 };
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use gsm_translator::teams::to_teams_adaptive;
-use serde_json::json;
-use std::time::Instant;
-use tokio::time::{sleep, Duration};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
 use tracing::{event, Instrument, Level};
 
-fn auth_base() -> String {
-    std::env::var("MS_GRAPH_AUTH_BASE")
-        .unwrap_or_else(|_| "https://login.microsoftonline.com".into())
-}
-
-fn api_base() -> String {
-    std::env::var("MS_GRAPH_API_BASE").unwrap_or_else(|_| "https://graph.microsoft.com".into())
-}
-
-fn token_url(tenant: &str) -> String {
-    let base = auth_base();
-    let base = base.trim_end_matches('/');
-    format!("{base}/{tenant}/oauth2/v2.0/token")
-}
-
-fn messages_url(chat_id: &str) -> String {
-    let base = api_base();
-    let base = base.trim_end_matches('/');
-    format!("{base}/v1.0/chats/{chat_id}/messages")
-}
+const MAX_ATTEMPTS: usize = 3;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -52,9 +31,16 @@ async fn main() -> Result<()> {
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
-    let graph_tenant = std::env::var("MS_GRAPH_TENANT_ID")?;
-    let client_id = std::env::var("MS_GRAPH_CLIENT_ID")?;
-    let client_secret = std::env::var("MS_GRAPH_CLIENT_SECRET")?;
+    #[cfg(feature = "mock-http")]
+    // Mock the Microsoft Graph endpoints during local and CI runs.
+    let auth_base = Some("mock://auth".into());
+    #[cfg(not(feature = "mock-http"))]
+    let auth_base = std::env::var("MS_GRAPH_AUTH_BASE").ok();
+    #[cfg(feature = "mock-http")]
+    // Pair the auth mock with a fake Graph API host.
+    let api_base = Some("mock://graph".into());
+    #[cfg(not(feature = "mock-http"))]
+    let api_base = std::env::var("MS_GRAPH_API_BASE").ok();
 
     let queue = bootstrap(&nats_url, &tenant, Platform::Teams.as_str()).await?;
     tracing::info!(
@@ -63,101 +49,33 @@ async fn main() -> Result<()> {
         "egress-teams consuming from JetStream"
     );
 
-    let dlq = DlqPublisher::new("egress", queue.client()).await?;
+    let dlq = Arc::new(DlqPublisher::new("egress", queue.client()).await?);
+    let limiter = queue.limiter.clone();
+    let resolver = Arc::new(DefaultResolver::new().await?);
+    let sender = Arc::new(TeamsSender::new(
+        reqwest::Client::new(),
+        resolver,
+        auth_base,
+        api_base,
+    ));
 
     let mut messages = queue.messages;
-    let limiter = queue.limiter;
 
     while let Some(next) = messages.next().await {
         let msg = match next {
             Ok(msg) => msg,
             Err(err) => {
-                tracing::error!("jetstream message error: {err}");
+                tracing::error!(error = %err, "jetstream message error");
                 continue;
             }
         };
 
-        let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("bad out msg: {e}");
-                let _ = msg.ack().await;
-                continue;
-            }
-        };
-        if out.platform != Platform::Teams {
-            if let Err(err) = msg.ack().await {
-                tracing::error!("ack failed: {err}");
-            }
-            continue;
-        }
-
-        let ctx = context_from_out(&out);
-        let msg_id = ctx
-            .labels
-            .msg_id
-            .clone()
-            .unwrap_or_else(|| out.message_id());
-        let acquire_span = start_acquire_span(&ctx);
-        let permit = match limiter.acquire(&out.tenant).instrument(acquire_span).await {
-            Ok(p) => p,
-            Err(err) => {
-                tracing::error!(
-                    error = %err,
-                    tenant = %ctx.labels.tenant,
-                    platform = "teams",
-                    "failed to acquire backpressure permit"
-                );
-                let _ = msg.ack_with(AckKind::Nak(None)).await;
-                continue;
-            }
-        };
-        event!(
-            Level::INFO,
-            tenant = %ctx.labels.tenant,
-            platform = "teams",
-            msg_id = %msg_id,
-            acquired = true,
-            "backpressure permit acquired"
-        );
-
-        let send_start = Instant::now();
-        let send_span = start_send_span(&ctx);
-        let result = deliver(&out.ctx, &graph_tenant, &client_id, &client_secret, &out)
-            .instrument(send_span)
-            .await;
-        drop(permit);
-        let elapsed_ms = send_start.elapsed().as_secs_f64() * 1000.0;
-
-        match result {
-            Ok(()) => {
-                if let Err(err) = msg.ack().await {
-                    tracing::error!("ack failed: {err}");
-                }
-                record_egress_success(&ctx, elapsed_ms);
-            }
-            Err(e) => {
-                tracing::error!("deliver failed: {e}");
-                if let Err(err) = dlq
-                    .publish(
-                        &out.tenant,
-                        out.platform.as_str(),
-                        &msg_id,
-                        3,
-                        DlqError {
-                            code: "E_SEND".into(),
-                            message: e.to_string(),
-                            stage: None,
-                        },
-                        &out,
-                    )
-                    .await
-                {
-                    tracing::error!("failed to publish dlq entry: {err}");
-                }
-                if let Err(err) = msg.ack_with(AckKind::Nak(None)).await {
-                    tracing::error!("nak failed: {err}");
-                }
+        if let Err(err) =
+            handle_message(limiter.as_ref(), sender.as_ref(), dlq.as_ref(), &msg).await
+        {
+            tracing::error!(error = %err, "failed to process teams message");
+            if let Err(nak_err) = msg.ack_with(AckKind::Nak(None)).await {
+                tracing::error!(error = %nak_err, "failed to nack message");
             }
         }
     }
@@ -165,153 +83,265 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn token(tenant: &str, client_id: &str, client_secret: &str) -> Result<String> {
-    let url = token_url(tenant);
-    let form = [
-        ("client_id", client_id),
-        ("client_secret", client_secret),
-        ("grant_type", "client_credentials"),
-        ("scope", "https://graph.microsoft.com/.default"),
-    ];
-    let res = reqwest::Client::new().post(url).form(&form).send().await?;
-    let status = res.status();
-    let bytes = res.bytes().await?;
-    if !status.is_success() {
-        let body = String::from_utf8_lossy(&bytes);
-        return Err(anyhow!("token request failed: {} {}", status, body));
+async fn handle_message<S, D, M>(
+    limiter: &dyn BackpressureLimiter,
+    sender: &S,
+    dlq: &D,
+    msg: &M,
+) -> Result<()>
+where
+    S: EgressSender + Send + Sync,
+    D: DlqSink + Send + Sync,
+    M: DeliveryMessage + Send + Sync,
+{
+    let out: OutMessage = match serde_json::from_slice(msg.payload()) {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to decode OutMessage payload");
+            msg.ack().await?;
+            return Ok(());
+        }
+    };
+
+    if out.platform != Platform::Teams {
+        msg.ack().await?;
+        return Ok(());
     }
-    let v: serde_json::Value = serde_json::from_slice(&bytes)?;
-    Ok(v["access_token"].as_str().unwrap_or_default().to_string())
+
+    let ctx = context_from_out(&out);
+    let msg_id = ctx
+        .labels
+        .msg_id
+        .clone()
+        .unwrap_or_else(|| out.message_id());
+
+    let acquire_span = start_acquire_span(&ctx);
+    let _permit = limiter
+        .acquire(&out.tenant)
+        .instrument(acquire_span)
+        .await?;
+    event!(
+        Level::INFO,
+        tenant = %ctx.labels.tenant,
+        platform = "teams",
+        msg_id = %msg_id,
+        acquired = true,
+        "backpressure permit acquired"
+    );
+
+    let send_span = start_send_span(&ctx);
+    let start_time = Instant::now();
+
+    let outbound = match build_outbound(&out) {
+        Ok(msg) => msg,
+        Err(err) => {
+            tracing::warn!(error = %err, "teams translation failed");
+            msg.ack_with(AckKind::Nak(None)).await?;
+            return Ok(());
+        }
+    };
+
+    let result = {
+        let _guard = send_span.enter();
+        send_with_retries(sender, &out.ctx, outbound.clone()).await
+    };
+    match result {
+        Ok(send_result) => {
+            msg.ack().await?;
+            let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+            record_egress_success(&ctx, elapsed_ms);
+            tracing::info!(
+                chat_id = %out.chat_id,
+                message_id = ?send_result.message_id,
+                "teams message sent"
+            );
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "teams send failed");
+            let retryable = matches!(
+                err,
+                NodeError::Fail {
+                    retryable: true,
+                    ..
+                }
+            );
+            if retryable {
+                msg.ack_with(AckKind::Nak(None)).await?;
+            } else {
+                dlq.publish_dlq(
+                    &out.tenant,
+                    out.platform.as_str(),
+                    &msg_id,
+                    DlqError {
+                        code: "E_SEND".into(),
+                        message: err.to_string(),
+                        stage: None,
+                    },
+                    &out,
+                )
+                .await?;
+                msg.ack().await?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
-async fn deliver(
-    ctx: &TenantCtx,
-    tenant: &str,
-    cid: &str,
-    secret: &str,
-    out: &OutMessage,
-) -> Result<()> {
-    let tkn = token(tenant, cid, secret).await?;
-    let client = reqwest::Client::new();
-    let chat_id = &out.chat_id;
-
+fn build_outbound(out: &OutMessage) -> Result<OutboundMessage, anyhow::Error> {
+    let channel = out.chat_id.clone();
     match out.kind {
-        OutKind::Text => {
-            let body = {
-                let translate_span = tracing::info_span!(
-                    "translate.run",
-                    env = %ctx.env.as_str(),
-                    tenant = %out.tenant,
-                    platform = %out.platform.as_str(),
-                    chat_id = %out.chat_id,
-                    msg_id = %out.message_id()
-                );
-                let _guard = translate_span.enter();
-                json!({
-                  "body": { "contentType":"text", "content": out.text.clone().unwrap_or_default() }
-                })
-            };
-            let url = messages_url(chat_id);
-            send(&client, &tkn, &url, &body).await?;
-        }
+        OutKind::Text => Ok(OutboundMessage {
+            channel: Some(channel),
+            text: Some(out.text.clone().unwrap_or_default()),
+            payload: None,
+        }),
         OutKind::Card => {
             let card = out
                 .message_card
                 .as_ref()
-                .ok_or_else(|| anyhow!("missing card"))?;
-            let card_span = tracing::info_span!(
-                "translate.run",
-                env = %ctx.env.as_str(),
-                tenant = %out.tenant,
-                platform = %out.platform.as_str(),
-                chat_id = %out.chat_id,
-                msg_id = %out.message_id()
-            );
-            let _guard = card_span.enter();
+                .ok_or_else(|| anyhow::anyhow!("missing card"))?;
             let adaptive = to_teams_adaptive(card, out)?;
-            let body = json!({
-              "subject": null,
-              "importance": "normal",
-              "body": { "contentType": "html", "content": " " },
-              "attachments": [{
-                "id": "1",
-                "contentType": "application/vnd.microsoft.card.adaptive",
-                "contentUrl": null,
-                "content": adaptive,
-                "name": "card.json",
-                "thumbnailUrl": null
-              }]
-            });
-            let url = messages_url(chat_id);
-            send(&client, &tkn, &url, &body).await?;
+            Ok(OutboundMessage {
+                channel: Some(channel),
+                text: out.text.clone(),
+                payload: Some(adaptive),
+            })
         }
     }
-    Ok(())
 }
 
-async fn send(
-    client: &reqwest::Client,
-    token: &str,
-    url: &str,
-    body: &serde_json::Value,
-) -> Result<()> {
-    for attempt in 0..=2 {
-        let res = client.post(url).bearer_auth(token).json(body).send().await;
-        match res {
-            Ok(r) if r.status().is_success() => return Ok(()),
-            Ok(r) => {
-                let status = r.status();
-                let txt = r.text().await.unwrap_or_default();
-                tracing::warn!("graph err {}: {}", status, txt);
+async fn send_with_retries<S>(
+    sender: &S,
+    ctx: &TenantCtx,
+    msg: OutboundMessage,
+) -> Result<SendResult, NodeError>
+where
+    S: EgressSender + Send + Sync,
+{
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match sender.send(ctx, msg.clone()).await {
+            Ok(res) => return Ok(res),
+            Err(err) => {
+                let retryable = matches!(
+                    err,
+                    NodeError::Fail {
+                        retryable: true,
+                        ..
+                    }
+                );
+                let backoff_ms = match &err {
+                    NodeError::Fail { backoff_ms, .. } => *backoff_ms,
+                };
+                if retryable && attempt < MAX_ATTEMPTS {
+                    let delay = backoff_ms
+                        .map(Duration::from_millis)
+                        .unwrap_or_else(|| Duration::from_secs(attempt as u64));
+                    tracing::warn!(attempt, delay_ms = delay.as_millis(), "teams retry");
+                    sleep(delay).await;
+                    continue;
+                } else {
+                    return Err(err);
+                }
             }
-            Err(e) => tracing::warn!("graph send error: {e}"),
         }
-        sleep(Duration::from_millis(250 * (attempt + 1))).await;
     }
-    Err(anyhow!("send failed after retries"))
+}
+
+#[async_trait]
+trait DlqSink {
+    async fn publish_dlq(
+        &self,
+        tenant: &str,
+        platform: &str,
+        msg_id: &str,
+        error: DlqError,
+        payload: &OutMessage,
+    ) -> Result<()>;
+}
+
+#[async_trait]
+impl DlqSink for DlqPublisher {
+    async fn publish_dlq(
+        &self,
+        tenant: &str,
+        platform: &str,
+        msg_id: &str,
+        error: DlqError,
+        payload: &OutMessage,
+    ) -> Result<()> {
+        self.publish(tenant, platform, msg_id, 1, error, payload)
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
+    }
+}
+
+#[async_trait]
+trait DeliveryMessage {
+    fn payload(&self) -> &[u8];
+    async fn ack(&self) -> Result<()>;
+    async fn ack_with(&self, kind: AckKind) -> Result<()>;
+}
+
+#[async_trait]
+impl DeliveryMessage for jetstream::Message {
+    fn payload(&self) -> &[u8] {
+        self.payload.as_ref()
+    }
+
+    async fn ack(&self) -> Result<()> {
+        self.ack().await.map_err(|err| anyhow::anyhow!(err))
+    }
+
+    async fn ack_with(&self, kind: AckKind) -> Result<()> {
+        self.ack_with(kind)
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
 
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+    #[test]
+    fn build_outbound_text_uses_message_text() {
+        let mut out = sample_out(OutKind::Text);
+        out.text = Some("hello".into());
+        let outbound = build_outbound(&out).unwrap();
+        assert_eq!(outbound.channel.as_deref(), Some("chat-1"));
+        assert_eq!(outbound.text.as_deref(), Some("hello"));
+        assert!(outbound.payload.is_none());
     }
 
     #[test]
-    fn token_url_uses_auth_base_override() {
-        let _guard = env_lock().lock().unwrap();
-        std::env::set_var("MS_GRAPH_AUTH_BASE", "https://example.com");
-        let url = token_url("tenant");
-        std::env::remove_var("MS_GRAPH_AUTH_BASE");
-        assert_eq!(url, "https://example.com/tenant/oauth2/v2.0/token");
+    fn build_outbound_card_wraps_payload() {
+        let mut out = sample_out(OutKind::Card);
+        out.message_card = Some(gsm_core::MessageCard {
+            title: Some("Title".into()),
+            body: vec![gsm_core::CardBlock::Text {
+                text: "Body".into(),
+                markdown: false,
+            }],
+            actions: vec![],
+        });
+        let outbound = build_outbound(&out).unwrap();
+        assert!(outbound.payload.is_some());
     }
 
-    #[test]
-    fn messages_url_uses_api_base() {
-        let _guard = env_lock().lock().unwrap();
-        std::env::set_var("MS_GRAPH_API_BASE", "https://api.example.com");
-        let url = messages_url("chat-1");
-        std::env::remove_var("MS_GRAPH_API_BASE");
-        assert_eq!(url, "https://api.example.com/v1.0/chats/chat-1/messages");
-    }
-
-    #[test]
-    fn messages_url_trims_trailing_slash() {
-        let _guard = env_lock().lock().unwrap();
-        std::env::set_var("MS_GRAPH_API_BASE", "https://api.example.com/");
-        let url = messages_url("chat-1");
-        std::env::remove_var("MS_GRAPH_API_BASE");
-        assert_eq!(url, "https://api.example.com/v1.0/chats/chat-1/messages");
-    }
-
-    #[test]
-    fn api_base_defaults_to_graph_endpoint() {
-        let _guard = env_lock().lock().unwrap();
-        std::env::remove_var("MS_GRAPH_API_BASE");
-        assert_eq!(api_base(), "https://graph.microsoft.com");
+    fn sample_out(kind: OutKind) -> OutMessage {
+        OutMessage {
+            ctx: gsm_core::make_tenant_ctx("acme".into(), Some("support".into()), None),
+            tenant: "acme".into(),
+            platform: Platform::Teams,
+            chat_id: "chat-1".into(),
+            thread_id: None,
+            kind,
+            text: None,
+            message_card: None,
+            meta: Default::default(),
+        }
     }
 }

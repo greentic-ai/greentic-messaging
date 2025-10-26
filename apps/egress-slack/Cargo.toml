@@ -3,6 +3,10 @@ name = "gsm-egress-slack"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+mock-http = []
+
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
@@ -20,3 +24,4 @@ gsm-dlq = { path = "../../libs/dlq" }
 futures = "0.3"
 metrics = { workspace = true }
 gsm-telemetry = { path = "../../libs/telemetry" }
+async-trait = { workspace = true }

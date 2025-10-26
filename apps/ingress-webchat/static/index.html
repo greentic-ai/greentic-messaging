@@ -14,9 +14,11 @@
     .err { color: red; }
   </style>
 </head>
-<body>
+<body data-env="dev">
   <div class="card">
     <h3>WebChat → NATS</h3>
+    <label>Tenant <input id="tenant" value="acme"/></label>
+    <label>Team (optional) <input id="team" value="support"/></label>
     <label>Chat ID <input id="chat" value="demo-webchat"/></label>
     <label>User ID <input id="user" value="tester-1"/></label>
     <label>Message <textarea id="text" rows="3">Hello from WebChat</textarea></label>
@@ -25,17 +27,42 @@
   </div>
   <script>
     async function send() {
+      const tenant = document.getElementById('tenant').value;
+      const teamInput = document.getElementById('team').value;
       const chat_id = document.getElementById('chat').value;
       const user_id = document.getElementById('user').value;
       const text = document.getElementById('text').value;
+      if (!tenant.trim()) {
+        setStatus('Tenant is required', true);
+        return;
+      }
+      const payload = {
+        chatId: chat_id,
+        userId: user_id,
+        text,
+        channelData: {
+          tenant: tenant.trim(),
+          team: teamInput.trim() || undefined,
+          env: document.body.dataset.env || 'dev'
+        }
+      };
       const res = await fetch('/webhook', {
         method: 'POST',
         headers: {'content-type':'application/json'},
-        body: JSON.stringify({ chat_id, user_id, text })
+        body: JSON.stringify(payload)
       });
+      const p = setStatus(res.ok ? 'Sent ✓' : 'Error ✗', !res.ok);
+      if (!res.ok) {
+        const msg = await res.text();
+        p.textContent = `Error ✗ ${msg}`;
+      }
+    }
+
+    function setStatus(message, isError) {
       const p = document.getElementById('status');
-      if (res.ok) { p.textContent = 'Sent ✓'; p.className='ok'; }
-      else { p.textContent = 'Error ✗'; p.className='err'; }
+      p.textContent = message;
+      p.className = isError ? 'err' : 'ok';
+      return p;
     }
   </script>
 </body>

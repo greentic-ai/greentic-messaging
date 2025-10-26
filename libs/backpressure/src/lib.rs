@@ -421,6 +421,12 @@ impl BackpressureLimiter for HybridLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[tokio::test]
     async fn local_refills() {
@@ -432,14 +438,13 @@ mod tests {
             tenants: HashMap::new(),
         });
         let limiter = LocalBackpressureLimiter::new(limits);
-        let permit1 = limiter.acquire("t").await.unwrap();
-        drop(permit1);
-        let permit2 = limiter.acquire("t").await.unwrap();
-        drop(permit2);
+        let _ = limiter.acquire("t").await.unwrap();
+        let _ = limiter.acquire("t").await.unwrap();
     }
 
     #[test]
     fn parse_rate_limits_env() {
+        let _guard = env_lock().lock().unwrap();
         std::env::set_var(RATE_LIMIT_ENV, r#"{ "t1": {"rps": 10, "burst": 20} }"#);
         let limits = RateLimits::from_env();
         let cfg = limits.get("t1");
@@ -447,6 +452,52 @@ mod tests {
         assert_eq!(cfg.burst, 20.0);
         let default = limits.get("unknown");
         assert_eq!(default.rps, 5.0);
+        std::env::remove_var(RATE_LIMIT_ENV);
+    }
+
+    #[test]
+    fn compute_wait_secs_reflects_missing_tokens() {
+        let limit = RateLimit {
+            rps: 2.0,
+            burst: 1.0,
+        };
+        let wait = compute_wait_secs(limit, 0.0);
+        assert!((wait - 0.5).abs() < 1e-6);
+
+        let instant = compute_wait_secs(limit, 2.0);
+        assert_eq!(instant, 0.0);
+    }
+
+    #[test]
+    fn refill_respects_burst_and_elapsed_time() {
+        let limit = RateLimit {
+            rps: 1.0,
+            burst: 2.0,
+        };
+        // No time elapsed, nothing changes.
+        let (tokens, consumed) =
+            LocalBackpressureLimiter::refill(0.5, StdDuration::from_millis(0), limit);
+        assert_eq!(tokens, 0.5);
+        assert_eq!(consumed, StdDuration::from_millis(0));
+
+        // Two seconds elapsed should top up but not exceed burst.
+        let (tokens, consumed) =
+            LocalBackpressureLimiter::refill(0.5, StdDuration::from_secs(2), limit);
+        assert_eq!(tokens, 2.0);
+        assert_eq!(consumed, StdDuration::from_secs(2));
+    }
+
+    #[test]
+    fn rate_limits_enforce_minimums() {
+        let _guard = env_lock().lock().unwrap();
+        std::env::set_var(
+            RATE_LIMIT_ENV,
+            r#"{ "tenant": {"rps": 0.0, "burst": 0.0} }"#,
+        );
+        let limits = RateLimits::from_env();
+        let cfg = limits.get("tenant");
+        assert_eq!(cfg.rps, 0.1);
+        assert_eq!(cfg.burst, 1.0);
         std::env::remove_var(RATE_LIMIT_ENV);
     }
 }

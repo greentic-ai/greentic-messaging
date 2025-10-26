@@ -47,7 +47,7 @@ pub fn load_tenants(config_path: Option<&str>, fallback_tenant: &str) -> Result<
         if path.exists() {
             let raw = fs::read_to_string(path)
                 .with_context(|| format!("read tenants config {}", path.display()))?;
-            let file: TenantsFile = serde_yaml::from_str(&raw)
+            let file: TenantsFile = serde_yaml_bw::from_str(&raw)
                 .with_context(|| format!("parse tenants config {}", path.display()))?;
             return Ok(file.tenants);
         }

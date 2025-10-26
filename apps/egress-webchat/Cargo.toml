@@ -22,6 +22,7 @@ async-stream = "0.3.6"
 futures = "0.3.31"
 metrics = { workspace = true }
 gsm-telemetry = { path = "../../libs/telemetry" }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 hyper = "1"

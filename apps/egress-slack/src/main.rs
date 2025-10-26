@@ -1,10 +1,14 @@
 //! Slack egress adapter that converts normalized messages into Slack API calls.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use async_nats::jetstream::AckKind;
+use async_trait::async_trait;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
-use gsm_core::{OutMessage, Platform, TenantCtx};
+use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
+use gsm_core::platforms::slack::sender::SlackSender;
+use gsm_core::prelude::DefaultResolver;
+use gsm_core::{NodeError, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
@@ -12,9 +16,15 @@ use gsm_egress_common::{
 };
 use gsm_telemetry::{init_telemetry, TelemetryConfig};
 use gsm_translator::slack::to_slack_payloads;
-use serde_json::Value;
+use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
-use tracing::{event, Instrument, Level};
+use tokio::time::sleep;
+use tracing::Instrument;
+
+type NodeErrorResult<T> = Result<T, NodeError>;
+
+const MAX_ATTEMPTS: usize = 3;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,8 +33,6 @@ async fn main() -> Result<()> {
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
-    let bot_token = std::env::var("SLACK_BOT_TOKEN")
-        .context("SLACK_BOT_TOKEN environment variable required")?;
 
     let queue = bootstrap(&nats_url, &tenant, Platform::Slack.as_str()).await?;
     tracing::info!(
@@ -33,227 +41,429 @@ async fn main() -> Result<()> {
         "egress-slack consuming from JetStream"
     );
 
-    let dlq = DlqPublisher::new("egress", queue.client()).await?;
+    let dlq = Arc::new(DlqPublisher::new("egress", queue.client()).await?);
+    let limiter = queue.limiter.clone();
+    let resolver = Arc::new(DefaultResolver::new().await?);
+    #[cfg(feature = "mock-http")]
+    // In CI we avoid real Slack calls by forcing the sender to use a mock base URL.
+    let api_base = Some("mock://slack".into());
+    #[cfg(not(feature = "mock-http"))]
+    let api_base = std::env::var("SLACK_API_BASE").ok();
+    let sender = Arc::new(SlackSender::new(reqwest::Client::new(), resolver, api_base));
 
-    let http = reqwest::Client::new();
     let mut messages = queue.messages;
-    let limiter = queue.limiter;
 
     while let Some(next) = messages.next().await {
         let msg = match next {
             Ok(msg) => msg,
             Err(err) => {
-                tracing::error!("jetstream message error: {err}");
+                tracing::error!(error = %err, "jetstream message error");
                 continue;
             }
         };
 
-        let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("bad out msg: {e}");
-                let _ = msg.ack().await;
-                continue;
-            }
-        };
-        if out.platform != Platform::Slack {
-            if let Err(err) = msg.ack().await {
-                tracing::error!("ack failed: {err}");
-            }
-            continue;
-        }
-
-        let ctx = context_from_out(&out);
-        let msg_id = ctx
-            .labels
-            .msg_id
-            .clone()
-            .unwrap_or_else(|| out.message_id());
-        let acquire_span = start_acquire_span(&ctx);
-        let permit = match limiter.acquire(&out.tenant).instrument(acquire_span).await {
-            Ok(p) => p,
-            Err(err) => {
-                tracing::error!(
-                    error = %err,
-                    tenant = %ctx.labels.tenant,
-                    platform = "slack",
-                    "failed to acquire backpressure permit"
-                );
-                let _ = msg.ack_with(AckKind::Nak(None)).await;
-                continue;
-            }
-        };
-        event!(
-            Level::INFO,
-            tenant = %ctx.labels.tenant,
-            platform = "slack",
-            msg_id = %msg_id,
-            acquired = true,
-            "backpressure permit acquired"
-        );
-
-        let payloads = match to_slack_payloads(&out) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!("slack translation failed: {e}");
-                drop(permit);
-                let _ = msg.ack_with(AckKind::Nak(None)).await;
-                continue;
-            }
-        };
-
-        let mut had_error = false;
-        let mut last_error: Option<String> = None;
-        let send_start = Instant::now();
+        if let Err(err) =
+            handle_message(limiter.as_ref(), sender.as_ref(), dlq.as_ref(), &msg).await
         {
-            let send_span = start_send_span(&ctx);
-            let _guard = send_span.enter();
-            for mut payload in payloads {
-                merge_channel_info(&mut payload, &out);
-                match post_message(&out.ctx, &http, &bot_token, &payload).await {
-                    Ok(()) => {
-                        tracing::debug!(
-                            env = %out.ctx.env.as_str(),
-                            tenant = %out.tenant,
-                            chat_id = %out.chat_id,
-                            "slack message posted"
-                        );
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            env = %out.ctx.env.as_str(),
-                            tenant = %out.tenant,
-                            chat_id = %out.chat_id,
-                            "slack send error: {error}"
-                        );
-                        had_error = true;
-                        last_error = Some(error.to_string());
-                    }
-                }
+            tracing::error!(error = %err, "failed to process slack message");
+            if let Err(nak) = msg.ack_with(AckKind::Nak(None)).await {
+                tracing::error!(error = %nak, "failed to nack message");
             }
-        }
-        let elapsed_ms = send_start.elapsed().as_secs_f64() * 1000.0;
-        drop(permit);
-
-        if had_error {
-            if let Some(err_msg) = last_error {
-                if let Err(err) = dlq
-                    .publish(
-                        &out.tenant,
-                        out.platform.as_str(),
-                        &msg_id,
-                        1,
-                        DlqError {
-                            code: "E_SEND".into(),
-                            message: err_msg,
-                            stage: None,
-                        },
-                        &out,
-                    )
-                    .await
-                {
-                    tracing::error!("failed to publish dlq entry: {err}");
-                }
-            }
-            if let Err(err) = msg.ack_with(AckKind::Nak(None)).await {
-                tracing::error!("nak failed: {err}");
-            }
-        } else if let Err(err) = msg.ack().await {
-            tracing::error!("ack failed: {err}");
-        } else {
-            record_egress_success(&ctx, elapsed_ms);
         }
     }
 
     Ok(())
 }
 
-fn merge_channel_info(payload: &mut Value, out: &OutMessage) {
-    if let Some(obj) = payload.as_object_mut() {
-        obj.insert("channel".into(), out.chat_id.clone().into());
-        if let Some(thread) = &out.thread_id {
-            obj.insert("thread_ts".into(), thread.clone().into());
+async fn handle_message<S, D, M>(
+    limiter: &dyn BackpressureLimiter,
+    sender: &S,
+    dlq: &D,
+    msg: &M,
+) -> Result<()>
+where
+    S: EgressSender + Send + Sync,
+    D: DlqSink + Send + Sync,
+    M: DeliveryMessage + Send + Sync,
+{
+    let out: OutMessage = match serde_json::from_slice(msg.payload()) {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to decode OutMessage payload");
+            msg.ack().await?;
+            return Ok(());
+        }
+    };
+
+    if out.platform != Platform::Slack {
+        msg.ack().await?;
+        return Ok(());
+    }
+
+    let ctx = context_from_out(&out);
+    let msg_id = ctx
+        .labels
+        .msg_id
+        .clone()
+        .unwrap_or_else(|| out.message_id());
+
+    let acquire_span = start_acquire_span(&ctx);
+    let _permit = limiter
+        .acquire(&out.tenant)
+        .instrument(acquire_span)
+        .await?;
+
+    let send_span = start_send_span(&ctx);
+    let start_time = Instant::now();
+
+    let payloads = match to_slack_payloads(&out) {
+        Ok(payloads) => payloads,
+        Err(err) => {
+            tracing::warn!(error = %err, "slack translation failed");
+            msg.ack_with(AckKind::Nak(None)).await?;
+            return Ok(());
+        }
+    };
+
+    let mut error: Option<NodeError> = None;
+    {
+        let _guard = send_span.enter();
+        for payload in payloads {
+            let outbound = OutboundMessage {
+                channel: Some(out.chat_id.clone()),
+                text: out.text.clone(),
+                payload: Some(payload.clone()),
+            };
+            match send_with_retries(sender, &out.ctx, &outbound).await {
+                Ok(_res) => {
+                    tracing::debug!(
+                        env = %out.ctx.env.as_str(),
+                        tenant = %out.tenant,
+                        chat_id = %out.chat_id,
+                        "slack message posted"
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        env = %out.ctx.env.as_str(),
+                        tenant = %out.tenant,
+                        chat_id = %out.chat_id,
+                        error = %err,
+                        "slack send failed"
+                    );
+                    error = Some(err);
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(err) = error {
+        match err {
+            NodeError::Fail {
+                retryable: true,
+                backoff_ms,
+                ..
+            } => {
+                tracing::warn!(backoff_ms, "retryable slack error; nacking");
+                msg.ack_with(AckKind::Nak(None)).await?;
+            }
+            NodeError::Fail { code, message, .. } => {
+                let dlq_err = DlqError {
+                    code: code.clone(),
+                    message: message.clone(),
+                    stage: None,
+                };
+                dlq.publish_dlq(&out.tenant, out.platform.as_str(), &msg_id, dlq_err, &out)
+                    .await?;
+                msg.ack().await?;
+            }
+        }
+    } else {
+        msg.ack().await?;
+        let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+        record_egress_success(&ctx, elapsed_ms);
+    }
+
+    Ok(())
+}
+
+async fn send_with_retries<S>(
+    sender: &S,
+    ctx: &TenantCtx,
+    msg: &OutboundMessage,
+) -> NodeErrorResult<SendResult>
+where
+    S: EgressSender + Send + Sync,
+{
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match sender.send(ctx, msg.clone()).await {
+            Ok(res) => return Ok(res),
+            Err(err) => {
+                let retryable = matches!(
+                    err,
+                    NodeError::Fail {
+                        retryable: true,
+                        ..
+                    }
+                );
+                let backoff_ms = match &err {
+                    NodeError::Fail { backoff_ms, .. } => *backoff_ms,
+                };
+                if retryable && attempt < MAX_ATTEMPTS {
+                    let delay = backoff_ms
+                        .map(Duration::from_millis)
+                        .unwrap_or_else(|| Duration::from_secs(attempt as u64));
+                    tracing::warn!(attempt, delay_ms = delay.as_millis(), "slack retry");
+                    sleep(delay).await;
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
         }
     }
 }
 
-async fn post_message(
-    ctx: &TenantCtx,
-    http: &reqwest::Client,
-    token: &str,
-    payload: &Value,
-) -> Result<()> {
-    let response = http
-        .post("https://slack.com/api/chat.postMessage")
-        .bearer_auth(token)
-        .json(payload)
-        .send()
-        .await?;
+#[async_trait]
+trait DlqSink: Send + Sync {
+    async fn publish_dlq(
+        &self,
+        tenant: &str,
+        platform: &str,
+        msg_id: &str,
+        error: DlqError,
+        payload: &OutMessage,
+    ) -> Result<()>;
+}
 
-    if response.status().is_success() {
+#[async_trait]
+impl DlqSink for DlqPublisher {
+    async fn publish_dlq(
+        &self,
+        tenant: &str,
+        platform: &str,
+        msg_id: &str,
+        error: DlqError,
+        payload: &OutMessage,
+    ) -> Result<()> {
+        self.publish(tenant, platform, msg_id, 1, error, payload)
+            .await
+    }
+}
+
+#[async_trait]
+trait DeliveryMessage {
+    fn payload(&self) -> &[u8];
+    async fn ack(&self) -> Result<()>;
+    async fn ack_with(&self, kind: AckKind) -> Result<()>;
+}
+
+#[async_trait::async_trait]
+impl DeliveryMessage for async_nats::jetstream::Message {
+    fn payload(&self) -> &[u8] {
+        self.payload.as_ref()
+    }
+
+    async fn ack(&self) -> Result<()> {
+        self.ack()
+            .await
+            .map_err(|err| anyhow::Error::msg(err.to_string()))?;
         Ok(())
-    } else {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        Err(anyhow!(
-            "slack api error (env={}, tenant={}): {} {}",
-            ctx.env.as_str(),
-            ctx.tenant.as_str(),
-            status,
-            text
-        ))
+    }
+
+    async fn ack_with(&self, kind: AckKind) -> Result<()> {
+        self.ack_with(kind)
+            .await
+            .map_err(|err| anyhow::Error::msg(err.to_string()))?;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gsm_backpressure::{LocalBackpressureLimiter, RateLimits};
     use gsm_core::{make_tenant_ctx, OutKind, OutMessage, Platform};
     use serde_json::json;
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, Mutex},
+    };
+    use tokio::sync::Mutex as AsyncMutex;
 
-    fn sample_out(thread_id: Option<&str>) -> OutMessage {
-        OutMessage {
-            ctx: make_tenant_ctx("acme".into(), None, None),
-            tenant: "acme".into(),
-            platform: Platform::Slack,
-            chat_id: "C123".into(),
-            thread_id: thread_id.map(|s| s.into()),
-            kind: OutKind::Text,
-            text: Some("hello".into()),
-            message_card: None,
-            meta: Default::default(),
+    struct MockSender {
+        responses: AsyncMutex<Vec<NodeErrorResult<SendResult>>>,
+        calls: AsyncMutex<usize>,
+    }
+
+    impl MockSender {
+        fn new(responses: Vec<NodeErrorResult<SendResult>>) -> Self {
+            Self {
+                responses: AsyncMutex::new(responses),
+                calls: AsyncMutex::new(0),
+            }
+        }
+
+        async fn call_count(&self) -> usize {
+            *self.calls.lock().await
         }
     }
 
-    #[test]
-    fn merge_channel_info_sets_channel_and_thread() {
-        let mut payload = json!({ "text": "ok" });
-        let out = sample_out(Some("1711111111.000100"));
-        merge_channel_info(&mut payload, &out);
-        assert_eq!(payload["channel"], "C123");
-        assert_eq!(payload["thread_ts"], "1711111111.000100");
+    #[async_trait::async_trait]
+    impl EgressSender for MockSender {
+        async fn send(
+            &self,
+            _ctx: &TenantCtx,
+            _msg: OutboundMessage,
+        ) -> NodeErrorResult<SendResult> {
+            let mut calls = self.calls.lock().await;
+            *calls += 1;
+            let mut responses = self.responses.lock().await;
+            if responses.is_empty() {
+                Ok(SendResult::default())
+            } else {
+                responses.remove(0)
+            }
+        }
     }
 
-    #[test]
-    fn merge_channel_info_without_thread() {
-        let mut payload = json!({ "text": "ok" });
-        let out = sample_out(None);
-        merge_channel_info(&mut payload, &out);
-        assert_eq!(payload["channel"], "C123");
-        assert!(!payload.as_object().unwrap().contains_key("thread_ts"));
+    struct MockDlq {
+        entries: Mutex<Vec<DlqError>>,
     }
 
-    #[test]
-    fn merge_channel_info_overrides_existing_fields() {
-        let mut payload = json!({
-            "channel": "old",
-            "thread_ts": "old-thread",
-            "text": "hello"
-        });
-        let out = sample_out(Some("1710000000.123456"));
-        merge_channel_info(&mut payload, &out);
-        assert_eq!(payload["channel"], "C123");
-        assert_eq!(payload["thread_ts"], "1710000000.123456");
-        assert_eq!(payload["text"], "hello");
+    impl MockDlq {
+        fn new() -> Self {
+            Self {
+                entries: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DlqSink for MockDlq {
+        async fn publish_dlq(
+            &self,
+            _tenant: &str,
+            _platform: &str,
+            _msg_id: &str,
+            error: DlqError,
+            _payload: &OutMessage,
+        ) -> Result<()> {
+            self.entries.lock().unwrap().push(error);
+            Ok(())
+        }
+    }
+
+    struct MockMessage {
+        payload: Vec<u8>,
+        acked: AsyncMutex<bool>,
+    }
+
+    impl MockMessage {
+        fn new(out: &OutMessage) -> Self {
+            Self {
+                payload: serde_json::to_vec(out).unwrap(),
+                acked: AsyncMutex::new(false),
+            }
+        }
+
+        async fn acked(&self) -> bool {
+            *self.acked.lock().await
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DeliveryMessage for MockMessage {
+        fn payload(&self) -> &[u8] {
+            &self.payload
+        }
+
+        async fn ack(&self) -> Result<()> {
+            *self.acked.lock().await = true;
+            Ok(())
+        }
+
+        async fn ack_with(&self, _kind: AckKind) -> Result<()> {
+            *self.acked.lock().await = true;
+            Ok(())
+        }
+    }
+
+    fn sample_out() -> OutMessage {
+        let mut meta = BTreeMap::new();
+        meta.insert("source_msg_id".into(), json!("mid-1"));
+        OutMessage {
+            ctx: make_tenant_ctx("acme".into(), Some("team".into()), None),
+            tenant: "acme".into(),
+            platform: Platform::Slack,
+            chat_id: "C123".into(),
+            thread_id: None,
+            kind: OutKind::Text,
+            text: Some("hi".into()),
+            message_card: None,
+            meta,
+        }
+    }
+
+    fn limiter() -> Arc<LocalBackpressureLimiter> {
+        let limits = Arc::new(RateLimits::from_env());
+        Arc::new(LocalBackpressureLimiter::new(limits))
+    }
+
+    #[tokio::test]
+    async fn retries_on_retryable_error_then_succeeds() {
+        let retry_err = NodeError::new("slack_send_failed", "rate").with_retry(Some(1));
+        let sender = MockSender::new(vec![Err(retry_err), Ok(SendResult::default())]);
+        let out = sample_out();
+        let outbound = OutboundMessage {
+            channel: Some(out.chat_id.clone()),
+            text: out.text.clone(),
+            payload: Some(json!({"text": out.text.clone().unwrap()})),
+        };
+        send_with_retries(&sender, &out.ctx, &outbound)
+            .await
+            .unwrap();
+        assert_eq!(sender.call_count().await, 2);
+    }
+
+    #[tokio::test]
+    async fn handle_message_success_ack() {
+        let sender = MockSender::new(vec![Ok(SendResult::default())]);
+        let dlq = MockDlq::new();
+        let lim = limiter();
+        let out = sample_out();
+        let message = MockMessage::new(&out);
+
+        handle_message(lim.as_ref(), &sender, &dlq, &message)
+            .await
+            .unwrap();
+
+        assert!(message.acked().await);
+        assert!(dlq.entries.lock().unwrap().is_empty());
+        assert_eq!(sender.call_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn handle_message_dlq_on_non_retryable_failure() {
+        let sender = MockSender::new(vec![Err(NodeError::new("slack_send_failed", "bad"))]);
+        let dlq = MockDlq::new();
+        let lim = limiter();
+        let out = sample_out();
+        let message = MockMessage::new(&out);
+
+        handle_message(lim.as_ref(), &sender, &dlq, &message)
+            .await
+            .unwrap();
+
+        assert!(message.acked().await);
+        {
+            let entries = dlq.entries.lock().unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].code, "slack_send_failed");
+        }
+        assert_eq!(sender.call_count().await, 1);
     }
 }

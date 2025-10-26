@@ -3,6 +3,10 @@ name = "gsm-egress-teams"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+mock-http = []
+
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
@@ -21,3 +25,4 @@ time = { workspace = true }
 futures = "0.3.31"
 gsm-telemetry = { path = "../../libs/telemetry" }
 metrics = { workspace = true }
+async-trait = { workspace = true }

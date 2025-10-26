@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use gsm_telemetry::{record_counter, TelemetryLabels};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use tracing::{info, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,7 +17,9 @@ pub enum ReconcileResult {
 
 #[derive(Debug, Clone)]
 pub struct TenantOutcome {
+    #[allow(dead_code)]
     pub tenant: String,
+    #[allow(dead_code)]
     pub secret: Option<String>,
     #[allow(dead_code)]
     pub result: ReconcileResult,
@@ -249,10 +251,10 @@ pub fn urls_match(current: &str, desired: &str) -> bool {
 
 pub fn generate_secret() -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut rng = thread_rng();
+    let mut rng = rng();
     (0..32)
         .map(|_| {
-            let idx = rng.gen_range(0..ALPHABET.len());
+            let idx = rng.random_range(0..ALPHABET.len());
             ALPHABET[idx] as char
         })
         .collect()
@@ -266,9 +268,11 @@ mod tests {
     use std::collections::HashMap;
     use tokio::sync::Mutex;
 
+    type WebhookCallLog = Mutex<Vec<(String, String, Vec<String>, bool)>>;
+
     struct MockApi {
         info: Mutex<WebhookInfo>,
-        set_calls: Mutex<Vec<(String, String, Vec<String>, bool)>>,
+        set_calls: WebhookCallLog,
     }
 
     impl MockApi {

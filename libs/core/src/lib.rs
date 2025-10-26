@@ -4,6 +4,7 @@
 //! components. It also provides validation helpers and small utilities for subject naming and
 //! idempotency tracking.
 pub mod context;
+pub mod egress;
 pub mod idempotency;
 pub mod ingress;
 pub mod platforms;

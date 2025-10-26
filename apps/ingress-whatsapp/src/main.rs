@@ -2,20 +2,24 @@
 //! messages into `MessageEnvelope`s, and publishes them to NATS.
 //!
 //! ```text
-//! Meta calls `/whatsapp/webhook`; verified messages are emitted on
+//! Meta calls `/ingress/whatsapp/{tenant}`; verified messages are emitted on
 //! `greentic.msg.in.{tenant}.whatsapp.{from}`.
 //! ```
 
 use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Extension, Router,
 };
-use gsm_core::{in_subject, MessageEnvelope, Platform};
+use gsm_core::platforms::whatsapp::{creds::WhatsAppCredentials, provision::ensure_subscription};
+use gsm_core::{
+    in_subject, make_tenant_ctx, DefaultResolver, MessageEnvelope, NodeResult, Platform, Provider,
+    ProviderKey, ProviderRegistry, SecretsResolver, TenantCtx,
+};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
 use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
@@ -25,19 +29,99 @@ use security::middleware::{handle_action, ActionContext, SharedActionContext};
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::Sha256;
+use std::sync::Arc;
 use time::OffsetDateTime;
+
+#[cfg(test)]
+mod test_support {
+    use super::*;
+    use gsm_core::{NodeError, SecretPath};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    #[allow(dead_code)]
+    #[derive(Default)]
+    pub(super) struct InMemorySecrets {
+        store: Mutex<HashMap<String, Value>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SecretsResolver for InMemorySecrets {
+        async fn get_json<T>(&self, path: &SecretPath, _ctx: &TenantCtx) -> NodeResult<Option<T>>
+        where
+            T: serde::de::DeserializeOwned + Send,
+        {
+            let value = self.store.lock().unwrap().get(path.as_str()).cloned();
+            if let Some(json) = value {
+                serde_json::from_value(json).map(Some).map_err(|err| {
+                    NodeError::new("decode", "failed to decode secret").with_source(err)
+                })
+            } else {
+                Ok(None)
+            }
+        }
+
+        async fn put_json<T>(
+            &self,
+            path: &SecretPath,
+            _ctx: &TenantCtx,
+            value: &T,
+        ) -> NodeResult<()>
+        where
+            T: serde::Serialize + Sync + Send,
+        {
+            let json = serde_json::to_value(value).map_err(|err| {
+                NodeError::new("encode", "failed to encode secret").with_source(err)
+            })?;
+            self.store
+                .lock()
+                .unwrap()
+                .insert(path.as_str().to_string(), json);
+            Ok(())
+        }
+    }
+}
 
 type HmacSha256 = Hmac<Sha256>;
 
-#[derive(Clone)]
-struct AppState {
+struct AppState<R>
+where
+    R: SecretsResolver + Send + Sync + 'static,
+{
     nats: Nats,
-    tenant: String,
-    verify_token: String,
-    app_secret: String,
+    registry: Arc<ProviderRegistry<WhatsAppProvider>>,
+    resolver: Arc<R>,
+    http_client: Arc<reqwest::Client>,
+    webhook_base: String,
+    api_base: String,
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
 }
+
+impl<R> Clone for AppState<R>
+where
+    R: SecretsResolver + Send + Sync + 'static,
+{
+    fn clone(&self) -> Self {
+        Self {
+            nats: self.nats.clone(),
+            registry: self.registry.clone(),
+            resolver: self.resolver.clone(),
+            http_client: self.http_client.clone(),
+            webhook_base: self.webhook_base.clone(),
+            api_base: self.api_base.clone(),
+            idem_guard: self.idem_guard.clone(),
+            dlq: self.dlq.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct WhatsAppProvider {
+    creds: WhatsAppCredentials,
+}
+
+impl Provider for WhatsAppProvider {}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,22 +129,35 @@ async fn main() -> Result<()> {
     init_telemetry(telemetry)?;
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
-    let verify_token = std::env::var("WA_VERIFY_TOKEN").expect("WA_VERIFY_TOKEN required");
-    let app_secret = std::env::var("WA_APP_SECRET").expect("WA_APP_SECRET required");
+    let webhook_base =
+        std::env::var("WHATSAPP_WEBHOOK_BASE").unwrap_or_else(|_| "http://localhost:8087".into());
+    let api_base =
+        std::env::var("WA_API_BASE").unwrap_or_else(|_| "https://graph.facebook.com".into());
+
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
+    let registry = Arc::new(ProviderRegistry::new());
+    let resolver = Arc::new(DefaultResolver::new().await?);
+    let http_client = Arc::new(reqwest::Client::new());
+
     let state = AppState {
         nats,
-        tenant,
-        verify_token,
-        app_secret,
+        registry,
+        resolver,
+        http_client,
+        webhook_base,
+        api_base,
         idem_guard,
         dlq,
     };
 
-    let mut app = Router::new().route("/whatsapp/webhook", get(verify).post(receive));
+    let mut app: Router<AppState<DefaultResolver>> = Router::new()
+        .route(
+            "/ingress/whatsapp/{tenant}",
+            get(verify::<DefaultResolver>).post(receive::<DefaultResolver>),
+        )
+        .route("/healthz", get(healthz));
 
     match ActionContext::from_env(&state.nats).await {
         Ok(ctx) => {
@@ -96,9 +193,25 @@ struct VerifyQs {
     token: Option<String>,
 }
 
-async fn verify(State(state): State<AppState>, Query(q): Query<VerifyQs>) -> impl IntoResponse {
+async fn verify<R>(
+    State(state): State<AppState<R>>,
+    Path(tenant): Path<String>,
+    Query(q): Query<VerifyQs>,
+) -> impl IntoResponse
+where
+    R: SecretsResolver + Send + Sync + 'static,
+{
+    let ctx = make_tenant_ctx(tenant.clone(), None, None);
+    let provider = match resolve_provider(&state, &ctx, &tenant).await {
+        Ok(provider) => provider,
+        Err(err) => {
+            tracing::error!(error = %err, tenant = %ctx.tenant, "failed to resolve whatsapp provider");
+            return (StatusCode::INTERNAL_SERVER_ERROR, String::new());
+        }
+    };
+
     if q.mode.as_deref() == Some("subscribe")
-        && q.token.as_deref() == Some(state.verify_token.as_str())
+        && q.token.as_deref() == Some(provider.creds.verify_token.as_str())
     {
         (StatusCode::OK, q.challenge.unwrap_or_default())
     } else {
@@ -106,12 +219,25 @@ async fn verify(State(state): State<AppState>, Query(q): Query<VerifyQs>) -> imp
     }
 }
 
-async fn receive(
-    State(state): State<AppState>,
+async fn receive<R>(
+    State(state): State<AppState<R>>,
+    Path(tenant): Path<String>,
     headers: HeaderMap,
     body: axum::body::Bytes,
-) -> impl IntoResponse {
-    if !verify_fb_sig(&state.app_secret, &headers, &body) {
+) -> impl IntoResponse
+where
+    R: SecretsResolver + Send + Sync + 'static,
+{
+    let ctx = make_tenant_ctx(tenant.clone(), None, None);
+    let provider = match resolve_provider(&state, &ctx, &tenant).await {
+        Ok(provider) => provider,
+        Err(err) => {
+            tracing::error!(error = %err, tenant = %ctx.tenant, "failed to resolve whatsapp provider");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    };
+
+    if !verify_fb_sig(&provider.creds.app_secret, &headers, &body) {
         tracing::warn!("invalid whatsapp signature");
         return StatusCode::UNAUTHORIZED;
     }
@@ -124,11 +250,11 @@ async fn receive(
         }
     };
 
-    let envelopes = extract_envelopes(&state.tenant, &payload);
+    let envelopes = extract_envelopes(ctx.tenant.as_str(), &payload);
     for env in envelopes {
         let span = start_ingress_span(&env);
         let _guard = span.enter();
-        let subject = in_subject(&state.tenant, env.platform.as_str(), &env.chat_id);
+        let subject = in_subject(env.tenant.as_str(), env.platform.as_str(), &env.chat_id);
         let key = IdemKey {
             tenant: env.tenant.clone(),
             platform: env.platform.as_str().to_string(),
@@ -177,7 +303,7 @@ async fn receive(
             if let Err(dlq_err) = state
                 .dlq
                 .publish(
-                    &state.tenant,
+                    env.tenant.as_str(),
                     env.platform.as_str(),
                     &env.msg_id,
                     1,
@@ -199,6 +325,49 @@ async fn receive(
     }
 
     StatusCode::OK
+}
+
+async fn healthz() -> impl IntoResponse {
+    StatusCode::NO_CONTENT
+}
+
+async fn resolve_provider<R>(
+    state: &AppState<R>,
+    ctx: &TenantCtx,
+    tenant: &str,
+) -> NodeResult<Arc<WhatsAppProvider>>
+where
+    R: SecretsResolver + Send + Sync + 'static,
+{
+    let key = ProviderKey {
+        platform: Platform::WhatsApp,
+        env: ctx.env.clone(),
+        tenant: ctx.tenant.clone(),
+        team: None,
+    };
+
+    if let Some(existing) = state.registry.get(&key) {
+        return Ok(existing);
+    }
+
+    let target_url = format!(
+        "{}/ingress/whatsapp/{}",
+        state.webhook_base.trim_end_matches('/'),
+        tenant
+    );
+
+    let creds = ensure_subscription(
+        &state.http_client,
+        ctx,
+        &target_url,
+        &state.api_base,
+        state.resolver.as_ref(),
+    )
+    .await?;
+
+    let provider = Arc::new(WhatsAppProvider { creds });
+    state.registry.put(key, provider.clone());
+    Ok(provider)
 }
 
 fn verify_fb_sig(app_secret: &str, headers: &HeaderMap, body: &[u8]) -> bool {
@@ -354,5 +523,34 @@ mod tests {
         assert_eq!(env.chat_id, "12345");
         assert_eq!(env.text.as_deref(), Some("Hi"));
         assert_eq!(env.platform, Platform::WhatsApp);
+    }
+
+    #[test]
+    fn invocation_ctx_includes_tenant_and_user() {
+        let sample = serde_json::json!({
+            "entry": [
+                {"changes": [
+                    {"value": {
+                        "messages": [
+                            {
+                                "from": "5551234",
+                                "timestamp": "1700000000",
+                                "text": {"body": "Hello"}
+                            }
+                        ]
+                    }}
+                ]}
+            ]
+        });
+        let env = extract_envelopes("acme", &sample)
+            .pop()
+            .expect("message envelope");
+        let invocation = env.clone().into_invocation().expect("invocation");
+        assert_eq!(invocation.ctx.tenant.as_str(), "acme");
+        assert_eq!(invocation.ctx.team, None);
+        assert_eq!(
+            invocation.ctx.user.as_ref().map(|u| u.as_str()),
+            Some("5551234")
+        );
     }
 }
