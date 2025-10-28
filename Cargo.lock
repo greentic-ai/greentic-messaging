@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "mock-slack"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "mock-telegram"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2146,7 +2146,7 @@ dependencies = [
 
 [[package]]
 name = "nats-demo"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-nats",
