@@ -159,25 +159,23 @@ where
     }
 
     if let Some(err) = error {
-        match err {
-            NodeError::Fail {
-                retryable: true,
-                backoff_ms,
-                ..
-            } => {
-                tracing::warn!(backoff_ms, "retryable slack error; nacking");
-                msg.ack_with(AckKind::Nak(None)).await?;
-            }
-            NodeError::Fail { code, message, .. } => {
-                let dlq_err = DlqError {
-                    code: code.clone(),
-                    message: message.clone(),
-                    stage: None,
-                };
-                dlq.publish_dlq(&out.tenant, out.platform.as_str(), &msg_id, dlq_err, &out)
-                    .await?;
-                msg.ack().await?;
-            }
+        if err.retryable {
+            tracing::warn!(
+                backoff_ms = err.backoff_ms,
+                "retryable slack error; nacking"
+            );
+            msg.ack_with(AckKind::Nak(None)).await?;
+        } else {
+            let code = err.code.clone();
+            let message = err.message.clone();
+            let dlq_err = DlqError {
+                code: code.clone(),
+                message: message.clone(),
+                stage: None,
+            };
+            dlq.publish_dlq(&out.tenant, out.platform.as_str(), &msg_id, dlq_err, &out)
+                .await?;
+            msg.ack().await?;
         }
     } else {
         msg.ack().await?;
@@ -202,16 +200,8 @@ where
         match sender.send(ctx, msg.clone()).await {
             Ok(res) => return Ok(res),
             Err(err) => {
-                let retryable = matches!(
-                    err,
-                    NodeError::Fail {
-                        retryable: true,
-                        ..
-                    }
-                );
-                let backoff_ms = match &err {
-                    NodeError::Fail { backoff_ms, .. } => *backoff_ms,
-                };
+                let retryable = err.retryable;
+                let backoff_ms = err.backoff_ms;
                 if retryable && attempt < MAX_ATTEMPTS {
                     let delay = backoff_ms
                         .map(Duration::from_millis)

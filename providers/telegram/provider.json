@@ -1,0 +1,16 @@
+{
+  "name": "connector.messaging.telegram",
+  "version": "0.1.0",
+  "kind": "connector.messaging.telegram",
+  "auth": { "type": "bot_token", "secrets": ["bot_token"] },
+  "capabilities": {
+    "supports_threads": true,
+    "attachments": false,
+    "max_text_len": 4096,
+    "rate_limit": { "rpm": 30, "burst": 30 }
+  },
+  "endpoints": {
+    "send": "https://api.telegram.org",
+    "receive_webhook": "/telegram/webhook"
+  }
+}

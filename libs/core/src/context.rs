@@ -8,15 +8,10 @@ pub fn current_env() -> EnvId {
 
 /// Constructs a tenant context from the provided identifiers.
 pub fn make_tenant_ctx(tenant: String, team: Option<String>, user: Option<String>) -> TenantCtx {
-    TenantCtx {
-        env: current_env(),
-        tenant: TenantId(tenant),
-        team: team.map(TeamId),
-        user: user.map(UserId),
-        trace_id: None,
-        correlation_id: None,
-        deadline_unix_ms: None,
-        attempt: 0,
-        idempotency_key: None,
-    }
+    let env = current_env();
+    let tenant_id = TenantId::from(tenant);
+    let mut ctx = TenantCtx::new(env, tenant_id);
+    ctx = ctx.with_team(team.map(TeamId::from));
+    ctx = ctx.with_user(user.map(UserId::from));
+    ctx
 }

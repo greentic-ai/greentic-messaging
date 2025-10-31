@@ -114,10 +114,13 @@ where
                     "wa_send_failed",
                     format!("status={} body={}", status.as_u16(), body_text),
                 )
-                .with_details(serde_json::json!({
-                    "status": status.as_u16(),
-                    "body": body_text,
-                })));
+                .with_detail_text(
+                    serde_json::to_string(&serde_json::json!({
+                        "status": status.as_u16(),
+                        "body": body_text,
+                    }))
+                    .unwrap_or_else(|_| "{\"error\":\"failed to encode details\"}".to_string()),
+                ));
         }
 
         let raw: Value = response.json().await.unwrap_or(Value::Null);

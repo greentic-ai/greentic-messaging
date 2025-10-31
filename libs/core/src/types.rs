@@ -1,9 +1,8 @@
 use crate::context::make_tenant_ctx;
 use crate::prelude::TenantCtx;
-use greentic_types::safe_json;
 use greentic_types::{InvocationEnvelope, NodeError, NodeResult};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{self, Value};
 use std::collections::BTreeMap;
 
 /// Supported messaging platforms (kept small and stable).
@@ -70,15 +69,31 @@ pub struct MessageEnvelope {
     pub text: Option<String>,
     pub timestamp: String, // ISO-8601
     #[serde(default)]
-    pub context: BTreeMap<String, serde_json::Value>, // headers/extra/raw pointers
+    pub context: BTreeMap<String, Value>, // headers/extra/raw pointers
 }
 
 impl MessageEnvelope {
     /// Converts the message envelope into the canonical invocation envelope.
     pub fn into_invocation(self) -> NodeResult<InvocationEnvelope> {
         let ctx = make_tenant_ctx(self.tenant.clone(), None, Some(self.user_id.clone()));
-        let payload = safe_json(&self)?;
-        let metadata = safe_json(&self.context)?;
+        let payload = serde_json::to_vec(&self).map_err(|err| {
+            NodeError::new(
+                "SER_MESSAGE_ENVELOPE",
+                "failed to serialize message envelope payload",
+            )
+            .with_source(err)
+        })?;
+        let metadata = if self.context.is_empty() {
+            Vec::new()
+        } else {
+            serde_json::to_vec(&self.context).map_err(|err| {
+                NodeError::new(
+                    "SER_MESSAGE_METADATA",
+                    "failed to serialize message envelope metadata",
+                )
+                .with_source(err)
+            })?
+        };
         Ok(InvocationEnvelope {
             ctx,
             flow_id: self.platform.as_str().to_string(),
@@ -103,7 +118,7 @@ impl TryFrom<InvocationEnvelope> for MessageEnvelope {
             metadata,
         } = inv;
 
-        let mut env: MessageEnvelope = serde_json::from_value(payload).map_err(|err| {
+        let mut env: MessageEnvelope = serde_json::from_slice(&payload).map_err(|err| {
             NodeError::new(
                 "DESER_ENVELOPE",
                 "failed to deserialize invocation payload into MessageEnvelope",
@@ -111,14 +126,14 @@ impl TryFrom<InvocationEnvelope> for MessageEnvelope {
             .with_source(err)
         })?;
 
-        if let Some(user) = ctx.user {
+        if let Some(user) = ctx.user.clone().or_else(|| ctx.user_id.clone()) {
             env.user_id = String::from(user);
         }
         env.tenant = ctx.tenant.as_str().to_string();
 
-        if !matches!(metadata, Value::Null) {
-            let context: BTreeMap<String, serde_json::Value> = serde_json::from_value(metadata)
-                .map_err(|err| {
+        if !metadata.is_empty() {
+            let context: BTreeMap<String, Value> =
+                serde_json::from_slice(&metadata).map_err(|err| {
                     NodeError::new(
                         "DESER_METADATA",
                         "failed to deserialize invocation metadata into context",
@@ -163,7 +178,7 @@ pub struct OutMessage {
     pub text: Option<String>,
     pub message_card: Option<MessageCard>,
     #[serde(default)]
-    pub meta: BTreeMap<String, serde_json::Value>,
+    pub meta: BTreeMap<String, Value>,
 }
 
 impl OutMessage {
@@ -251,8 +266,5 @@ pub enum CardAction {
     },
     /// Posts structured data back to the application.
     #[serde(rename = "postback")]
-    Postback {
-        title: String,
-        data: serde_json::Value,
-    },
+    Postback { title: String, data: Value },
 }

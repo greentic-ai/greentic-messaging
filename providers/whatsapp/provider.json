@@ -1,0 +1,16 @@
+{
+  "name": "connector.messaging.whatsapp",
+  "version": "0.1.0",
+  "kind": "connector.messaging.whatsapp",
+  "auth": { "type": "bearer", "secrets": ["WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID"] },
+  "capabilities": {
+    "supports_threads": false,
+    "attachments": false,
+    "max_text_len": 4096,
+    "rate_limit": { "rpm": 80, "burst": 40 }
+  },
+  "endpoints": {
+    "send": "https://graph.facebook.com/v21.0/{PHONE_ID}/messages",
+    "receive_webhook": null
+  }
+}

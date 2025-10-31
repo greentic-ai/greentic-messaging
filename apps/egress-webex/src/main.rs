@@ -7,7 +7,7 @@ use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
 use gsm_core::platforms::webex::sender::WebexSender;
 use gsm_core::prelude::DefaultResolver;
 use gsm_core::NodeResult;
-use gsm_core::{NodeError, OutMessage, Platform, TenantCtx};
+use gsm_core::{OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     bootstrap, context_from_out, record_egress_success, start_acquire_span, start_send_span,
@@ -187,18 +187,17 @@ async fn handle_message(
                 "webex message sent"
             );
         }
-        Err(err) => match err {
-            NodeError::Fail {
-                retryable: true, ..
-            } => {
+        Err(err) => {
+            if err.retryable {
                 warn!(
                     tenant = tenant,
                     chat_id = %out.chat_id,
                     "webex retryable failure, nacking"
                 );
                 msg.ack_with(AckKind::Nak(None)).await?;
-            }
-            NodeError::Fail { code, message, .. } => {
+            } else {
+                let code = err.code.clone();
+                let message = err.message.clone();
                 error!(
                     tenant = tenant,
                     chat_id = %out.chat_id,
@@ -221,7 +220,7 @@ async fn handle_message(
                 .await?;
                 msg.ack().await?;
             }
-        },
+        }
     }
 
     Ok(())
@@ -238,16 +237,8 @@ async fn send_with_retries(
         match sender.send(ctx, msg.clone()).await {
             Ok(result) => return Ok(result),
             Err(err) => {
-                let retryable = matches!(
-                    err,
-                    NodeError::Fail {
-                        retryable: true,
-                        ..
-                    }
-                );
-                let backoff_ms = match &err {
-                    NodeError::Fail { backoff_ms, .. } => *backoff_ms,
-                };
+                let retryable = err.retryable;
+                let backoff_ms = err.backoff_ms;
                 if retryable && attempt < MAX_ATTEMPTS {
                     let delay = backoff_ms
                         .map(Duration::from_millis)
@@ -267,7 +258,7 @@ async fn send_with_retries(
 mod tests {
     use super::*;
     use gsm_backpressure::{LocalBackpressureLimiter, RateLimits};
-    use gsm_core::{make_tenant_ctx, OutKind};
+    use gsm_core::{make_tenant_ctx, NodeError, OutKind};
     use serde_json::{json, Value};
     use std::{
         collections::BTreeMap,

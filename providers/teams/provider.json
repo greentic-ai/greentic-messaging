@@ -1,0 +1,23 @@
+{
+  "name": "connector.messaging.teams",
+  "version": "0.1.0",
+  "kind": "connector.messaging.teams",
+  "auth": {
+    "type": "oauth2_client_credentials",
+    "secrets": [
+      "MS_GRAPH_TENANT_ID",
+      "MS_GRAPH_CLIENT_ID",
+      "MS_GRAPH_CLIENT_SECRET"
+    ]
+  },
+  "capabilities": {
+    "supports_threads": true,
+    "attachments": true,
+    "max_text_len": 28000,
+    "rate_limit": { "rpm": 600, "burst": 100 }
+  },
+  "endpoints": {
+    "send": "https://graph.microsoft.com/v1.0",
+    "receive_webhook": null
+  }
+}

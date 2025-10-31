@@ -29,6 +29,13 @@ cargo tarpaulin --workspace --all-features --out Lcov --output-dir coverage
 The generated `coverage/` directory contains the LCOV output that mirrors the
 artifact uploaded by GitHub Actions.
 
+## Releases & Publishing
+
+- Versions are derived from each crate's `Cargo.toml`.
+- Pushing to `master`: if any crate's version changed in the commit, `<crate>-v<version>` tags are created and pushed automatically.
+- The publish workflow then attempts to publish the updated crates to crates.io using the `CARGO_REGISTRY_TOKEN` secret.
+- Publishing is idempotent; runs succeed even when every version is already available on crates.io.
+
 ## Environment & Tenant Context
 
 - `GREENTIC_ENV` selects the environment scope for a deployment (`dev`, `test`, `prod`). When unset, the runtime defaults to `dev` so local flows continue to work without extra configuration.

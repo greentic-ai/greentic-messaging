@@ -1,0 +1,16 @@
+{
+  "name": "connector.messaging.webex",
+  "version": "0.1.0",
+  "kind": "connector.messaging.webex",
+  "auth": { "type": "bearer", "secrets": ["WEBEX_BOT_TOKEN"] },
+  "capabilities": {
+    "supports_threads": false,
+    "attachments": true,
+    "max_text_len": 7439,
+    "rate_limit": { "rpm": 120, "burst": 60 }
+  },
+  "endpoints": {
+    "send": "https://webexapis.com/v1/messages",
+    "receive_webhook": null
+  }
+}

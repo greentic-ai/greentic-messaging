@@ -1,0 +1,16 @@
+{
+  "name": "connector.messaging.slack",
+  "version": "0.1.0",
+  "kind": "connector.messaging.slack",
+  "auth": { "type": "bearer", "secrets": ["SLACK_BOT_TOKEN"] },
+  "capabilities": {
+    "supports_threads": true,
+    "attachments": true,
+    "max_text_len": 40000,
+    "rate_limit": { "rpm": 600, "burst": 100 }
+  },
+  "endpoints": {
+    "send": "https://slack.com/api/chat.postMessage",
+    "receive_webhook": null
+  }
+}

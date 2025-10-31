@@ -164,10 +164,13 @@ where
                     "slack_send_failed",
                     format!("status={} body={}", status.as_u16(), body_text),
                 )
-                .with_details(json!({
-                    "status": status.as_u16(),
-                    "body": body_text,
-                }));
+                .with_detail_text(
+                    serde_json::to_string(&json!({
+                        "status": status.as_u16(),
+                        "body": body_text,
+                    }))
+                    .unwrap_or_else(|_| "{\"error\":\"failed to encode details\"}".to_string()),
+                );
             if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
                 err = err.with_retry(retry_header.or(Some(1_000)));
             }
@@ -180,9 +183,11 @@ where
                 .get("error")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            let mut err = self
-                .fail("slack_send_failed", error.to_string())
-                .with_details(raw.clone());
+            let mut err =
+                self.fail("slack_send_failed", error.to_string())
+                    .with_detail_text(serde_json::to_string(&raw).unwrap_or_else(|_| {
+                        "{\"error\":\"failed to encode details\"}".to_string()
+                    }));
             if error == "ratelimited" {
                 err = err.with_retry(retry_header.or(Some(1_000)));
             }

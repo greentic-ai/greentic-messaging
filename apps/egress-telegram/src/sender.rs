@@ -121,7 +121,9 @@ where
                 "status": status.as_u16(),
                 "body": body_text,
             });
-            return Err(err.with_details(details));
+            let detail_text = serde_json::to_string(&details)
+                .unwrap_or_else(|_| "{\"error\":\"failed to encode details\"}".to_string());
+            return Err(err.with_detail_text(detail_text));
         }
 
         let raw: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);

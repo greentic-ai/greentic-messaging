@@ -1,0 +1,29 @@
+[package]
+name = "gsm-provider-registry"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = ["telegram"]
+telegram = []
+teams = ["dep:reqwest"]
+whatsapp = ["dep:reqwest"]
+slack = ["dep:reqwest"]
+webex = ["dep:reqwest"]
+webchat = ["dep:reqwest"]
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+dashmap = { workspace = true }
+gsm-core = { path = "../core" }
+reqwest = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

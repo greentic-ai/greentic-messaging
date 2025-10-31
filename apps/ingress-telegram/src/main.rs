@@ -668,36 +668,25 @@ async fn resolve_provider(state: &AppState, ctx: &TenantCtx) -> NodeResult<Arc<T
 }
 
 fn node_error_code(err: &NodeError) -> &str {
-    match err {
-        NodeError::Fail { code, .. } => code,
-    }
+    err.code.as_str()
 }
 
 fn node_error_response(err: NodeError) -> axum::response::Response {
-    match err {
-        NodeError::Fail {
-            code,
-            message,
-            retryable,
-            ..
-        } => {
-            let status = if retryable {
-                axum::http::StatusCode::SERVICE_UNAVAILABLE
-            } else {
-                axum::http::StatusCode::BAD_REQUEST
-            };
-            (
-                status,
-                Json(json!({
-                    "ok": false,
-                    "code": code,
-                    "message": message,
-                    "retryable": retryable,
-                })),
-            )
-                .into_response()
-        }
-    }
+    let status = if err.retryable {
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        axum::http::StatusCode::BAD_REQUEST
+    };
+    (
+        status,
+        Json(json!({
+            "ok": false,
+            "code": err.code,
+            "message": err.message,
+            "retryable": err.retryable,
+        })),
+    )
+        .into_response()
 }
 
 fn invocation_from_message(

@@ -15,7 +15,7 @@ use futures::StreamExt;
 use gsm_backpressure::{BackpressureLimiter, HybridLimiter};
 use gsm_core::egress::{EgressSender, OutboundMessage};
 use gsm_core::prelude::{DefaultResolver, SecretsResolver};
-use gsm_core::{NodeError, OutMessage, Platform};
+use gsm_core::{OutMessage, Platform};
 use gsm_egress_common::telemetry::{
     context_from_out, record_egress_success, start_acquire_span, start_send_span,
 };
@@ -166,17 +166,10 @@ where
             match sender.send(&out.ctx, outbound).await {
                 Ok(_) => {}
                 Err(err) => {
-                    let retryable = matches!(
-                        &err,
-                        NodeError::Fail {
-                            retryable: true,
-                            ..
-                        }
-                    );
-                    let err_string = err.to_string();
-                    if retryable {
+                    if err.retryable {
                         return Err(err.into());
                     } else {
+                        let err_string = err.to_string();
                         tracing::warn!(
                             tenant = %out.tenant,
                             chat_id = %out.chat_id,

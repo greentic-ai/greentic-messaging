@@ -1,0 +1,16 @@
+{
+  "name": "connector.messaging.webchat",
+  "version": "0.1.0",
+  "kind": "connector.messaging.webchat",
+  "auth": { "type": "none", "secrets": [] },
+  "capabilities": {
+    "supports_threads": true,
+    "attachments": false,
+    "max_text_len": 10000,
+    "rate_limit": { "rpm": 600, "burst": 200 }
+  },
+  "endpoints": {
+    "send": "http://localhost:8080/webchat/send",
+    "receive_webhook": "/webchat/incoming"
+  }
+}

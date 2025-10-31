@@ -128,10 +128,13 @@ where
             if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
                 err = err.with_retry(Some(1_000));
             }
-            return Err(err.with_details(json!({
-                "status": status.as_u16(),
-                "body": body,
-            })));
+            return Err(err.with_detail_text(
+                serde_json::to_string(&json!({
+                    "status": status.as_u16(),
+                    "body": body,
+                }))
+                .unwrap_or_else(|_| "{\"error\":\"failed to encode details\"}".to_string()),
+            ));
         }
 
         let value: Value = serde_json::from_str(&body)
@@ -233,10 +236,13 @@ where
             if retryable {
                 err = err.with_retry(Some(1_000));
             }
-            return Err(err.with_details(json!({
-                "status": status.as_u16(),
-                "body": body_text,
-            })));
+            return Err(err.with_detail_text(
+                serde_json::to_string(&json!({
+                    "status": status.as_u16(),
+                    "body": body_text,
+                }))
+                .unwrap_or_else(|_| "{\"error\":\"failed to encode details\"}".to_string()),
+            ));
         }
 
         let raw: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);
