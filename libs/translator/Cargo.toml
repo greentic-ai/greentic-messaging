@@ -9,13 +9,13 @@ license.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gsm-core = { path = "../core" }
+gsm-core = { version = "0.1.3", path = "../core" }
 unicode-segmentation = "1.12.0"
-security = { path = "../security" }
+security = { version = "0.1.3", path = "../security" }
 uuid = { workspace = true }
 time = { workspace = true }
 urlencoding = "2.1"
-gsm-telemetry = { path = "../telemetry" }
+gsm-telemetry = { version = "0.1.3", path = "../telemetry" }
 tracing = { workspace = true }
 
 [dev-dependencies]

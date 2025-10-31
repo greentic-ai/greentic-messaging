@@ -15,4 +15,4 @@ serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-gsm-telemetry = { path = "../telemetry" }
+gsm-telemetry = { version = "0.1.3", path = "../telemetry" }

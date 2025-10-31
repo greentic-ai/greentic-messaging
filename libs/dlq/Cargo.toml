@@ -15,4 +15,4 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 nanoid = "0.4"
 futures = "0.3"
-gsm-telemetry = { path = "../telemetry" }
+gsm-telemetry = { version = "0.1.3", path = "../telemetry" }
