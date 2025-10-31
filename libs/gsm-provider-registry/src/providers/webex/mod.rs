@@ -242,6 +242,12 @@ impl ReceiveAdapter for WebexReceiveAdapter {
 mod tests {
     use super::*;
     use gsm_core::make_tenant_ctx;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn restore_env(key: &str, previous: Option<String>) {
         if let Some(value) = previous {
@@ -253,6 +259,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_succeeds() {
+        let _guard = env_lock().lock().unwrap();
         let prev_token = std::env::var("WEBEX_BOT_TOKEN").ok();
         std::env::set_var("WEBEX_BOT_TOKEN", "token-123");
         let prev_url = std::env::var("WEBEX_SEND_URL").ok();
@@ -278,6 +285,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_handles_retryable() {
+        let _guard = env_lock().lock().unwrap();
         let prev_token = std::env::var("WEBEX_BOT_TOKEN").ok();
         std::env::set_var("WEBEX_BOT_TOKEN", "token-123");
         let prev_url = std::env::var("WEBEX_SEND_URL").ok();
