@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "egress-telegram"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -937,6 +937,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "greentic-messaging-security"
+version = "0.1.4"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "axum",
+ "base64",
+ "gsm-core",
+ "hex",
+ "jsonwebtoken",
+ "once_cell",
+ "rand 0.8.5",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2",
+ "time",
+ "tokio",
+ "tower",
+ "tracing",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
 name = "greentic-secrets-api"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1003,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-backpressure"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1019,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-cli-dlq"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1034,7 +1060,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1053,7 +1079,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-dlq"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1069,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-common"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1082,7 +1108,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-slack"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1105,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-teams"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1129,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-webchat"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1156,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-webex"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1183,7 +1209,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-whatsapp"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1206,7 +1232,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-idempotency"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1222,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-common"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1247,11 +1273,12 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-slack"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
  "axum",
+ "greentic-messaging-security",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1259,7 +1286,6 @@ dependencies = [
  "gsm-telemetry",
  "hmac",
  "metrics",
- "security",
  "serde",
  "serde_json",
  "sha2",
@@ -1271,18 +1297,18 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-teams"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
  "axum",
+ "greentic-messaging-security",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
  "gsm-ingress-common",
  "gsm-telemetry",
  "metrics",
- "security",
  "serde",
  "serde_json",
  "time",
@@ -1293,12 +1319,13 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-telegram"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
  "axum",
+ "greentic-messaging-security",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1307,7 +1334,6 @@ dependencies = [
  "metrics",
  "rand 0.9.2",
  "reqwest",
- "security",
  "serde",
  "serde_json",
  "serde_yaml_bw",
@@ -1321,11 +1347,12 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-webchat"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
  "axum",
+ "greentic-messaging-security",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1333,7 +1360,6 @@ dependencies = [
  "gsm-telemetry",
  "include_dir",
  "metrics",
- "security",
  "serde",
  "serde_json",
  "time",
@@ -1344,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-webex"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1373,12 +1399,13 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-whatsapp"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
  "axum",
+ "greentic-messaging-security",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1387,7 +1414,6 @@ dependencies = [
  "hmac",
  "metrics",
  "reqwest",
- "security",
  "serde",
  "serde_json",
  "sha2",
@@ -1399,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-provider-registry"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1415,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-runner"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1440,7 +1466,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-slack-oauth"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1461,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-subscriptions-teams"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1477,7 +1503,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-telemetry"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "gsm-core",
@@ -1494,13 +1520,13 @@ dependencies = [
 
 [[package]]
 name = "gsm-translator"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
+ "greentic-messaging-security",
  "gsm-core",
  "gsm-telemetry",
  "insta",
- "security",
  "serde",
  "serde_json",
  "time",
@@ -2089,7 +2115,7 @@ dependencies = [
 
 [[package]]
 name = "mock-slack"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -2102,7 +2128,7 @@ dependencies = [
 
 [[package]]
 name = "mock-telegram"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -2115,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "mock-weather-tool"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -2138,7 +2164,7 @@ dependencies = [
 
 [[package]]
 name = "nats-demo"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2978,32 +3004,6 @@ dependencies = [
  "pkcs8",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "security"
-version = "0.1.3"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "axum",
- "base64",
- "gsm-core",
- "hex",
- "jsonwebtoken",
- "once_cell",
- "rand 0.8.5",
- "rsa",
- "serde",
- "serde_json",
- "sha2",
- "time",
- "tokio",
- "tower",
- "tracing",
- "urlencoding",
- "uuid",
 ]
 
 [[package]]
