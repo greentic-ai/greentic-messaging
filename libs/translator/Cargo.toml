@@ -11,7 +11,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 gsm-core = { version = "0.1.3", path = "../core" }
 unicode-segmentation = "1.12.0"
-security = { version = "0.1.3", path = "../security" }
+security = { package = "greentic-messaging-security", version = "0.1.3", path = "../security" }
 uuid = { workspace = true }
 time = { workspace = true }
 urlencoding = "2.1"
