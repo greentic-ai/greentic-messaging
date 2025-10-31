@@ -4,6 +4,7 @@ version.workspace = true
 edition = "2021"
 license.workspace = true
 authors.workspace = true
+description = "Provider manifest loader, registry, and adapter traits for Greentic messaging connectors."
 
 [features]
 default = ["telegram"]

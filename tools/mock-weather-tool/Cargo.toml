@@ -2,6 +2,7 @@
 name = "mock-weather-tool"
 version.workspace = true
 edition = "2021"
+publish = false
 
 [dependencies]
 anyhow = { workspace = true }

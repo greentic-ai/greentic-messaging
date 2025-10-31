@@ -2,6 +2,8 @@
 name = "gsm-backpressure"
 version.workspace = true
 edition = "2021"
+description = "Backpressure and rate limiting primitives for Greentic messaging services."
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }

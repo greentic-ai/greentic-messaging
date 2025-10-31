@@ -2,6 +2,8 @@
 name = "gsm-dlq"
 version.workspace = true
 edition = "2021"
+description = "Dead-letter queue utilities and types for Greentic messaging pipelines."
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }

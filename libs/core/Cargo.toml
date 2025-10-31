@@ -2,6 +2,8 @@
 name = "gsm-core"
 version.workspace = true
 edition = "2021"
+description = "Core types and platform abstractions for the Greentic messaging runtime."
+license.workspace = true
 
 [dependencies]
 serde = { workspace = true }

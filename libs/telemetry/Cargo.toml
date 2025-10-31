@@ -2,6 +2,8 @@
 name = "gsm-telemetry"
 version.workspace = true
 edition = "2021"
+description = "Tracing and OpenTelemetry configuration helpers for Greentic messaging services."
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }

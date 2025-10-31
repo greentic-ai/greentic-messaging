@@ -2,6 +2,8 @@
 name = "security"
 version.workspace = true
 edition = "2021"
+description = "Security helpers and middleware for Greentic messaging ingress services."
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }

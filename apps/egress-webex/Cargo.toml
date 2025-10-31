@@ -2,6 +2,7 @@
 name = "gsm-egress-webex"
 version.workspace = true
 edition = "2021"
+publish = false
 
 [features]
 default = []

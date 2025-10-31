@@ -2,6 +2,8 @@
 name = "gsm-idempotency"
 version.workspace = true
 edition = "2021"
+description = "Shared idempotency guard and storage interfaces for Greentic messaging workflows."
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }

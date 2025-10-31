@@ -2,6 +2,8 @@
 name = "gsm-translator"
 version.workspace = true
 edition = "2021"
+description = "Message translation utilities and templates for Greentic messaging connectors."
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
