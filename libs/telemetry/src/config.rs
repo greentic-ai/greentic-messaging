@@ -73,12 +73,7 @@ fn parse_environment_from_resource(value: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
+    use crate::test_support::env_guard;
 
     fn clear_env(keys: &[&str]) {
         for key in keys {
@@ -88,7 +83,7 @@ mod tests {
 
     #[test]
     fn from_env_uses_defaults_when_unset() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_guard();
         clear_env(&[
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "OTEL_EXPORTER_OTLP_PROTOCOL",
@@ -111,7 +106,7 @@ mod tests {
 
     #[test]
     fn from_env_reads_protocol_and_flags() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_guard();
         std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "https://otel.local");
         std::env::set_var("OTEL_EXPORTER_OTLP_PROTOCOL", "http");
         std::env::set_var("OTEL_SERVICE_NAME", "svc-http");

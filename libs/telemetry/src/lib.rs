@@ -31,6 +31,20 @@ pub use tracing_init::{
     init_telemetry, telemetry_enabled, with_common_fields, TELEMETRY_METER_NAME,
 };
 
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    pub fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    pub fn env_guard() -> MutexGuard<'static, ()> {
+        env_lock().lock().unwrap_or_else(|err| err.into_inner())
+    }
+}
+
 #[macro_export]
 macro_rules! counter {
     ($name:expr, $value:expr, $labels:expr) => {{
@@ -55,16 +69,11 @@ macro_rules! gauge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
+    use crate::test_support::env_guard;
 
     #[test]
     fn config_defaults_disabled() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_guard();
         std::env::remove_var("ENABLE_OTEL");
         std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
         let cfg = TelemetryConfig::from_env("test-service", "0.0.1");
@@ -75,7 +84,7 @@ mod tests {
 
     #[test]
     fn config_enabled_when_flag_and_endpoint() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_guard();
         std::env::set_var("ENABLE_OTEL", "true");
         std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
         std::env::set_var("LOG_FORMAT", "text");
@@ -90,7 +99,7 @@ mod tests {
 
     #[test]
     fn init_noop_when_disabled() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_guard();
         std::env::remove_var("ENABLE_OTEL");
         std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
         let cfg = TelemetryConfig::from_env("svc", "1.0.0");
