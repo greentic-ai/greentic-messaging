@@ -1,4 +1,10 @@
 use gsm_core::*;
+use std::sync::{Mutex, OnceLock};
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[test]
 fn envelope_validates() {
@@ -79,6 +85,7 @@ fn out_text_and_card_validate() {
 
 #[test]
 fn current_env_defaults_to_dev() {
+    let _guard = env_lock().lock().unwrap();
     let prev = std::env::var("GREENTIC_ENV").ok();
     std::env::remove_var("GREENTIC_ENV");
     let env = current_env();
@@ -122,6 +129,7 @@ fn provider_key_hash_matches() {
 
 #[test]
 fn messaging_credentials_path_includes_env() {
+    let _guard = env_lock().lock().unwrap();
     let prev = std::env::var("GREENTIC_ENV").ok();
     std::env::set_var("GREENTIC_ENV", "test");
 

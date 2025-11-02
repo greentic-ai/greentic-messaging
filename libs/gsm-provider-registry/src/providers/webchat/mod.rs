@@ -214,6 +214,12 @@ impl ReceiveAdapter for WebChatReceiveAdapter {
 mod tests {
     use super::*;
     use gsm_core::make_tenant_ctx;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn restore_env(key: &str, previous: Option<String>) {
         if let Some(value) = previous {
@@ -225,6 +231,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_succeeds() {
+        let _guard = env_lock().lock().unwrap();
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let mut adapter = WebChatSendAdapter::from_manifest(&manifest).unwrap();
         adapter.default_endpoint = "mock://success".into();
@@ -251,6 +258,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_handles_429() {
+        let _guard = env_lock().lock().unwrap();
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let adapter = WebChatSendAdapter::from_manifest(&manifest).unwrap();
         let prev = std::env::var("WEBCHAT_SEND_URL").ok();
