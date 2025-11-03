@@ -11,7 +11,7 @@ gsm-backpressure = { path = "../../libs/backpressure" }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
 gsm-core = { path = "../../libs/core" }
-gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-telemetry = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

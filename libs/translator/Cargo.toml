@@ -15,7 +15,7 @@ security = { package = "greentic-messaging-security", path = "../security" }
 uuid = { workspace = true }
 time = { workspace = true }
 urlencoding = { workspace = true }
-gsm-telemetry = { path = "../telemetry" }
+gsm-telemetry = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
 

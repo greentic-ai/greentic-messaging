@@ -15,4 +15,4 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 time = { workspace = true }
 futures = { workspace = true }
-gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-telemetry = { workspace = true }

@@ -21,5 +21,5 @@ gsm-dlq = { path = "../../libs/dlq" }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 security = { package = "greentic-messaging-security", path = "../../libs/security" }
-gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-telemetry = { workspace = true }
 metrics = { workspace = true }

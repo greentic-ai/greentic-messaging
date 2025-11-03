@@ -16,4 +16,4 @@ greentic-types = { workspace = true }
 tokio = { workspace = true }
 nanoid = { workspace = true }
 futures = { workspace = true }
-gsm-telemetry = { path = "../telemetry" }
+gsm-telemetry = { workspace = true }

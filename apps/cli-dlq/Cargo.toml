@@ -10,7 +10,7 @@ async-nats = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-telemetry = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }

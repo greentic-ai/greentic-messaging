@@ -16,4 +16,4 @@ time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
-gsm-telemetry = { path = "../telemetry" }
+gsm-telemetry = { workspace = true }

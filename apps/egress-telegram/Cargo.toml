@@ -17,7 +17,7 @@ async-nats = { workspace = true }
 futures = { workspace = true }
 gsm-backpressure = { path = "../../libs/backpressure" }
 metrics = { workspace = true }
-gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-telemetry = { workspace = true }
 gsm-egress-common = { path = "../egress-common" }
 async-trait = { workspace = true }
 

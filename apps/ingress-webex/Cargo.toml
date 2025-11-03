@@ -23,7 +23,7 @@ async-trait = { workspace = true }
 gsm-core = { path = "../../libs/core" }
 gsm-idempotency = { path = "../../libs/idempotency" }
 gsm-ingress-common = { path = "../ingress-common" }
-gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-telemetry = { workspace = true }
 gsm-translator = { path = "../../libs/translator" }
 metrics = { workspace = true }
 reqwest = { workspace = true }

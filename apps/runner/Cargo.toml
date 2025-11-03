@@ -26,7 +26,7 @@ gsm-core = { path = "../../libs/core" }
 gsm-dlq = { path = "../../libs/dlq" }
 futures = { workspace = true }
 rand = { workspace = true }
-gsm-telemetry = { path = "../../libs/telemetry" }
+gsm-telemetry = { workspace = true }
 
 [dev-dependencies]
 gsm-backpressure = { path = "../../libs/backpressure" }
