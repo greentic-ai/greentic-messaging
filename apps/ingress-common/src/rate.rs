@@ -12,7 +12,7 @@ use axum::{
     http::{Request, StatusCode},
     response::{IntoResponse, Response},
 };
-use tower::{util::ServiceExt, Layer, Service};
+use tower::{Layer, Service, util::ServiceExt};
 
 #[derive(Clone)]
 pub struct RateLimiter {

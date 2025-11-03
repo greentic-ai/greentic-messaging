@@ -3,7 +3,7 @@
 use crate::telemetry::translate_with_span;
 use anyhow::Result;
 use gsm_core::{CardAction, CardBlock, MessageCard, OutMessage};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Converts a [`MessageCard`](gsm_core::MessageCard) into a Teams Adaptive Card payload.
 ///

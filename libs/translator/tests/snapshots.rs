@@ -1,5 +1,5 @@
 use gsm_core::{
-    make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+    CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform, make_tenant_ctx,
 };
 use gsm_translator::{TelegramTranslator, Translator, WebChatTranslator};
 

@@ -4,12 +4,12 @@ mod sender;
 
 use anyhow::{Context, Result};
 use async_nats::jetstream::{
+    AckKind, Context as JsContext,
     consumer::{
-        push::{Config as PushConfig, Messages},
         AckPolicy,
+        push::{Config as PushConfig, Messages},
     },
     stream::{Config as StreamConfig, RetentionPolicy},
-    AckKind, Context as JsContext,
 };
 use futures::StreamExt;
 use gsm_backpressure::{BackpressureLimiter, HybridLimiter};
@@ -19,7 +19,7 @@ use gsm_core::{OutMessage, Platform};
 use gsm_egress_common::telemetry::{
     context_from_out, record_egress_success, start_acquire_span, start_send_span,
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::install as init_telemetry;
 use gsm_translator::{TelegramTranslator, Translator};
 use sender::TelegramSender;
 use serde_json::Value;
@@ -28,8 +28,7 @@ use tracing::Instrument;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-egress-telegram", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
+    init_telemetry("greentic-messaging")?;
     tracing::info!("egress-telegram booting");
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
@@ -204,7 +203,7 @@ fn enrich_payload(payload: &mut Value, out: &OutMessage) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gsm_core::{make_tenant_ctx, OutKind};
+    use gsm_core::{OutKind, make_tenant_ctx};
     use serde_json::json;
 
     fn sample_out(thread: Option<&str>) -> OutMessage {
@@ -236,9 +235,11 @@ mod tests {
         let out = sample_out(None);
         enrich_payload(&mut payload, &out);
         assert_eq!(payload["chat_id"], "chat-1");
-        assert!(!payload
-            .as_object()
-            .unwrap()
-            .contains_key("reply_to_message_id"));
+        assert!(
+            !payload
+                .as_object()
+                .unwrap()
+                .contains_key("reply_to_message_id")
+        );
     }
 }

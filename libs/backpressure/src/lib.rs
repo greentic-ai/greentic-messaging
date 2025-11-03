@@ -3,24 +3,24 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration as StdDuration, Instant},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_nats::jetstream::{
+    Context as JsContext,
     context::KeyValueErrorKind,
     kv::{self, CreateErrorKind, UpdateErrorKind},
-    Context as JsContext,
 };
 use async_trait::async_trait;
-use gsm_telemetry::{record_gauge, TelemetryLabels};
+use gsm_telemetry::{TelemetryLabels, record_gauge};
 use serde::{Deserialize, Serialize};
-use time::{serde::rfc3339, Duration, OffsetDateTime};
+use time::{Duration, OffsetDateTime, serde::rfc3339};
 use tokio::sync::Mutex;
-use tracing::{event, instrument, warn, Level};
+use tracing::{Level, event, instrument, warn};
 
 static RATE_LIMIT_ENV: &str = "TENANT_RATE_LIMITS";
 static BACKPRESSURE_NAMESPACE_ENV: &str = "JS_KV_NAMESPACE_BACKPRESSURE";
@@ -445,14 +445,18 @@ mod tests {
     #[test]
     fn parse_rate_limits_env() {
         let _guard = env_lock().lock().unwrap();
-        std::env::set_var(RATE_LIMIT_ENV, r#"{ "t1": {"rps": 10, "burst": 20} }"#);
+        unsafe {
+            std::env::set_var(RATE_LIMIT_ENV, r#"{ "t1": {"rps": 10, "burst": 20} }"#);
+        }
         let limits = RateLimits::from_env();
         let cfg = limits.get("t1");
         assert_eq!(cfg.rps, 10.0);
         assert_eq!(cfg.burst, 20.0);
         let default = limits.get("unknown");
         assert_eq!(default.rps, 5.0);
-        std::env::remove_var(RATE_LIMIT_ENV);
+        unsafe {
+            std::env::remove_var(RATE_LIMIT_ENV);
+        }
     }
 
     #[test]
@@ -490,14 +494,18 @@ mod tests {
     #[test]
     fn rate_limits_enforce_minimums() {
         let _guard = env_lock().lock().unwrap();
-        std::env::set_var(
-            RATE_LIMIT_ENV,
-            r#"{ "tenant": {"rps": 0.0, "burst": 0.0} }"#,
-        );
+        unsafe {
+            std::env::set_var(
+                RATE_LIMIT_ENV,
+                r#"{ "tenant": {"rps": 0.0, "burst": 0.0} }"#,
+            );
+        }
         let limits = RateLimits::from_env();
         let cfg = limits.get("tenant");
         assert_eq!(cfg.rps, 0.1);
         assert_eq!(cfg.burst, 1.0);
-        std::env::remove_var(RATE_LIMIT_ENV);
+        unsafe {
+            std::env::remove_var(RATE_LIMIT_ENV);
+        }
     }
 }

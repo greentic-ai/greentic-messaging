@@ -1,7 +1,7 @@
 [package]
 name = "gsm-egress-webchat"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 
 [dependencies]
@@ -9,22 +9,22 @@ anyhow = { workspace = true }
 async-nats = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+greentic-types = { workspace = true }
 axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-include_dir = "0.7"
+include_dir = { workspace = true }
 gsm-core = { path = "../../libs/core" }
 gsm-translator = { path = "../../libs/translator" }
 gsm-egress-common = { path = "../egress-common" }
 gsm-backpressure = { path = "../../libs/backpressure" }
 gsm-dlq = { path = "../../libs/dlq" }
-async-stream = "0.3.6"
-futures = "0.3.31"
+async-stream = { workspace = true }
+futures = { workspace = true }
 metrics = { workspace = true }
 gsm-telemetry = { path = "../../libs/telemetry" }
 dashmap = { workspace = true }
 
 [dev-dependencies]
-hyper = "1"
-http-body-util = "0.1"
+hyper = { workspace = true }
+http-body-util = { workspace = true }

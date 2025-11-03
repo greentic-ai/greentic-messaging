@@ -1,9 +1,9 @@
 //! Helpers for translating `OutMessage` instances into Slack block payloads.
 
 use crate::telemetry::translate_with_span;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const MAX_BLOCKS_PER_MESSAGE: usize = 45;
 const MAX_ACTIONS_PER_BLOCK: usize = 5;
@@ -139,7 +139,7 @@ fn flush_facts(fact_lines: &mut Vec<String>, blocks: &mut Vec<Value>) {
 mod tests {
     use super::*;
     use gsm_core::{
-        make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+        CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform, make_tenant_ctx,
     };
 
     fn base_message(kind: OutKind) -> OutMessage {
@@ -227,12 +227,16 @@ mod tests {
 
         let payloads = to_slack_payloads(&out).unwrap();
         assert_eq!(payloads.len(), 3);
-        assert!(payloads
-            .iter()
-            .all(|p| p["thread_ts"] == "1710000000.000100"));
-        assert!(payloads
-            .iter()
-            .all(|p| p["blocks"].as_array().unwrap().len() <= MAX_BLOCKS_PER_MESSAGE));
+        assert!(
+            payloads
+                .iter()
+                .all(|p| p["thread_ts"] == "1710000000.000100")
+        );
+        assert!(
+            payloads
+                .iter()
+                .all(|p| p["blocks"].as_array().unwrap().len() <= MAX_BLOCKS_PER_MESSAGE)
+        );
     }
 
     #[test]

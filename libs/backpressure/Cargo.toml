@@ -1,7 +1,7 @@
 [package]
 name = "gsm-backpressure"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "Backpressure and rate limiting primitives for Greentic messaging services."
 license.workspace = true
 
@@ -15,4 +15,5 @@ serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-gsm-telemetry = { version = "0.1.3", path = "../telemetry" }
+greentic-types = { workspace = true }
+gsm-telemetry = { path = "../telemetry" }

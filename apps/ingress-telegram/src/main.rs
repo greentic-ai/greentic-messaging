@@ -14,19 +14,19 @@ mod telegram_api;
 use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
+    Json, Router,
     extract::{Extension, Path, State},
     http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use config::load_tenants;
 use gsm_core::platforms::telegram::{creds::TelegramCreds, provision::ensure_provisioned};
 use gsm_core::prelude::{DefaultResolver, SecretsResolver};
 use gsm_core::{
-    in_subject, make_tenant_ctx, messaging_credentials, InvocationEnvelope, MessageEnvelope,
-    NodeError, NodeResult, Platform, Provider, ProviderKey, ProviderRegistry, TenantCtx,
+    InvocationEnvelope, MessageEnvelope, NodeError, NodeResult, Platform, Provider, ProviderKey,
+    ProviderRegistry, TenantCtx, in_subject, make_tenant_ctx, messaging_credentials,
 };
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::IdKey as IdemKey;
@@ -34,16 +34,16 @@ use gsm_ingress_common::{
     init_guard, rate_limit_layer, record_idempotency_hit, record_ingress, start_ingress_span,
     verify_bearer, verify_hmac, with_request_id,
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use reconciler::{
     allowed_updates, desired_webhook_url, ensure_secret, reconcile_all_telegram_webhooks,
     urls_match,
 };
 use reqwest::Client;
 use secrets::{EnvSecretsManager, SecretsManager};
-use security::middleware::{handle_action, ActionContext, SharedActionContext};
+use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use telegram_api::{HttpTelegramApi, TelegramApi, WebhookInfo};
 use time::OffsetDateTime;
@@ -266,9 +266,7 @@ async fn status_tenant_op(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-ingress-telegram", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let default_tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let tenant_config_path = std::env::var("TENANT_CONFIG").ok();
@@ -540,6 +538,7 @@ async fn process_update(
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
         };
+        set_current_tenant_ctx(invocation.ctx.clone());
         let span = start_ingress_span(&env);
         let _guard = span.enter();
         let id_key = IdemKey {
@@ -763,7 +762,9 @@ mod tests {
 
     #[test]
     fn invocation_carries_tenant_context() {
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let msg = sample_message();
         let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), Some("user-5".into()));
         let (_, invocation) = invocation_from_message(&ctx, &msg).expect("invocation");
@@ -968,9 +969,11 @@ mod tests {
         assert!(logs_contain("action=\"skipped_missing\""));
         assert!(logs_contain("action=\"skipped_disabled\""));
         assert!(logs_contain("action=\"applied\""));
-        assert!(outcomes
-            .iter()
-            .any(|o| o.tenant == "active" && o.result == ReconcileResult::Applied));
+        assert!(
+            outcomes
+                .iter()
+                .any(|o| o.tenant == "active" && o.result == ReconcileResult::Applied)
+        );
     }
 
     #[tokio::test]

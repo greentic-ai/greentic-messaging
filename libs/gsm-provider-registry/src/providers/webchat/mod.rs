@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use gsm_core::TenantCtx;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::errors::MsgError;
 use crate::manifest::ProviderManifest;
@@ -25,7 +25,7 @@ pub fn register(registry: &mut ProviderRegistry) -> Result<(), anyhow::Error> {
             WebChatSendAdapter::from_manifest(&manifest)
                 .map(|adapter| Box::new(adapter) as Box<dyn SendAdapter>)
         })
-        .with_receive(|| Ok(Box::new(WebChatReceiveAdapter::default()) as Box<dyn ReceiveAdapter>));
+        .with_receive(|| Ok(Box::new(WebChatReceiveAdapter) as Box<dyn ReceiveAdapter>));
 
     registry
         .register(manifest, builder)
@@ -223,9 +223,13 @@ mod tests {
 
     fn restore_env(key: &str, previous: Option<String>) {
         if let Some(value) = previous {
-            std::env::set_var(key, value);
+            unsafe {
+                std::env::set_var(key, value);
+            }
         } else {
-            std::env::remove_var(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
         }
     }
 
@@ -236,7 +240,9 @@ mod tests {
         let mut adapter = WebChatSendAdapter::from_manifest(&manifest).unwrap();
         adapter.default_endpoint = "mock://success".into();
         let prev = std::env::var("WEBCHAT_SEND_URL").ok();
-        std::env::remove_var("WEBCHAT_SEND_URL");
+        unsafe {
+            std::env::remove_var("WEBCHAT_SEND_URL");
+        }
 
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let message = Message {
@@ -262,7 +268,9 @@ mod tests {
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let adapter = WebChatSendAdapter::from_manifest(&manifest).unwrap();
         let prev = std::env::var("WEBCHAT_SEND_URL").ok();
-        std::env::set_var("WEBCHAT_SEND_URL", "mock://throttle");
+        unsafe {
+            std::env::set_var("WEBCHAT_SEND_URL", "mock://throttle");
+        }
 
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let message = Message {

@@ -2,9 +2,11 @@ use anyhow::{Error, Result};
 use async_nats::Client;
 use futures::StreamExt;
 use gsm_core::*;
+use gsm_telemetry::install as init_telemetry;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let platform = Platform::Telegram;

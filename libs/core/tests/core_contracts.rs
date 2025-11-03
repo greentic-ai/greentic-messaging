@@ -87,11 +87,15 @@ fn out_text_and_card_validate() {
 fn current_env_defaults_to_dev() {
     let _guard = env_lock().lock().unwrap();
     let prev = std::env::var("GREENTIC_ENV").ok();
-    std::env::remove_var("GREENTIC_ENV");
+    unsafe {
+        std::env::remove_var("GREENTIC_ENV");
+    }
     let env = current_env();
     assert_eq!(env.as_str(), "dev");
     if let Some(prev) = prev {
-        std::env::set_var("GREENTIC_ENV", prev);
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", prev);
+        }
     }
 }
 
@@ -131,7 +135,9 @@ fn provider_key_hash_matches() {
 fn messaging_credentials_path_includes_env() {
     let _guard = env_lock().lock().unwrap();
     let prev = std::env::var("GREENTIC_ENV").ok();
-    std::env::set_var("GREENTIC_ENV", "test");
+    unsafe {
+        std::env::set_var("GREENTIC_ENV", "test");
+    }
 
     let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), Some("user-9".into()));
     let secret = messaging_credentials("telegram", &ctx);
@@ -146,9 +152,13 @@ fn messaging_credentials_path_includes_env() {
     assert!(rendered.contains("/team-1/"));
 
     if let Some(prev) = prev {
-        std::env::set_var("GREENTIC_ENV", prev);
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", prev);
+        }
     } else {
-        std::env::remove_var("GREENTIC_ENV");
+        unsafe {
+            std::env::remove_var("GREENTIC_ENV");
+        }
     }
 }
 

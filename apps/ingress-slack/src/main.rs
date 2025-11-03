@@ -6,22 +6,22 @@
 use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
+    Extension, Router,
     body::Bytes,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Extension, Router,
 };
 use gsm_core::{
-    in_subject, make_tenant_ctx, InvocationEnvelope, MessageEnvelope, Platform, TenantCtx,
+    InvocationEnvelope, MessageEnvelope, Platform, TenantCtx, in_subject, make_tenant_ctx,
 };
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
 use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use hmac::{Hmac, Mac};
-use security::middleware::{handle_action, ActionContext, SharedActionContext};
+use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use time::OffsetDateTime;
@@ -45,9 +45,7 @@ struct SlackPath {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-ingress-slack", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let signing_secret =
         std::env::var("SLACK_SIGNING_SECRET").expect("SLACK_SIGNING_SECRET required");
@@ -148,6 +146,7 @@ async fn handle(
         let ctx = tenant_ctx_from_path(&path);
         match slack_event_invocation(&ctx, state.bot_user_id.as_deref(), event) {
             Some((subject, message, invocation)) => {
+                set_current_tenant_ctx(invocation.ctx.clone());
                 let span = start_ingress_span(&message);
                 let _guard = span.enter();
                 let key = IdemKey {
@@ -274,20 +273,21 @@ fn slack_event_invocation(
         return None;
     }
 
-    if let Some(kind) = r#type.as_deref() {
-        if kind != "message" {
-            tracing::debug!(event_type = ?kind, "ignoring non-message slack event");
-            return None;
-        }
+    if let Some(kind) = r#type.as_deref()
+        && kind != "message"
+    {
+        tracing::debug!(event_type = ?kind, "ignoring non-message slack event");
+        return None;
     }
 
     let chat_id = channel?;
     let user_id = user?;
-    if let Some(bot_user) = bot_user_id {
-        if bot_user == user_id && text.as_deref().map(|t| t.trim().is_empty()).unwrap_or(true) {
-            tracing::debug!(user_id = %user_id, "ignoring slack event from bot user (empty text)");
-            return None;
-        }
+    if let Some(bot_user) = bot_user_id
+        && bot_user == user_id
+        && text.as_deref().map(|t| t.trim().is_empty()).unwrap_or(true)
+    {
+        tracing::debug!(user_id = %user_id, "ignoring slack event from bot user (empty text)");
+        return None;
     }
 
     let timestamp = ts.unwrap_or_else(|| "0".into());

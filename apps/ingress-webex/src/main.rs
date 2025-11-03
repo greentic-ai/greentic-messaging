@@ -2,26 +2,26 @@ use anyhow::Result;
 use async_nats::Client as NatsClient;
 use async_trait::async_trait;
 use axum::{
+    Router,
     body::Bytes,
     extract::{Path, State},
-    http::{header::HeaderName, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header::HeaderName},
     response::IntoResponse,
     routing::{get, post},
-    Router,
 };
-use gsm_core::platforms::webex::{creds::WebexCredentials, provision::ensure_webhooks};
 #[cfg(not(test))]
 use gsm_core::DefaultResolver;
+use gsm_core::platforms::webex::{creds::WebexCredentials, provision::ensure_webhooks};
 use gsm_core::{
-    in_subject, make_tenant_ctx, NodeResult, Platform, Provider, ProviderKey, ProviderRegistry,
-    TeamId, TenantCtx, UserId,
+    NodeResult, Platform, Provider, ProviderKey, ProviderRegistry, TeamId, TenantCtx, UserId,
+    in_subject, make_tenant_ctx,
 };
 use gsm_idempotency::{IdKey, IdempotencyGuard};
 use gsm_ingress_common::{
-    init_guard, record_idempotency_hit, record_ingress, signature_header_from_env,
-    start_ingress_span, SignatureAlgorithm,
+    SignatureAlgorithm, init_guard, record_idempotency_hit, record_ingress,
+    signature_header_from_env, start_ingress_span,
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use serde_json::Value;
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::{error, info, warn};
@@ -138,9 +138,7 @@ fn router(state: AppState) -> Router {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-ingress-webex", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let header_name = signature_header_from_env();
     let signature_header =
@@ -338,6 +336,8 @@ async fn process_webhook(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    set_current_tenant_ctx(invocation.ctx.clone());
+
     state
         .publisher
         .publish(&subject, payload)
@@ -407,8 +407,8 @@ mod tests {
     use axum::body::Body;
     use axum::http::Request;
     use gsm_core::{
-        make_tenant_ctx, webex_credentials, InvocationEnvelope, MessageEnvelope, Platform,
-        SecretsResolver,
+        InvocationEnvelope, MessageEnvelope, Platform, SecretsResolver, make_tenant_ctx,
+        webex_credentials,
     };
     use gsm_idempotency::{InMemoryIdemStore, SharedIdemStore};
     use std::sync::Mutex;
@@ -432,7 +432,9 @@ mod tests {
     }
 
     async fn build_state() -> (AppState, Arc<MockPublisher>) {
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let signature_header = HeaderName::from_static("x-webex-signature");
         let signature_algorithm = SignatureAlgorithm::Sha1;
         let store: SharedIdemStore = Arc::new(InMemoryIdemStore::new());

@@ -1,7 +1,7 @@
 [package]
 name = "greentic-messaging-security"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "Security helpers and middleware for Greentic messaging ingress services."
 license.workspace = true
 
@@ -19,15 +19,16 @@ async-nats = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
-gsm-core = { version = "0.1.3", path = "../core" }
-sha2 = "0.10"
-hex = "0.4"
-urlencoding = "2.1"
+greentic-types = { workspace = true }
+gsm-core = { path = "../core" }
+sha2 = { workspace = true }
+hex = { workspace = true }
+urlencoding = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-once_cell = "1.19"
-base64 = "0.22"
-tower = { version = "0.5.2", features = ["util"] }
-rsa = "0.9"
+once_cell = { workspace = true }
+base64 = { workspace = true }
+tower = { workspace = true }
+rsa = { workspace = true }
 rand = "0.8"

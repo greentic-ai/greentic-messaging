@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_nats::Client as Nats;
 use futures::StreamExt;
+use gsm_telemetry::install as init_telemetry;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use tokio::time::{sleep, Duration};
-use tracing_subscriber::EnvFilter;
+use serde_json::{Value, json};
+use tokio::time::{Duration, sleep};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct AdminCmd {
@@ -25,10 +25,7 @@ struct Cfg {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let cfg = Cfg {

@@ -1,6 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use gsm_dlq::{get_entry, list_entries, replay_entries, DlqEntry};
+use gsm_dlq::{DlqEntry, get_entry, list_entries, replay_entries};
+use gsm_telemetry::install as init_telemetry;
 use serde::Serialize;
 
 #[derive(Parser, Debug)]
@@ -68,6 +69,7 @@ struct ReplayResult {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_telemetry("greentic-messaging")?;
     let cli = Cli::parse();
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let client = async_nats::connect(nats_url).await?;

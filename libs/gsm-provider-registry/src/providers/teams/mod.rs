@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use gsm_core::TenantCtx;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::errors::MsgError;
 use crate::manifest::ProviderManifest;
@@ -391,20 +391,30 @@ mod tests {
 
     fn restore_env(key: &str, previous: Option<String>) {
         if let Some(value) = previous {
-            std::env::set_var(key, value);
+            unsafe {
+                std::env::set_var(key, value);
+            }
         } else {
-            std::env::remove_var(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
         }
     }
 
     #[tokio::test]
     async fn send_succeeds() {
         let prev_tenant = std::env::var("MS_GRAPH_TENANT_ID").ok();
-        std::env::set_var("MS_GRAPH_TENANT_ID", "mock://tenant");
+        unsafe {
+            std::env::set_var("MS_GRAPH_TENANT_ID", "mock://tenant");
+        }
         let prev_client = std::env::var("MS_GRAPH_CLIENT_ID").ok();
-        std::env::set_var("MS_GRAPH_CLIENT_ID", "mock_client");
+        unsafe {
+            std::env::set_var("MS_GRAPH_CLIENT_ID", "mock_client");
+        }
         let prev_secret = std::env::var("MS_GRAPH_CLIENT_SECRET").ok();
-        std::env::set_var("MS_GRAPH_CLIENT_SECRET", "mock_secret");
+        unsafe {
+            std::env::set_var("MS_GRAPH_CLIENT_SECRET", "mock_secret");
+        }
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let mut adapter = TeamsSendAdapter::from_manifest(&manifest).unwrap();
         adapter.manifest.endpoints.send = "mock://success".into();
@@ -429,11 +439,17 @@ mod tests {
     #[tokio::test]
     async fn send_handles_retryable() {
         let prev_tenant = std::env::var("MS_GRAPH_TENANT_ID").ok();
-        std::env::set_var("MS_GRAPH_TENANT_ID", "mock://tenant");
+        unsafe {
+            std::env::set_var("MS_GRAPH_TENANT_ID", "mock://tenant");
+        }
         let prev_client = std::env::var("MS_GRAPH_CLIENT_ID").ok();
-        std::env::set_var("MS_GRAPH_CLIENT_ID", "mock_client");
+        unsafe {
+            std::env::set_var("MS_GRAPH_CLIENT_ID", "mock_client");
+        }
         let prev_secret = std::env::var("MS_GRAPH_CLIENT_SECRET").ok();
-        std::env::set_var("MS_GRAPH_CLIENT_SECRET", "mock_secret");
+        unsafe {
+            std::env::set_var("MS_GRAPH_CLIENT_SECRET", "mock_secret");
+        }
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let mut adapter = TeamsSendAdapter::from_manifest(&manifest).unwrap();
         adapter.manifest.endpoints.send = "mock://throttle".into();

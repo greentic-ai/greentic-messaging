@@ -9,11 +9,11 @@
 use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
+    Json, Router,
     extract::{Extension, State},
     middleware,
     response::{Html, IntoResponse},
     routing::{get, post},
-    Json, Router,
 };
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
@@ -22,9 +22,9 @@ use gsm_ingress_common::{
     ack202, init_guard, record_idempotency_hit, record_ingress, start_ingress_span, verify_bearer,
     with_request_id,
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
-use include_dir::{include_dir, Dir};
-use security::middleware::{handle_action, ActionContext, SharedActionContext};
+use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
+use include_dir::{Dir, include_dir};
+use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -41,9 +41,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-ingress-webchat", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
@@ -116,10 +114,10 @@ fn envelope_from_webmsg(
     now: OffsetDateTime,
 ) -> MessageEnvelope {
     let mut context = BTreeMap::new();
-    if let Some(channel) = msg.channel_data.clone() {
-        if let Ok(value) = serde_json::to_value(&channel) {
-            context.insert("channel_data".into(), value);
-        }
+    if let Some(channel) = msg.channel_data.clone()
+        && let Ok(value) = serde_json::to_value(&channel)
+    {
+        context.insert("channel_data".into(), value);
     }
     if let Some(team_id) = team {
         context.insert("team".into(), JsonValue::String(team_id.to_string()));
@@ -220,6 +218,7 @@ async fn webhook(
     if let Some(team) = team {
         invocation.ctx.team = Some(TeamId::from(team));
     }
+    set_current_tenant_ctx(invocation.ctx.clone());
 
     let payload = match serde_json::to_vec(&invocation) {
         Ok(bytes) => bytes,

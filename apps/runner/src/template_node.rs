@@ -1,7 +1,7 @@
 use anyhow::Result;
 use gsm_core::MessageEnvelope;
 use handlebars::Handlebars;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn hb_registry() -> Handlebars<'static> {
     let mut h = Handlebars::new();

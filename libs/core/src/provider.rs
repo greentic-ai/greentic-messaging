@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use crate::Platform;
+use crate::prelude::*;
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug, Eq)]

@@ -1,24 +1,25 @@
 [package]
 name = "gsm-slack-oauth"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 
 [dependencies]
 axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+gsm-telemetry = { path = "../../libs/telemetry" }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+greentic-types = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 reqwest = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
-base64 = "0.22.1"
-urlencoding = "2.1"
+base64 = { workspace = true }
+urlencoding = { workspace = true }
 async-trait = { workspace = true }
 gsm-core = { path = "../../libs/core" }
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
+tower = { workspace = true }
+http-body-util = { workspace = true }

@@ -1,9 +1,9 @@
 use anyhow::Result;
-use axum::{routing::post, Json, Router};
+use axum::{Json, Router, routing::post};
 use chrono::Utc;
+use gsm_telemetry::install as init_telemetry;
 use serde::Deserialize;
-use serde_json::{json, Value as JsonValue};
-use tracing_subscriber::EnvFilter;
+use serde_json::{Value as JsonValue, json};
 
 #[derive(Debug, Deserialize)]
 struct ForecastRequest {
@@ -13,10 +13,7 @@ struct ForecastRequest {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
+    init_telemetry("greentic-messaging")?;
     let app = Router::new().route("/weather_api/forecast_weather", post(handle_forecast));
 
     let addr: std::net::SocketAddr = std::env::var("BIND")

@@ -1,7 +1,7 @@
 use std::env;
 
-use anyhow::{anyhow, Context, Result};
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use anyhow::{Context, Result, anyhow};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -28,14 +28,14 @@ impl ActionClaims {
     /// use time::Duration;
     ///
     /// # fn main() -> anyhow::Result<()> {
-    /// std::env::set_var("JWT_ALG", "HS256");
-    /// std::env::set_var("JWT_SECRET", "top-secret");
+    /// unsafe { std::env::set_var("JWT_ALG", "HS256"); }
+    /// unsafe { std::env::set_var("JWT_SECRET", "top-secret"); }
     /// let signer = JwtSigner::from_env()?;
     /// let claims = ActionClaims::new("room-1", "acme", "qa.submit", "hash", None, Duration::seconds(300));
     /// let token = signer.sign(&claims)?;
     /// assert!(!token.is_empty());
-    /// std::env::remove_var("JWT_SECRET");
-    /// std::env::remove_var("JWT_ALG");
+    /// unsafe { std::env::remove_var("JWT_SECRET"); }
+    /// unsafe { std::env::remove_var("JWT_ALG"); }
     /// anyhow::Ok(())
     /// # }
     /// ```
@@ -195,8 +195,12 @@ mod tests {
     #[test]
     fn hs256_roundtrip() {
         let _guard = ENV_GUARD.lock().unwrap();
-        std::env::set_var("JWT_ALG", "HS256");
-        std::env::set_var("JWT_SECRET", "top-secret");
+        unsafe {
+            std::env::set_var("JWT_ALG", "HS256");
+        }
+        unsafe {
+            std::env::set_var("JWT_SECRET", "top-secret");
+        }
         let signer = JwtSigner::from_env().expect("signer");
         let claims = ActionClaims::new(
             "chat-1",
@@ -210,8 +214,12 @@ mod tests {
         let verified = signer.verify(&token).expect("verified");
         assert_eq!(verified.scope, claims.scope);
         assert_eq!(verified.tenant, claims.tenant);
-        std::env::remove_var("JWT_SECRET");
-        std::env::remove_var("JWT_ALG");
+        unsafe {
+            std::env::remove_var("JWT_SECRET");
+        }
+        unsafe {
+            std::env::remove_var("JWT_ALG");
+        }
     }
 
     #[test]
@@ -233,9 +241,15 @@ mod tests {
             .expect("encode public")
             .to_string();
 
-        std::env::set_var("JWT_ALG", "RS256");
-        std::env::set_var("JWT_PRIVATE_KEY", private_pem);
-        std::env::set_var("JWT_PUBLIC_KEY", public_pem);
+        unsafe {
+            std::env::set_var("JWT_ALG", "RS256");
+        }
+        unsafe {
+            std::env::set_var("JWT_PRIVATE_KEY", private_pem);
+        }
+        unsafe {
+            std::env::set_var("JWT_PUBLIC_KEY", public_pem);
+        }
         let signer = JwtSigner::from_env().expect("signer");
         let claims = ActionClaims::new(
             "chat-9",
@@ -248,8 +262,14 @@ mod tests {
         let token = signer.sign(&claims).expect("token");
         let verified = signer.verify(&token).expect("verified");
         assert_eq!(verified.scope, claims.scope);
-        std::env::remove_var("JWT_PRIVATE_KEY");
-        std::env::remove_var("JWT_PUBLIC_KEY");
-        std::env::remove_var("JWT_ALG");
+        unsafe {
+            std::env::remove_var("JWT_PRIVATE_KEY");
+        }
+        unsafe {
+            std::env::remove_var("JWT_PUBLIC_KEY");
+        }
+        unsafe {
+            std::env::remove_var("JWT_ALG");
+        }
     }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::StatusCode;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::egress::{EgressSender, OutboundMessage, SendResult};
 use crate::platforms::slack::workspace::{SlackWorkspace, SlackWorkspaceIndex};
@@ -78,10 +78,11 @@ where
         })?;
         obj.entry("channel")
             .or_insert_with(|| Value::String(channel.to_string()));
-        if let Some(text) = text {
-            if !obj.contains_key("text") && !obj.contains_key("blocks") {
-                obj.insert("text".into(), Value::String(text.to_string()));
-            }
+        if let Some(text) = text
+            && !obj.contains_key("text")
+            && !obj.contains_key("blocks")
+        {
+            obj.insert("text".into(), Value::String(text.to_string()));
         }
         Ok(payload)
     }
@@ -258,7 +259,9 @@ mod tests {
     #[tokio::test]
     async fn fetches_workspace_token_per_context() {
         let prev_env = std::env::var("GREENTIC_ENV").ok();
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx_a = make_tenant_ctx("tenant-a".into(), Some("team-a".into()), None);
@@ -350,9 +353,13 @@ mod tests {
         assert_eq!(res_b.message_id.as_deref(), Some(workspace_b_primary));
 
         if let Some(env) = prev_env {
-            std::env::set_var("GREENTIC_ENV", env);
+            unsafe {
+                std::env::set_var("GREENTIC_ENV", env);
+            }
         } else {
-            std::env::remove_var("GREENTIC_ENV");
+            unsafe {
+                std::env::remove_var("GREENTIC_ENV");
+            }
         }
     }
 
@@ -391,7 +398,9 @@ mod tests {
     #[tokio::test]
     async fn falls_back_to_team_workspace_without_index() {
         let prev_env = std::env::var("GREENTIC_ENV").ok();
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("tenant".into(), Some("team".into()), None);
@@ -416,9 +425,13 @@ mod tests {
         assert_eq!(res.message_id.as_deref(), Some("team"));
 
         if let Some(env) = prev_env {
-            std::env::set_var("GREENTIC_ENV", env);
+            unsafe {
+                std::env::set_var("GREENTIC_ENV", env);
+            }
         } else {
-            std::env::remove_var("GREENTIC_ENV");
+            unsafe {
+                std::env::remove_var("GREENTIC_ENV");
+            }
         }
     }
 
@@ -447,7 +460,9 @@ mod tests {
     #[tokio::test]
     async fn requires_channel() {
         let prev_env = std::env::var("GREENTIC_ENV").ok();
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("acme".into(), Some("team".into()), None);
         let path = slack_workspace_secret(&ctx, "team");
@@ -469,9 +484,13 @@ mod tests {
             .expect_err("missing channel");
         assert_eq!(err.to_string(), "slack_missing_channel: channel missing");
         if let Some(env) = prev_env {
-            std::env::set_var("GREENTIC_ENV", env);
+            unsafe {
+                std::env::set_var("GREENTIC_ENV", env);
+            }
         } else {
-            std::env::remove_var("GREENTIC_ENV");
+            unsafe {
+                std::env::remove_var("GREENTIC_ENV");
+            }
         }
     }
 }

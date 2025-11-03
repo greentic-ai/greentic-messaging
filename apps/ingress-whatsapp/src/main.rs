@@ -9,23 +9,23 @@
 use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
+    Extension, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
-    Extension, Router,
 };
 use gsm_core::platforms::whatsapp::{creds::WhatsAppCredentials, provision::ensure_subscription};
 use gsm_core::{
-    in_subject, make_tenant_ctx, DefaultResolver, MessageEnvelope, NodeResult, Platform, Provider,
-    ProviderKey, ProviderRegistry, SecretsResolver, TenantCtx,
+    DefaultResolver, MessageEnvelope, NodeResult, Platform, Provider, ProviderKey,
+    ProviderRegistry, SecretsResolver, TenantCtx, in_subject, make_tenant_ctx,
 };
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
 use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use hmac::{Hmac, Mac};
-use security::middleware::{handle_action, ActionContext, SharedActionContext};
+use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::Sha256;
@@ -125,9 +125,7 @@ impl Provider for WhatsAppProvider {}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-ingress-whatsapp", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let webhook_base =
         std::env::var("WHATSAPP_WEBHOOK_BASE").unwrap_or_else(|_| "http://localhost:8087".into());
@@ -289,6 +287,7 @@ where
                 return StatusCode::INTERNAL_SERVER_ERROR;
             }
         };
+        set_current_tenant_ctx(invocation.ctx.clone());
 
         let payload = match serde_json::to_vec(&invocation) {
             Ok(bytes) => bytes,

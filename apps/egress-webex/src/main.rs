@@ -1,30 +1,28 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_nats::jetstream::{self, AckKind};
 use async_trait::async_trait;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
+use gsm_core::NodeResult;
 use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
 use gsm_core::platforms::webex::sender::WebexSender;
 use gsm_core::prelude::DefaultResolver;
-use gsm_core::NodeResult;
 use gsm_core::{OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     bootstrap, context_from_out, record_egress_success, start_acquire_span, start_send_span,
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::install as init_telemetry;
 use gsm_translator::webex::to_webex_payload;
 use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
-use tracing::{error, info, warn, Instrument};
+use tracing::{Instrument, error, info, warn};
 
 const MAX_ATTEMPTS: usize = 3;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-egress-webex", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     #[cfg(feature = "mock-http")]
@@ -258,8 +256,8 @@ async fn send_with_retries(
 mod tests {
     use super::*;
     use gsm_backpressure::{LocalBackpressureLimiter, RateLimits};
-    use gsm_core::{make_tenant_ctx, NodeError, OutKind};
-    use serde_json::{json, Value};
+    use gsm_core::{NodeError, OutKind, make_tenant_ctx};
+    use serde_json::{Value, json};
     use std::{
         collections::BTreeMap,
         sync::{Arc, Mutex},

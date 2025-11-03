@@ -1,5 +1,5 @@
 use crate::{CardBlock, MessageCard, MessageEnvelope, OutKind, OutMessage};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use time::OffsetDateTime;
 
 /// Validates an inbound [`MessageEnvelope`] for required fields and timestamp correctness.
@@ -133,7 +133,7 @@ pub fn validate_card(card: &MessageCard) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{make_tenant_ctx, CardAction, Platform};
+    use crate::{CardAction, Platform, make_tenant_ctx};
     use serde_json::json;
     use std::collections::BTreeMap;
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use gsm_core::OutMessage;
-use gsm_telemetry::{record_counter, telemetry_enabled, with_common_fields, MessageContext};
+use gsm_telemetry::{MessageContext, record_counter, telemetry_enabled, with_common_fields};
 
 const TRANSLATE_SPAN_NAME: &str = "translate.run";
 const TRANSLATE_COUNTER: &str = "messages_translated";

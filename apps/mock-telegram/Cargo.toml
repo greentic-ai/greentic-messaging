@@ -1,7 +1,7 @@
 [package]
 name = "mock-telegram"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 
 [dependencies]
@@ -9,6 +9,7 @@ anyhow = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+greentic-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+gsm-telemetry = { path = "../../libs/telemetry" }

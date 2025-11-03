@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use anyhow::{Result, anyhow};
+use serde_json::{Value, json};
 
 use crate::{secure_action_url, translate_with_span};
 use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage};
@@ -113,7 +113,7 @@ fn card_to_adaptive(out: &OutMessage, card: MessageCard) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gsm_core::{make_tenant_ctx, CardBlock, MessageCard, Platform};
+    use gsm_core::{CardBlock, MessageCard, Platform, make_tenant_ctx};
 
     fn sample_out(kind: OutKind, card: Option<MessageCard>) -> OutMessage {
         OutMessage {

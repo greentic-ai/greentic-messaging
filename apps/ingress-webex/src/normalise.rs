@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gsm_core::{MessageEnvelope, Platform, TenantCtx};
-use gsm_translator::webex::{parse_attachment_action, parse_message, WebexInboundEvent};
+use gsm_translator::webex::{WebexInboundEvent, parse_attachment_action, parse_message};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;

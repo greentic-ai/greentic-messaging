@@ -4,16 +4,17 @@ use std::sync::Arc;
 
 use futures::stream::{self, StreamExt};
 use gsm_backpressure::{BackpressureLimiter, LocalBackpressureLimiter, RateLimits};
-use gsm_core::{make_tenant_ctx, MessageEnvelope, OutKind, OutMessage, Platform};
+use gsm_core::{MessageEnvelope, OutKind, OutMessage, Platform, make_tenant_ctx};
 use gsm_idempotency::{IdKey, IdempotencyGuard, InMemoryIdemStore, SharedIdemStore};
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng, seq::SliceRandom};
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "chaos"]
 async fn chaos_dup_and_transient() {
-    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+    let subscriber = tracing_subscriber::fmt().with_test_writer().finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
 
     let rate_cfg = serde_json::json!({
         "acme":  { "rps": 40.0, "burst": 8.0 },
@@ -21,7 +22,9 @@ async fn chaos_dup_and_transient() {
         "citra": { "rps": 40.0, "burst": 8.0 },
         "delta": { "rps": 40.0, "burst": 8.0 }
     });
-    std::env::set_var("TENANT_RATE_LIMITS", rate_cfg.to_string());
+    unsafe {
+        std::env::set_var("TENANT_RATE_LIMITS", rate_cfg.to_string());
+    }
 
     let harness = Arc::new(ChaosHarness::new(3));
     let mut events = build_event_stream();
@@ -40,7 +43,9 @@ async fn chaos_dup_and_transient() {
         })
         .await;
 
-    std::env::remove_var("TENANT_RATE_LIMITS");
+    unsafe {
+        std::env::remove_var("TENANT_RATE_LIMITS");
+    }
 
     let stats = harness.snapshot().await;
     assert!(

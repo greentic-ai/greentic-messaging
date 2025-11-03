@@ -1,5 +1,7 @@
 use gsm_core::OutMessage;
-use gsm_telemetry::{record_counter, record_histogram, with_common_fields, MessageContext};
+use gsm_telemetry::{
+    MessageContext, record_counter, record_histogram, set_current_tenant_ctx, with_common_fields,
+};
 use tracing::Span;
 
 const EGRESS_ACQUIRE_SPAN: &str = "egress.acquire_permit";
@@ -8,6 +10,7 @@ const EGRESS_COUNTER: &str = "messages_egressed";
 const EGRESS_LATENCY_HISTOGRAM: &str = "histogram.egress_latency_ms";
 
 pub fn context_from_out(out: &OutMessage) -> MessageContext {
+    set_current_tenant_ctx(out.ctx.clone());
     MessageContext::from_out(out)
 }
 

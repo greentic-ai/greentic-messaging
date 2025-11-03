@@ -103,7 +103,9 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_provisioned_updates_secret() {
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
 
         let creds = TelegramCreds {

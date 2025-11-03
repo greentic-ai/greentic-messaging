@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_nats::{jetstream, Client};
+use async_nats::{Client, jetstream};
 use gsm_idempotency::{
     IdempotencyConfig, IdempotencyGuard, InMemoryIdemStore, NatsKvIdemStore, SharedIdemStore,
 };

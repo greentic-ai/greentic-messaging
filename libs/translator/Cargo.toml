@@ -1,7 +1,7 @@
 [package]
 name = "gsm-translator"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "Message translation utilities and templates for Greentic messaging connectors."
 license.workspace = true
 
@@ -9,14 +9,15 @@ license.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gsm-core = { version = "0.1.3", path = "../core" }
-unicode-segmentation = "1.12.0"
-security = { package = "greentic-messaging-security", version = "0.1.3", path = "../security" }
+gsm-core = { path = "../core" }
+unicode-segmentation = { workspace = true }
+security = { package = "greentic-messaging-security", path = "../security" }
 uuid = { workspace = true }
 time = { workspace = true }
-urlencoding = "2.1"
-gsm-telemetry = { version = "0.1.3", path = "../telemetry" }
+urlencoding = { workspace = true }
+gsm-telemetry = { path = "../telemetry" }
 tracing = { workspace = true }
+greentic-types = { workspace = true }
 
 [dev-dependencies]
-insta = { version = "1.43.2", features = ["json"] }
+insta = { workspace = true }

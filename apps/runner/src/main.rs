@@ -9,15 +9,13 @@ use anyhow::Result;
 use async_nats::Client as Nats;
 use futures::StreamExt;
 use gsm_core::*;
-use gsm_dlq::{replay_subject, DlqError, DlqPublisher};
+use gsm_dlq::{DlqError, DlqPublisher, replay_subject};
+use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use std::sync::Arc;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let platform = std::env::var("PLATFORM").unwrap_or_else(|_| "telegram".into());
@@ -176,6 +174,7 @@ async fn handle_env(ctx: Arc<ProcessContext>, invocation: InvocationEnvelope) {
     let hbs = ctx.hbs.clone();
     let sessions = ctx.sessions.clone();
     let tenant_ctx = invocation.ctx.clone();
+    set_current_tenant_ctx(tenant_ctx.clone());
     let env = match MessageEnvelope::try_from(invocation.clone()) {
         Ok(env) => env,
         Err(err) => {

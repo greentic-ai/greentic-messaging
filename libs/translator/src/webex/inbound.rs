@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 
 use gsm_core::{CardAction, CardBlock, MessageCard};
@@ -19,10 +19,9 @@ pub fn parse_message(value: &Value) -> Result<Vec<WebexInboundEvent>> {
         .get("markdown")
         .and_then(|v| v.as_str())
         .or_else(|| value.get("text").and_then(|v| v.as_str()))
+        .filter(|t| !t.trim().is_empty())
     {
-        if !text.trim().is_empty() {
-            events.push(WebexInboundEvent::Text(text.to_string()));
-        }
+        events.push(WebexInboundEvent::Text(text.to_string()));
     }
 
     if let Some(attachments) = value.get("attachments").and_then(|v| v.as_array()) {
@@ -31,12 +30,11 @@ pub fn parse_message(value: &Value) -> Result<Vec<WebexInboundEvent>> {
                 .get("contentType")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
-            if content_type.eq_ignore_ascii_case("application/vnd.microsoft.card.adaptive") {
-                if let Some(content) = attachment.get("content") {
-                    if let Ok(card) = adaptive_to_card(content) {
-                        events.push(WebexInboundEvent::Card(card));
-                    }
-                }
+            if content_type.eq_ignore_ascii_case("application/vnd.microsoft.card.adaptive")
+                && let Some(content) = attachment.get("content")
+                && let Ok(card) = adaptive_to_card(content)
+            {
+                events.push(WebexInboundEvent::Card(card));
             }
         }
     }
@@ -199,12 +197,16 @@ mod tests {
         });
 
         let events = parse_message(&payload).expect("events");
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, WebexInboundEvent::Text(t) if t == "Hello")));
-        assert!(events
-            .iter()
-            .any(|e| matches!(e, WebexInboundEvent::Card(_))));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, WebexInboundEvent::Text(t) if t == "Hello"))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, WebexInboundEvent::Card(_)))
+        );
     }
 
     #[test]

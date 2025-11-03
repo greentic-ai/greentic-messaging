@@ -1,8 +1,8 @@
 use gsm_core::{
-    make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+    CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform, make_tenant_ctx,
 };
 use gsm_translator::webex::{
-    parse_attachment_action, parse_message, to_webex_payload, WebexInboundEvent,
+    WebexInboundEvent, parse_attachment_action, parse_message, to_webex_payload,
 };
 use gsm_translator::{Translator, WebexTranslator};
 
@@ -101,9 +101,11 @@ fn inbound_parse_card() {
     });
 
     let events = parse_message(&payload).expect("events");
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, WebexInboundEvent::Text(t) if t == "Hello")));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, WebexInboundEvent::Text(t) if t == "Hello"))
+    );
     let card = events
         .iter()
         .find_map(|e| match e {

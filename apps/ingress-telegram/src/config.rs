@@ -99,8 +99,12 @@ mod tests {
     #[test]
     fn telegram_defaults_are_applied() {
         let _guard = env_lock().lock().unwrap();
-        std::env::remove_var("TELEGRAM_PUBLIC_WEBHOOK_BASE");
-        std::env::remove_var("TELEGRAM_SECRET_TOKEN_KEY");
+        unsafe {
+            std::env::remove_var("TELEGRAM_PUBLIC_WEBHOOK_BASE");
+        }
+        unsafe {
+            std::env::remove_var("TELEGRAM_SECRET_TOKEN_KEY");
+        }
 
         let tenants = load_tenants(None, "acme").expect("load tenants");
         assert_eq!(tenants.len(), 1);

@@ -5,10 +5,10 @@ use anyhow::Result;
 use async_nats::jetstream::AckKind;
 use async_stream::stream;
 use axum::{
-    extract::{Query, State},
-    response::{sse::Event, sse::Sse, Html, IntoResponse},
-    routing::get,
     Router,
+    extract::{Query, State},
+    response::{Html, IntoResponse, sse::Event, sse::Sse},
+    routing::get,
 };
 use dashmap::DashMap;
 use futures::StreamExt;
@@ -19,15 +19,15 @@ use gsm_egress_common::{
     egress::bootstrap,
     telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::install as init_telemetry;
 use gsm_translator::{Translator, WebChatTranslator};
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::broadcast;
-use tracing::{event, Instrument, Level};
+use tracing::{Instrument, Level, event};
 
 static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 
@@ -153,9 +153,7 @@ struct EventsQuery {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-egress-webchat", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let platform = std::env::var("PLATFORM").unwrap_or_else(|_| "webchat".into());

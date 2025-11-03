@@ -11,12 +11,12 @@ use std::{
 
 use anyhow::{Context, Result};
 use async_nats::jetstream::{
+    Context as JsContext,
     context::KeyValueErrorKind,
     kv::{self, CreateErrorKind},
-    Context as JsContext,
 };
 use async_trait::async_trait;
-use gsm_telemetry::{record_counter, TelemetryLabels};
+use gsm_telemetry::{TelemetryLabels, record_counter};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
@@ -144,15 +144,15 @@ impl Default for IdempotencyConfig {
 impl IdempotencyConfig {
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
-        if let Ok(ttl) = std::env::var("IDEMPOTENCY_TTL_HOURS") {
-            if let Ok(parsed) = ttl.parse::<u64>() {
-                cfg.ttl_hours = parsed.max(1);
-            }
+        if let Ok(ttl) = std::env::var("IDEMPOTENCY_TTL_HOURS")
+            && let Ok(parsed) = ttl.parse::<u64>()
+        {
+            cfg.ttl_hours = parsed.max(1);
         }
-        if let Ok(ns) = std::env::var("JS_KV_NAMESPACE_IDEMPOTENCY") {
-            if !ns.trim().is_empty() {
-                cfg.namespace = ns;
-            }
+        if let Ok(ns) = std::env::var("JS_KV_NAMESPACE_IDEMPOTENCY")
+            && !ns.trim().is_empty()
+        {
+            cfg.namespace = ns;
         }
         cfg
     }

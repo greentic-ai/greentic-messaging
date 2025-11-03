@@ -1,18 +1,18 @@
 use anyhow::Result;
 use async_nats::Client as Nats;
 use axum::{
+    Extension, Json, Router,
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
-    Extension, Json, Router,
 };
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
 use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
-use security::middleware::{handle_action, ActionContext, SharedActionContext};
+use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
+use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -28,9 +28,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-ingress-teams", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let nats = async_nats::connect(nats_url).await?;
@@ -211,6 +209,8 @@ async fn notify(
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
         };
+
+        set_current_tenant_ctx(invocation.ctx.clone());
 
         match serde_json::to_vec(&invocation) {
             Ok(bytes) => {

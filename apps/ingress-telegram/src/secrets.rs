@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 
 pub fn env_var_for(key: &str) -> String {
@@ -51,14 +51,18 @@ mod tests {
     async fn env_manager_reads_uppercase_keys() {
         {
             let _guard = env_lock().lock().unwrap();
-            std::env::set_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN", "abc");
+            unsafe {
+                std::env::set_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN", "abc");
+            }
         }
         let mgr = EnvSecretsManager;
         let value = mgr.get("tenants/acme/telegram/secret_token").await.unwrap();
         assert_eq!(value, Some("abc".into()));
         {
             let _guard = env_lock().lock().unwrap();
-            std::env::remove_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN");
+            unsafe {
+                std::env::remove_var("TENANTS_ACME_TELEGRAM_SECRET_TOKEN");
+            }
         }
     }
 

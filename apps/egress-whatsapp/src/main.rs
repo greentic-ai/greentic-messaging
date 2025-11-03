@@ -1,7 +1,7 @@
 //! WhatsApp egress adapter. Sends text messages when within the 24-hour session
 //! window and falls back to approved templates when required.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_nats::jetstream::AckKind;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
@@ -14,13 +14,13 @@ use gsm_egress_common::{
     egress::bootstrap,
     telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::install as init_telemetry;
 use gsm_translator::secure_action_url;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Instant;
 use time::{Duration, OffsetDateTime};
-use tracing::{event, Instrument, Level};
+use tracing::{Instrument, Level, event};
 
 const SESSION_WINDOW_HOURS: i64 = 24;
 
@@ -34,9 +34,7 @@ struct AppConfig {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-egress-whatsapp", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let template_name =
@@ -360,9 +358,10 @@ mod tests {
         let mut meta = serde_json::Map::new();
         meta.insert(
             "wa_last_interaction".into(),
-            json!(last
-                .format(&time::format_description::well_known::Rfc3339)
-                .unwrap()),
+            json!(
+                last.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap()
+            ),
         );
         OutMessage {
             ctx: make_tenant_ctx("acme".into(), None, None),

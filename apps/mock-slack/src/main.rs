@@ -1,14 +1,12 @@
 use anyhow::Result;
-use axum::{routing::post, Json, Router};
+use axum::{Json, Router, routing::post};
+use gsm_telemetry::install as init_telemetry;
 use serde_json::Value;
 use tokio::net::TcpListener;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    init_telemetry("greentic-messaging")?;
     let app = Router::new().route("/events", post(handle));
     let listener = TcpListener::bind("0.0.0.0:9082").await?;
     tracing::info!("mock-slack listening on {}", listener.local_addr()?);

@@ -1,14 +1,16 @@
 [package]
 name = "nats-demo"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 
 [dependencies]
+greentic-types = { workspace = true }
 anyhow = { workspace = true }
 async-nats = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+gsm-telemetry = { path = "../../libs/telemetry" }
 gsm-core = { path = "../../libs/core" }
-futures = "0.3"
+futures = { workspace = true }

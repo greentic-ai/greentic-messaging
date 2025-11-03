@@ -1,17 +1,18 @@
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::{Query, State},
     response::{IntoResponse, Redirect},
     routing::get,
-    Json, Router,
 };
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use gsm_core::platforms::slack::workspace::{SlackWorkspace, SlackWorkspaceIndex};
 use gsm_core::{
-    make_tenant_ctx, slack_workspace_index, slack_workspace_secret, DefaultResolver, NodeResult,
-    SecretsResolver, TenantCtx,
+    DefaultResolver, NodeResult, SecretsResolver, TenantCtx, make_tenant_ctx,
+    slack_workspace_index, slack_workspace_secret,
 };
+use gsm_telemetry::install as init_telemetry;
 use rand::{
     distr::{Alphanumeric, SampleString},
     rng,
@@ -88,10 +89,7 @@ struct CallbackQuery {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
+    init_telemetry("greentic-messaging")?;
     let client_id = std::env::var("SLACK_CLIENT_ID")?;
     let client_secret = std::env::var("SLACK_CLIENT_SECRET")?;
     let redirect_uri = std::env::var("SLACK_REDIRECT_URI")?;
@@ -145,11 +143,11 @@ async fn install(
         encoded_state,
         urlencoding::encode(&state.redirect_uri)
     );
-    if let Some(user_scope) = &state.user_scope {
-        if !user_scope.is_empty() {
-            authorize.push_str("&user_scope=");
-            authorize.push_str(&urlencoding::encode(user_scope));
-        }
+    if let Some(user_scope) = &state.user_scope
+        && !user_scope.is_empty()
+    {
+        authorize.push_str("&user_scope=");
+        authorize.push_str(&urlencoding::encode(user_scope));
     }
 
     Redirect::permanent(&authorize)
@@ -227,9 +225,9 @@ async fn exchange_code(state: &AppState, code: &str) -> anyhow::Result<SlackWork
         .error_for_status()?;
     let body: SlackOauthResponse = response.json().await?;
     if !body.ok {
-        return Err(anyhow::anyhow!(body
-            .error
-            .unwrap_or_else(|| "slack oauth failed".into())));
+        return Err(anyhow::anyhow!(
+            body.error.unwrap_or_else(|| "slack oauth failed".into())
+        ));
     }
     let team_id = body
         .team
@@ -405,7 +403,9 @@ mod tests {
 
     #[tokio::test]
     async fn callback_persists_workspace() {
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let store = Arc::new(InMemoryStore::default());
         let state = Arc::new(AppState {
             client: reqwest::Client::new(),

@@ -35,37 +35,56 @@ members = [
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 license = "MIT"
-version = "0.1.5"
+version = "0.2.1"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
 anyhow = "1"
+async-nats = "0.44"
+async-stream = "0.3"
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+clap = { version = "4", features = ["derive"] }
+dashmap = "6"
+futures = "0.3"
+greentic-types = "0.2.3"
+greentic-secrets = "0.2"
+handlebars = "6.3"
+hex = "0.4"
+hmac = "0.12"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+include_dir = "0.7"
+insta = { version = "1.43", features = ["json"] }
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+metrics = "0.24"
+nanoid = "0.4"
+once_cell = "1"
+rand = "0.9"
+regex = "1.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rsa = { version = "0.9", features = ["pem"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt","env-filter"] }
-async-nats = "0.44"
-axum = "0.8"
-hyper = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
-time = { version = "0.3", features = ["macros","parsing"] }
-uuid = { version = "1", features = ["v4","serde"] }
-async-trait = "0.1"
-metrics = "0.24"
-once_cell = "1"
-clap = { version = "4", features = ["derive"] }
-opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-proto", "metrics", "trace"] }
-opentelemetry-sdk = { version = "0.31", features = ["rt-tokio", "metrics", "trace"] }
-tracing-opentelemetry = "0.33"
+serde_yaml_bw = "2.4.1"
+secrets-core = { package = "greentic-secrets-core", version = "0.2" }
+sha1 = "0.10"
+sha2 = "0.10"
+subtle = "2.5"
+tempfile = "3"
 thiserror = "2"
-rand = "0.9"
-rsa = { version = "0.9", features = ["pem"] }
-dashmap = "6"
-greentic-types = "0.1"
-secrets-core = { package = "greentic-secrets-core", version = "0.1" }
-greentic-secrets = "0.1"
+time = { version = "0.3", features = ["macros","parsing"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tower = { version = "0.5", features = ["util", "limit", "timeout"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "std"] }
+tracing-test = "0.2"
+unicode-segmentation = "1"
+urlencoding = "2"
+uuid = { version = "1", features = ["v4","serde"] }

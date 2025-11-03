@@ -1,109 +1,87 @@
-//! Lightweight facade around tracing + OpenTelemetry setup.
-//!
-//! ```no_run
-//! use gsm_telemetry::{init_telemetry, TelemetryConfig};
-//!
-//! # fn main() -> anyhow::Result<()> {
-//! let cfg = TelemetryConfig {
-//!     service_name: "example-service".into(),
-//!     service_version: "0.1.0".into(),
-//!     enabled: false,
-//!     endpoint: String::new(),
-//!     protocol: gsm_telemetry::TelemetryProtocol::Grpc,
-//!     json_logs: true,
-//!     environment: "local".into(),
-//! };
-//! init_telemetry(cfg)?;
-//! tracing::info!("telemetry configured");
-//! Ok(())
-//! # }
-//! ```
+//! Lightweight helpers for Greentic telemetry.
+//! Provides span utilities, metric recorders, and message-context helpers
+//! without owning any subscriber installation logic.
 
-mod config;
+use std::cell::RefCell;
+use std::thread_local;
+
+use anyhow::{Context, Result};
+use greentic_types::TenantCtx;
+use once_cell::sync::OnceCell;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
+
 mod context;
 mod metrics;
-mod tracing_init;
 
-pub use config::{TelemetryConfig, TelemetryProtocol};
 pub use context::{MessageContext, TelemetryLabels};
-pub use metrics::{record_counter, record_gauge, record_histogram};
-pub use tracing_init::{
-    init_telemetry, telemetry_enabled, with_common_fields, TELEMETRY_METER_NAME,
+pub use metrics::{
+    record_counter, record_gauge, record_histogram, telemetry_enabled, with_common_fields,
 };
+
+static INSTALL_GUARD: OnceCell<()> = OnceCell::new();
+
+#[allow(clippy::missing_const_for_thread_local)]
+thread_local! {
+    static CURRENT_TENANT: RefCell<Option<TenantCtx>> = const { RefCell::new(None) };
+}
+
+/// Installs a basic tracing subscriber configured from `RUST_LOG`.
+pub fn install(service_name: &str) -> Result<()> {
+    if INSTALL_GUARD.get().is_some() {
+        return Ok(());
+    }
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let subscriber = tracing_subscriber::fmt().with_env_filter(filter).finish();
+
+    tracing::subscriber::set_global_default(subscriber)
+        .with_context(|| "failed to install telemetry subscriber")?;
+
+    INSTALL_GUARD.set(()).ok();
+    info!(service = service_name, "telemetry initialized");
+    Ok(())
+}
+
+/// Stores the `TenantCtx` for the current thread.
+pub fn set_current_tenant_ctx(ctx: TenantCtx) {
+    CURRENT_TENANT.with(|slot| {
+        *slot.borrow_mut() = Some(ctx);
+    });
+}
+
+/// Retrieves the last `TenantCtx` recorded on the current thread.
+pub fn current_tenant_ctx() -> Option<TenantCtx> {
+    CURRENT_TENANT.with(|slot| slot.borrow().clone())
+}
+
+#[macro_export]
+macro_rules! counter {
+    ($name:expr, $value:expr, $labels:expr) => {{ $crate::metrics::record_counter($name, $value, $labels) }};
+}
+
+#[macro_export]
+macro_rules! histogram {
+    ($name:expr, $value:expr, $labels:expr) => {{ $crate::metrics::record_histogram($name, $value, $labels) }};
+}
+
+#[macro_export]
+macro_rules! gauge {
+    ($name:expr, $value:expr, $labels:expr) => {{ $crate::metrics::record_gauge($name, $value, $labels) }};
+}
 
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
-    pub fn env_lock() -> &'static Mutex<()> {
+    #[allow(dead_code)]
+    pub fn metrics_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
-    pub fn env_guard() -> MutexGuard<'static, ()> {
-        env_lock().lock().unwrap_or_else(|err| err.into_inner())
-    }
-}
-
-#[macro_export]
-macro_rules! counter {
-    ($name:expr, $value:expr, $labels:expr) => {{
-        $crate::metrics::record_counter($name, $value, $labels)
-    }};
-}
-
-#[macro_export]
-macro_rules! histogram {
-    ($name:expr, $value:expr, $labels:expr) => {{
-        $crate::metrics::record_histogram($name, $value, $labels)
-    }};
-}
-
-#[macro_export]
-macro_rules! gauge {
-    ($name:expr, $value:expr, $labels:expr) => {{
-        $crate::metrics::record_gauge($name, $value, $labels)
-    }};
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_support::env_guard;
-
-    #[test]
-    fn config_defaults_disabled() {
-        let _guard = env_guard();
-        std::env::remove_var("ENABLE_OTEL");
-        std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
-        let cfg = TelemetryConfig::from_env("test-service", "0.0.1");
-        assert!(!cfg.enabled);
-        assert!(cfg.endpoint.is_empty());
-        assert!(cfg.json_logs);
-    }
-
-    #[test]
-    fn config_enabled_when_flag_and_endpoint() {
-        let _guard = env_guard();
-        std::env::set_var("ENABLE_OTEL", "true");
-        std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
-        std::env::set_var("LOG_FORMAT", "text");
-        let cfg = TelemetryConfig::from_env("svc", "1.2.3");
-        assert!(cfg.enabled);
-        assert_eq!(cfg.endpoint, "http://localhost:4317");
-        assert!(!cfg.json_logs);
-        std::env::remove_var("ENABLE_OTEL");
-        std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
-        std::env::remove_var("LOG_FORMAT");
-    }
-
-    #[test]
-    fn init_noop_when_disabled() {
-        let _guard = env_guard();
-        std::env::remove_var("ENABLE_OTEL");
-        std::env::remove_var("OTEL_EXPORTER_OTLP_ENDPOINT");
-        let cfg = TelemetryConfig::from_env("svc", "1.0.0");
-        init_telemetry(cfg).expect("init should succeed");
-        assert!(!crate::tracing_init::telemetry_enabled());
+    #[allow(dead_code)]
+    pub fn metrics_guard() -> MutexGuard<'static, ()> {
+        metrics_lock().lock().unwrap_or_else(|err| err.into_inner())
     }
 }

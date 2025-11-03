@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use gsm_ingress_common::webex::SignatureAlgorithm;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;

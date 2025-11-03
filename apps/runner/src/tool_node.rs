@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use handlebars::Handlebars;
-use rand::{rng, Rng};
-use serde_json::{json, Value};
-use tokio::time::{sleep, Duration};
+use rand::{Rng, rng};
+use serde_json::{Value, json};
+use tokio::time::{Duration, sleep};
 
 use gsm_core::MessageEnvelope;
 

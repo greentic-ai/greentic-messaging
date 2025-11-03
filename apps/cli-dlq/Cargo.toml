@@ -1,16 +1,18 @@
 [package]
 name = "gsm-cli-dlq"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
-clap = { version = "4.5.21", features = ["derive"] }
+clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+gsm-telemetry = { path = "../../libs/telemetry" }
 tokio = { workspace = true }
 tracing = { workspace = true }
+greentic-types = { workspace = true }
 gsm-core = { path = "../../libs/core" }
 gsm-dlq = { path = "../../libs/dlq" }

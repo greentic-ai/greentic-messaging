@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::StatusCode;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::egress::{EgressSender, OutboundMessage, SendResult};
 use crate::platforms::teams::conversations::{TeamsConversation, TeamsConversations};
@@ -72,10 +72,10 @@ where
     async fn conversation(&self, ctx: &TenantCtx, channel: &str) -> NodeResult<TeamsConversation> {
         let path = teams_conversations_secret(ctx);
         let store: Option<TeamsConversations> = self.secrets.get_json(&path, ctx).await?;
-        if let Some(store) = store {
-            if let Some(conv) = store.get(channel) {
-                return Ok(conv.clone());
-            }
+        if let Some(store) = store
+            && let Some(conv) = store.get(channel)
+        {
+            return Ok(conv.clone());
         }
         Err(self.fail(
             "teams_missing_conversation",
@@ -309,7 +309,9 @@ mod tests {
     #[tokio::test]
     async fn loads_credentials_and_conversation() {
         let prev_env = std::env::var("GREENTIC_ENV").ok();
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("tenant-a".into(), Some("team-a".into()), None);
@@ -351,16 +353,22 @@ mod tests {
         assert_eq!(res.message_id.as_deref(), Some("mock:chat-123"));
 
         if let Some(env) = prev_env {
-            std::env::set_var("GREENTIC_ENV", env);
+            unsafe {
+                std::env::set_var("GREENTIC_ENV", env);
+            }
         } else {
-            std::env::remove_var("GREENTIC_ENV");
+            unsafe {
+                std::env::remove_var("GREENTIC_ENV");
+            }
         }
     }
 
     #[tokio::test]
     async fn missing_conversation_errors() {
         let prev_env = std::env::var("GREENTIC_ENV").ok();
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("tenant-a".into(), Some("team-a".into()), None);
@@ -401,9 +409,13 @@ mod tests {
         );
 
         if let Some(env) = prev_env {
-            std::env::set_var("GREENTIC_ENV", env);
+            unsafe {
+                std::env::set_var("GREENTIC_ENV", env);
+            }
         } else {
-            std::env::remove_var("GREENTIC_ENV");
+            unsafe {
+                std::env::remove_var("GREENTIC_ENV");
+            }
         }
     }
 

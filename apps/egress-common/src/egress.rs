@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use async_nats::{
+    Client,
     jetstream::{
         consumer::{
-            push::{Config as PushConfig, Messages},
             AckPolicy,
+            push::{Config as PushConfig, Messages},
         },
         stream::{Config as StreamConfig, RetentionPolicy},
     },
-    Client,
 };
 use gsm_backpressure::HybridLimiter;
 

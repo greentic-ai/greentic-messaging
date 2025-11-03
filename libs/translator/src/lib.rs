@@ -4,14 +4,14 @@
 //! outbound channel. Translators accept a [`gsm_core::OutMessage`] and emit one or more platform
 //! payloads ready to be dispatched.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage};
 use security::{
     hash::state_hash_out,
     jwt::{ActionClaims, JwtSigner},
     links::{action_base_url, action_ttl, build_action_url},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
@@ -308,7 +308,7 @@ mod tests {
     use super::*;
     use crate::teams::to_teams_adaptive;
     use gsm_core::{
-        make_tenant_ctx, CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform,
+        CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform, make_tenant_ctx,
     };
     use security::jwt::JwtSigner;
     use std::sync::{Mutex, OnceLock};
@@ -354,9 +354,15 @@ mod tests {
     fn telegram_card_payloads() {
         let mut out = sample_out_message(OutKind::Card);
         let _guard = env_lock().lock().unwrap();
-        std::env::remove_var("ACTION_BASE_URL");
-        std::env::remove_var("JWT_SECRET");
-        std::env::remove_var("JWT_ALG");
+        unsafe {
+            std::env::remove_var("ACTION_BASE_URL");
+        }
+        unsafe {
+            std::env::remove_var("JWT_SECRET");
+        }
+        unsafe {
+            std::env::remove_var("JWT_ALG");
+        }
         out.message_card = Some(MessageCard {
             title: Some("Weather".into()),
             body: vec![
@@ -413,9 +419,15 @@ mod tests {
     #[test]
     fn telegram_card_actions_are_signed_when_configured() {
         let _guard = env_lock().lock().unwrap();
-        std::env::set_var("ACTION_BASE_URL", "https://actions.test/a");
-        std::env::set_var("JWT_ALG", "HS256");
-        std::env::set_var("JWT_SECRET", "signing-secret");
+        unsafe {
+            std::env::set_var("ACTION_BASE_URL", "https://actions.test/a");
+        }
+        unsafe {
+            std::env::set_var("JWT_ALG", "HS256");
+        }
+        unsafe {
+            std::env::set_var("JWT_SECRET", "signing-secret");
+        }
         let mut out = sample_out_message(OutKind::Card);
         out.message_card = Some(MessageCard {
             title: None,
@@ -442,9 +454,15 @@ mod tests {
         assert_eq!(claims.redirect.as_deref(), Some("https://example.com/path"));
         assert_eq!(claims.tenant, out.tenant);
 
-        std::env::remove_var("ACTION_BASE_URL");
-        std::env::remove_var("JWT_SECRET");
-        std::env::remove_var("JWT_ALG");
+        unsafe {
+            std::env::remove_var("ACTION_BASE_URL");
+        }
+        unsafe {
+            std::env::remove_var("JWT_SECRET");
+        }
+        unsafe {
+            std::env::remove_var("JWT_ALG");
+        }
     }
 
     #[test]
@@ -495,9 +513,15 @@ mod tests {
     #[test]
     fn teams_card_payload() {
         let _guard = env_lock().lock().unwrap();
-        std::env::set_var("ACTION_BASE_URL", "https://actions.test/a");
-        std::env::set_var("JWT_ALG", "HS256");
-        std::env::set_var("JWT_SECRET", "signing-secret");
+        unsafe {
+            std::env::set_var("ACTION_BASE_URL", "https://actions.test/a");
+        }
+        unsafe {
+            std::env::set_var("JWT_ALG", "HS256");
+        }
+        unsafe {
+            std::env::set_var("JWT_SECRET", "signing-secret");
+        }
         let card = MessageCard {
             title: Some("Weather".into()),
             body: vec![
@@ -526,8 +550,14 @@ mod tests {
         let action_url = adaptive["actions"][0]["url"].as_str().unwrap();
         assert!(action_url.starts_with("https://actions.test/a?action="));
 
-        std::env::remove_var("ACTION_BASE_URL");
-        std::env::remove_var("JWT_SECRET");
-        std::env::remove_var("JWT_ALG");
+        unsafe {
+            std::env::remove_var("ACTION_BASE_URL");
+        }
+        unsafe {
+            std::env::remove_var("JWT_SECRET");
+        }
+        unsafe {
+            std::env::remove_var("JWT_ALG");
+        }
     }
 }

@@ -31,19 +31,19 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use async_nats::{
-    jetstream::{
-        consumer::{pull::Config as PullConfig, AckPolicy, DeliverPolicy},
-        stream::{Config as StreamConfig, RetentionPolicy},
-        Context as JsContext,
-    },
     Client,
+    jetstream::{
+        Context as JsContext,
+        consumer::{AckPolicy, DeliverPolicy, pull::Config as PullConfig},
+        stream::{Config as StreamConfig, RetentionPolicy},
+    },
 };
 use futures::TryStreamExt;
-use gsm_telemetry::{record_counter, TelemetryLabels};
+use gsm_telemetry::{TelemetryLabels, record_counter};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
 
 const DLQ_ENABLED_ENV: &str = "DLQ_ENABLED";
@@ -399,9 +399,13 @@ mod tests {
     #[test]
     fn replay_subject_uses_env_override() {
         let _guard = env_lock().lock().unwrap();
-        std::env::set_var(REPLAY_SUBJECT_FMT_ENV, "replay.{tenant}.{stage}");
+        unsafe {
+            std::env::set_var(REPLAY_SUBJECT_FMT_ENV, "replay.{tenant}.{stage}");
+        }
         assert_eq!(replay_subject("acme", "translate"), "replay.acme.translate");
-        std::env::remove_var(REPLAY_SUBJECT_FMT_ENV);
+        unsafe {
+            std::env::remove_var(REPLAY_SUBJECT_FMT_ENV);
+        }
     }
 
     #[test]

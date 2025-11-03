@@ -1,8 +1,8 @@
 use crate::model::{AgentCfg, QaNode};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use gsm_core::MessageEnvelope;
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub async fn run_qa(
     cfg: &QaNode,
@@ -17,10 +17,10 @@ pub async fn run_qa(
 
     // Defaults
     for q in &cfg.questions {
-        if !obj.contains_key(&q.id) {
-            if let Some(def) = &q.default {
-                obj.insert(q.id.clone(), def.clone());
-            }
+        if !obj.contains_key(&q.id)
+            && let Some(def) = &q.default
+        {
+            obj.insert(q.id.clone(), def.clone());
         }
     }
 
@@ -31,50 +31,47 @@ pub async fn run_qa(
         .map(|q| q.id.as_str())
         .collect();
 
-    if !missing.is_empty() {
-        if let Some(text) = &env.text {
-            let number_re = Regex::new(r"(?P<n>\d+)").unwrap();
-            for q in &cfg.questions {
-                if missing.contains(&q.id.as_str()) {
-                    match q.answer_type.as_deref() {
-                        Some("number") => {
-                            if let Some(c) = number_re.captures(text) {
-                                if let Some(m) = c.name("n") {
-                                    obj.insert(
-                                        q.id.clone(),
-                                        json!(m.as_str().parse::<i64>().unwrap_or(1)),
-                                    );
-                                }
-                            }
+    if !missing.is_empty()
+        && let Some(text) = &env.text
+    {
+        let number_re = Regex::new(r"(?P<n>\d+)").unwrap();
+        for q in &cfg.questions {
+            if missing.contains(&q.id.as_str()) {
+                match q.answer_type.as_deref() {
+                    Some("number") => {
+                        if let Some(caps) = number_re.captures(text)
+                            && let Some(m) = caps.name("n")
+                        {
+                            obj.insert(q.id.clone(), json!(m.as_str().parse::<i64>().unwrap_or(1)));
                         }
-                        _ => {
-                            let loc = text
-                                .split_whitespace()
-                                .take(q.max_words.unwrap_or(3))
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            if !loc.is_empty() {
-                                obj.insert(q.id.clone(), json!(loc));
-                            }
+                    }
+                    _ => {
+                        let loc = text
+                            .split_whitespace()
+                            .take(q.max_words.unwrap_or(3))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if !loc.is_empty() {
+                            obj.insert(q.id.clone(), json!(loc));
                         }
                     }
                 }
             }
-            missing = cfg
-                .questions
-                .iter()
-                .filter(|q| !obj.contains_key(&q.id))
-                .map(|q| q.id.as_str())
-                .collect();
         }
+        missing = cfg
+            .questions
+            .iter()
+            .filter(|q| !obj.contains_key(&q.id))
+            .map(|q| q.id.as_str())
+            .collect();
     }
 
-    if !missing.is_empty() {
-        if let Some(agent) = &cfg.fallback_agent {
-            let extracted = call_agent(agent, env).await?;
-            for (k, v) in extracted.as_object().unwrap_or(&serde_json::Map::new()) {
-                obj.insert(k.clone(), v.clone());
-            }
+    if !missing.is_empty()
+        && let Some(agent) = &cfg.fallback_agent
+    {
+        let extracted = call_agent(agent, env).await?;
+        for (k, v) in extracted.as_object().unwrap_or(&serde_json::Map::new()) {
+            obj.insert(k.clone(), v.clone());
         }
     }
 

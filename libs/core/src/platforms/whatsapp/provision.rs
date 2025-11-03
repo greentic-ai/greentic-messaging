@@ -127,7 +127,9 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_subscription_sets_signature_and_is_idempotent() {
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let resolver = InMemorySecrets::default();
         let path = whatsapp_credentials(&ctx);

@@ -2,18 +2,18 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::{
+    Router,
     extract::FromRequestParts,
-    http::{header, request::Parts, StatusCode},
+    http::{StatusCode, header, request::Parts},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
-    Router,
 };
 use time::OffsetDateTime;
 use tracing::{debug, warn};
 
 use crate::{
     jwt::{ActionClaims, JwtSigner},
-    nonce::{default_nonce_store, SharedNonceStore},
+    nonce::{SharedNonceStore, default_nonce_store},
 };
 
 const FAILURE_HTML: &str = r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Link expired</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}main{max-width:420px;text-align:center;background:rgba(15,23,42,0.8);padding:2.5rem 2rem;border-radius:1rem;box-shadow:0 25px 50px -12px rgba(15,23,42,0.5);}h1{font-size:1.5rem;margin-bottom:0.75rem;}p{color:#cbd5f5;font-size:0.95rem;line-height:1.6;}</style></head><body><main><h1>This link is invalid or expired</h1><p>Please go back to your conversation and request a new link. This safeguard keeps actions secure even if a link is forwarded.</p></main></body></html>"#;
@@ -162,9 +162,9 @@ fn server_error() -> Response {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use axum::{body::Body, http::Request, Extension};
-    use base64::engine::general_purpose::STANDARD_NO_PAD;
+    use axum::{Extension, body::Body, http::Request};
     use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD_NO_PAD;
     use once_cell::sync::Lazy;
     use std::{collections::HashSet, sync::Mutex, time::Duration as StdDuration};
     use time::Duration;
@@ -202,14 +202,22 @@ mod tests {
     }
 
     fn setup_signer() -> JwtSigner {
-        std::env::set_var("JWT_ALG", "HS256");
-        std::env::set_var("JWT_SECRET", "integration-secret");
+        unsafe {
+            std::env::set_var("JWT_ALG", "HS256");
+        }
+        unsafe {
+            std::env::set_var("JWT_SECRET", "integration-secret");
+        }
         JwtSigner::from_env().expect("signer")
     }
 
     fn teardown_env() {
-        std::env::remove_var("JWT_SECRET");
-        std::env::remove_var("JWT_ALG");
+        unsafe {
+            std::env::remove_var("JWT_SECRET");
+        }
+        unsafe {
+            std::env::remove_var("JWT_ALG");
+        }
     }
 
     fn build_router(ctx: SharedActionContext) -> Router {

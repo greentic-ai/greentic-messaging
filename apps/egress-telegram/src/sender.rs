@@ -1,12 +1,12 @@
 use async_trait::async_trait;
+use gsm_core::Platform;
 use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
 use gsm_core::platforms::telegram::creds::TelegramCreds;
 use gsm_core::prelude::*;
 use gsm_core::provider::ProviderKey;
 use gsm_core::registry::{Provider, ProviderRegistry};
 use gsm_core::secrets_paths::messaging_credentials;
-use gsm_core::Platform;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -241,7 +241,9 @@ mod tests {
     #[tokio::test]
     async fn sends_using_tenant_specific_tokens() {
         let prev_env = std::env::var("GREENTIC_ENV").ok();
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx_a = make_tenant_ctx("tenant-a".into(), None, None);
         let ctx_b = make_tenant_ctx("tenant-b".into(), Some("team-1".into()), None);
@@ -308,9 +310,13 @@ mod tests {
         assert_eq!(res_b.raw.as_ref().unwrap()["payload"]["chat_id"], "chat-2");
 
         if let Some(env) = prev_env {
-            std::env::set_var("GREENTIC_ENV", env);
+            unsafe {
+                std::env::set_var("GREENTIC_ENV", env);
+            }
         } else {
-            std::env::remove_var("GREENTIC_ENV");
+            unsafe {
+                std::env::remove_var("GREENTIC_ENV");
+            }
         }
     }
 

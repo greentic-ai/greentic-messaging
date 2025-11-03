@@ -1,7 +1,7 @@
 [package]
 name = "gsm-egress-webex"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 
 [features]
@@ -17,7 +17,7 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+greentic-types = { workspace = true }
 time = { workspace = true }
 gsm-core = { path = "../../libs/core" }
 gsm-translator = { path = "../../libs/translator" }
@@ -27,9 +27,9 @@ gsm-dlq = { path = "../../libs/dlq" }
 gsm-telemetry = { path = "../../libs/telemetry" }
 async-trait = { workspace = true }
 metrics = { workspace = true }
-futures = "0.3"
+futures = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["macros"] }
-tower = "0.5"
-http-body-util = "0.1"
+tower = { workspace = true }
+http-body-util = { workspace = true }

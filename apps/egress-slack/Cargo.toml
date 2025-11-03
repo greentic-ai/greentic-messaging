@@ -1,7 +1,7 @@
 [package]
 name = "gsm-egress-slack"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 
 [features]
@@ -13,7 +13,7 @@ anyhow = { workspace = true }
 async-nats = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+greentic-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
@@ -22,7 +22,7 @@ gsm-translator = { path = "../../libs/translator" }
 gsm-egress-common = { path = "../egress-common" }
 gsm-backpressure = { path = "../../libs/backpressure" }
 gsm-dlq = { path = "../../libs/dlq" }
-futures = "0.3"
+futures = { workspace = true }
 metrics = { workspace = true }
 gsm-telemetry = { path = "../../libs/telemetry" }
 async-trait = { workspace = true }

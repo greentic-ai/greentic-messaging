@@ -15,20 +15,18 @@ use gsm_egress_common::{
     egress::bootstrap,
     telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::install as init_telemetry;
 use gsm_translator::teams::to_teams_adaptive;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
-use tracing::{event, Instrument, Level};
+use tracing::{Instrument, Level, event};
 
 const MAX_ATTEMPTS: usize = 3;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-egress-teams", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     #[cfg(feature = "mock-http")]

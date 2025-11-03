@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::StatusCode;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::egress::{EgressSender, OutboundMessage, SendResult};
 use crate::platforms::webex::creds::WebexCreds;
@@ -57,10 +57,11 @@ fn ensure_payload(mut payload: Value, room_id: &str, text: Option<&str>) -> Node
         .ok_or_else(|| NodeError::new("webex_payload_not_object", "payload must be object"))?;
     obj.entry("roomId")
         .or_insert_with(|| Value::String(room_id.to_string()));
-    if let Some(text) = text {
-        if !obj.contains_key("markdown") && !obj.contains_key("text") {
-            obj.insert("markdown".into(), Value::String(text.to_string()));
-        }
+    if let Some(text) = text
+        && !obj.contains_key("markdown")
+        && !obj.contains_key("text")
+    {
+        obj.insert("markdown".into(), Value::String(text.to_string()));
     }
     Ok(Value::Object(obj.clone()))
 }
@@ -201,7 +202,9 @@ mod tests {
     #[tokio::test]
     async fn loads_token_per_tenant() {
         let prev_env = std::env::var("GREENTIC_ENV").ok();
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx_a = make_tenant_ctx("tenant-a".into(), None, None);
@@ -260,15 +263,21 @@ mod tests {
         assert_eq!(res_b.message_id.as_deref(), Some("token-b"));
 
         if let Some(env) = prev_env {
-            std::env::set_var("GREENTIC_ENV", env);
+            unsafe {
+                std::env::set_var("GREENTIC_ENV", env);
+            }
         } else {
-            std::env::remove_var("GREENTIC_ENV");
+            unsafe {
+                std::env::remove_var("GREENTIC_ENV");
+            }
         }
     }
 
     #[tokio::test]
     async fn requires_channel() {
-        std::env::set_var("GREENTIC_ENV", "test");
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", "test");
+        }
         let secrets = Arc::new(InMemorySecrets::default());
         let sender = WebexSender::new(reqwest::Client::new(), secrets, Some("mock://webex".into()));
         let ctx = make_tenant_ctx("acme".into(), None, None);

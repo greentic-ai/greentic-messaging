@@ -44,6 +44,14 @@ artifact uploaded by GitHub Actions.
 - Secrets resolvers and egress senders consume the shared context, making it safe to host multiple environments or teams within a single process.
 - Provider credentials live under `secret://{env}/{tenant}/{team|default}/messaging/{platform}-{team|default}-credentials.json`, so each environment stays isolated by design.
 
+## Telemetry
+
+Set the following environment variables to emit spans and OTLP traces when running locally:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`
+- `RUST_LOG=info`
+- `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=dev`
+
 ## Sending Messages
 
 All egress adapters now share a common interface: pass a `TenantCtx` alongside an
@@ -59,7 +67,7 @@ use gsm_core::prelude::{make_tenant_ctx, DefaultResolver};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // GREENTIC_ENV defaults to "dev" but can be overridden for other scopes.
-    std::env::set_var("GREENTIC_ENV", "dev");
+    unsafe { std::env::set_var("GREENTIC_ENV", "dev"); }
 
     let ctx = make_tenant_ctx("acme".into(), Some("support".into()), None);
     let resolver = Arc::new(DefaultResolver::new().await?);

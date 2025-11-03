@@ -2,10 +2,9 @@ use std::{sync::Arc, time::Duration as StdDuration};
 
 use anyhow::{Context, Result};
 use async_nats::jetstream::{
-    self,
+    self, Context as JsContext,
     context::KeyValueErrorKind,
     kv::{self, CreateErrorKind},
-    Context as JsContext,
 };
 use async_trait::async_trait;
 use serde::Serialize;

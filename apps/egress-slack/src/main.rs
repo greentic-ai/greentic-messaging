@@ -14,7 +14,7 @@ use gsm_egress_common::{
     egress::bootstrap,
     telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
 };
-use gsm_telemetry::{init_telemetry, TelemetryConfig};
+use gsm_telemetry::install as init_telemetry;
 use gsm_translator::slack::to_slack_payloads;
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,9 +28,7 @@ const MAX_ATTEMPTS: usize = 3;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let telemetry = TelemetryConfig::from_env("gsm-egress-slack", env!("CARGO_PKG_VERSION"));
-    init_telemetry(telemetry)?;
-
+    init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
 
@@ -276,7 +274,7 @@ impl DeliveryMessage for async_nats::jetstream::Message {
 mod tests {
     use super::*;
     use gsm_backpressure::{LocalBackpressureLimiter, RateLimits};
-    use gsm_core::{make_tenant_ctx, OutKind, OutMessage, Platform};
+    use gsm_core::{OutKind, OutMessage, Platform, make_tenant_ctx};
     use serde_json::json;
     use std::{
         collections::BTreeMap,

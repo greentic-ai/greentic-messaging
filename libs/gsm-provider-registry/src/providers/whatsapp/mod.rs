@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use gsm_core::TenantCtx;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::errors::MsgError;
 use crate::manifest::ProviderManifest;
@@ -25,9 +25,7 @@ pub fn register(registry: &mut ProviderRegistry) -> Result<(), anyhow::Error> {
             WhatsappSendAdapter::from_manifest(&manifest)
                 .map(|adapter| Box::new(adapter) as Box<dyn SendAdapter>)
         })
-        .with_receive(
-            || Ok(Box::new(WhatsappReceiveAdapter::default()) as Box<dyn ReceiveAdapter>),
-        );
+        .with_receive(|| Ok(Box::new(WhatsappReceiveAdapter) as Box<dyn ReceiveAdapter>));
 
     registry
         .register(manifest, builder)
@@ -60,15 +58,15 @@ impl WhatsappSendAdapter {
     }
 
     fn resolve_token(&self) -> Result<String, MsgError> {
-        if let Ok(value) = std::env::var("WHATSAPP_TOKEN") {
-            if !value.trim().is_empty() {
-                return Ok(value);
-            }
+        if let Ok(value) = std::env::var("WHATSAPP_TOKEN")
+            && !value.trim().is_empty()
+        {
+            return Ok(value);
         }
-        if let Some(value) = &self.default_token {
-            if !value.trim().is_empty() {
-                return Ok(value.clone());
-            }
+        if let Some(value) = self.default_token.as_ref()
+            && !value.trim().is_empty()
+        {
+            return Ok(value.clone());
         }
         Err(MsgError::permanent(
             "whatsapp_missing_token",
@@ -77,15 +75,15 @@ impl WhatsappSendAdapter {
     }
 
     fn resolve_phone_id(&self) -> Result<String, MsgError> {
-        if let Ok(value) = std::env::var("WHATSAPP_PHONE_ID") {
-            if !value.trim().is_empty() {
-                return Ok(value);
-            }
+        if let Ok(value) = std::env::var("WHATSAPP_PHONE_ID")
+            && !value.trim().is_empty()
+        {
+            return Ok(value);
         }
-        if let Some(value) = &self.default_phone_id {
-            if !value.trim().is_empty() {
-                return Ok(value.clone());
-            }
+        if let Some(value) = self.default_phone_id.as_ref()
+            && !value.trim().is_empty()
+        {
+            return Ok(value.clone());
         }
         Err(MsgError::permanent(
             "whatsapp_missing_phone_id",
@@ -326,9 +324,13 @@ mod tests {
 
     fn restore_env(key: &str, previous: Option<String>) {
         if let Some(value) = previous {
-            std::env::set_var(key, value);
+            unsafe {
+                std::env::set_var(key, value);
+            }
         } else {
-            std::env::remove_var(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
         }
     }
 
@@ -336,11 +338,17 @@ mod tests {
     async fn send_succeeds() {
         let _guard = env_lock().lock().unwrap();
         let prev_token = std::env::var("WHATSAPP_TOKEN").ok();
-        std::env::set_var("WHATSAPP_TOKEN", "token-123");
+        unsafe {
+            std::env::set_var("WHATSAPP_TOKEN", "token-123");
+        }
         let prev_phone = std::env::var("WHATSAPP_PHONE_ID").ok();
-        std::env::set_var("WHATSAPP_PHONE_ID", "phone-1");
+        unsafe {
+            std::env::set_var("WHATSAPP_PHONE_ID", "phone-1");
+        }
         let prev_url = std::env::var("WHATSAPP_SEND_URL").ok();
-        std::env::set_var("WHATSAPP_SEND_URL", "mock://success");
+        unsafe {
+            std::env::set_var("WHATSAPP_SEND_URL", "mock://success");
+        }
 
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let adapter = WhatsappSendAdapter::from_manifest(&manifest).unwrap();
@@ -365,11 +373,17 @@ mod tests {
     async fn send_handles_retryable() {
         let _guard = env_lock().lock().unwrap();
         let prev_token = std::env::var("WHATSAPP_TOKEN").ok();
-        std::env::set_var("WHATSAPP_TOKEN", "token-123");
+        unsafe {
+            std::env::set_var("WHATSAPP_TOKEN", "token-123");
+        }
         let prev_phone = std::env::var("WHATSAPP_PHONE_ID").ok();
-        std::env::set_var("WHATSAPP_PHONE_ID", "phone-1");
+        unsafe {
+            std::env::set_var("WHATSAPP_PHONE_ID", "phone-1");
+        }
         let prev_url = std::env::var("WHATSAPP_SEND_URL").ok();
-        std::env::set_var("WHATSAPP_SEND_URL", "mock://throttle");
+        unsafe {
+            std::env::set_var("WHATSAPP_SEND_URL", "mock://throttle");
+        }
 
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let adapter = WhatsappSendAdapter::from_manifest(&manifest).unwrap();

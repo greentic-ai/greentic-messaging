@@ -1,11 +1,11 @@
 use anyhow::Result;
 use axum::{
-    body::{to_bytes, Body},
-    http::{header::HeaderName, Request, StatusCode},
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header::HeaderName},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::str::FromStr;
@@ -69,7 +69,7 @@ pub async fn verify_bearer(req: Request<Body>, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, middleware, routing::get, Router};
+    use axum::{Router, body::Body, middleware, routing::get};
     use base64::Engine;
     use hmac::Mac;
     use tower::ServiceExt;
@@ -86,7 +86,9 @@ mod tests {
 
     #[tokio::test]
     async fn verify_bearer_blocks_invalid_token() {
-        std::env::set_var("INGRESS_BEARER", "expected");
+        unsafe {
+            std::env::set_var("INGRESS_BEARER", "expected");
+        }
         let app = Router::new()
             .route("/", get(|| async { axum::http::StatusCode::OK }))
             .layer(middleware::from_fn(verify_bearer));
@@ -105,13 +107,19 @@ mod tests {
             .unwrap();
         let ok_resp: axum::response::Response = app.oneshot(ok_req).await.unwrap();
         assert_eq!(ok_resp.status(), axum::http::StatusCode::OK);
-        std::env::remove_var("INGRESS_BEARER");
+        unsafe {
+            std::env::remove_var("INGRESS_BEARER");
+        }
     }
 
     #[tokio::test]
     async fn verify_hmac_rejects_bad_signature() {
-        std::env::set_var("INGRESS_HMAC_SECRET", "secret");
-        std::env::set_var("INGRESS_HMAC_HEADER", "x-signature");
+        unsafe {
+            std::env::set_var("INGRESS_HMAC_SECRET", "secret");
+        }
+        unsafe {
+            std::env::set_var("INGRESS_HMAC_HEADER", "x-signature");
+        }
         let app = Router::new()
             .route("/", get(|| async { axum::http::StatusCode::OK }))
             .layer(middleware::from_fn(verify_hmac));
@@ -133,7 +141,11 @@ mod tests {
             .unwrap();
         let ok_resp: axum::response::Response = app.oneshot(ok_req).await.unwrap();
         assert_eq!(ok_resp.status(), axum::http::StatusCode::OK);
-        std::env::remove_var("INGRESS_HMAC_SECRET");
-        std::env::remove_var("INGRESS_HMAC_HEADER");
+        unsafe {
+            std::env::remove_var("INGRESS_HMAC_SECRET");
+        }
+        unsafe {
+            std::env::remove_var("INGRESS_HMAC_HEADER");
+        }
     }
 }
