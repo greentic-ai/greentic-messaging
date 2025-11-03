@@ -387,6 +387,8 @@ impl ReceiveAdapter for TeamsReceiveAdapter {
 mod tests {
     use super::*;
     use gsm_core::make_tenant_ctx;
+    use std::sync::OnceLock;
+    use tokio::sync::Mutex;
 
     fn restore_env(key: &str, previous: Option<String>) {
         if let Some(value) = previous {
@@ -400,8 +402,14 @@ mod tests {
         }
     }
 
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
     #[tokio::test]
     async fn send_succeeds() {
+        let _guard = env_lock().lock().await;
         let prev_tenant = std::env::var("MS_GRAPH_TENANT_ID").ok();
         unsafe {
             std::env::set_var("MS_GRAPH_TENANT_ID", "mock://tenant");
@@ -437,6 +445,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_handles_retryable() {
+        let _guard = env_lock().lock().await;
         let prev_tenant = std::env::var("MS_GRAPH_TENANT_ID").ok();
         unsafe {
             std::env::set_var("MS_GRAPH_TENANT_ID", "mock://tenant");
