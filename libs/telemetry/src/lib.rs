@@ -21,7 +21,6 @@ pub use metrics::{
 
 static INSTALL_GUARD: OnceCell<()> = OnceCell::new();
 
-#[allow(clippy::missing_const_for_thread_local)]
 thread_local! {
     static CURRENT_TENANT: RefCell<Option<TenantCtx>> = const { RefCell::new(None) };
 }

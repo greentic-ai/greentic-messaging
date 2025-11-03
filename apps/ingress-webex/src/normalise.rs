@@ -109,10 +109,10 @@ fn enrich_with_events(envelope: &mut MessageEnvelope, raw: &Value) -> Result<()>
             }
         }
         "attachmentActions" => {
-            if let Some(data) = raw.get("data") {
-                if let WebexInboundEvent::Postback { data } = parse_attachment_action(data)? {
-                    envelope.context.insert("postback".into(), data);
-                }
+            if let Some(data) = raw.get("data")
+                && let WebexInboundEvent::Postback { data } = parse_attachment_action(data)?
+            {
+                envelope.context.insert("postback".into(), data);
             }
         }
         _ => {}

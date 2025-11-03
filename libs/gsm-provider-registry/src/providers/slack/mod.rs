@@ -282,7 +282,8 @@ impl ReceiveAdapter for SlackReceiveAdapter {
 mod tests {
     use super::*;
     use gsm_core::make_tenant_ctx;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::OnceLock;
+    use tokio::sync::Mutex;
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -303,7 +304,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_succeeds() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().await;
         let prev_token = std::env::var("SLACK_BOT_TOKEN").ok();
         unsafe {
             std::env::set_var("SLACK_BOT_TOKEN", "xoxb-123");
@@ -333,7 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_handles_retryable() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().await;
         let prev_token = std::env::var("SLACK_BOT_TOKEN").ok();
         unsafe {
             std::env::set_var("SLACK_BOT_TOKEN", "xoxb-123");
@@ -362,7 +363,7 @@ mod tests {
 
     #[test]
     fn receive_parses_event() {
-        let adapter = SlackReceiveAdapter::default();
+        let adapter = SlackReceiveAdapter;
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let payload = json!({
             "type": "event_callback",

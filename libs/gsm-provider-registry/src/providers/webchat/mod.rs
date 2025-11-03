@@ -214,7 +214,8 @@ impl ReceiveAdapter for WebChatReceiveAdapter {
 mod tests {
     use super::*;
     use gsm_core::make_tenant_ctx;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::OnceLock;
+    use tokio::sync::Mutex;
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -235,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_succeeds() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().await;
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let mut adapter = WebChatSendAdapter::from_manifest(&manifest).unwrap();
         adapter.default_endpoint = "mock://success".into();
@@ -264,7 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_handles_429() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().await;
         let manifest = ProviderManifest::from_json(MANIFEST_STR).unwrap();
         let adapter = WebChatSendAdapter::from_manifest(&manifest).unwrap();
         let prev = std::env::var("WEBCHAT_SEND_URL").ok();
@@ -287,7 +288,7 @@ mod tests {
 
     #[test]
     fn receive_parses_messages() {
-        let adapter = WebChatReceiveAdapter::default();
+        let adapter = WebChatReceiveAdapter;
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let payload = json!({
             "messages": [

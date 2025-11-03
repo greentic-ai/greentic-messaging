@@ -25,7 +25,7 @@ pub fn register(registry: &mut ProviderRegistry) -> Result<(), anyhow::Error> {
             TeamsSendAdapter::from_manifest(&manifest)
                 .map(|adapter| Box::new(adapter) as Box<dyn SendAdapter>)
         })
-        .with_receive(|| Ok(Box::new(TeamsReceiveAdapter::default()) as Box<dyn ReceiveAdapter>));
+        .with_receive(|| Ok(Box::new(TeamsReceiveAdapter) as Box<dyn ReceiveAdapter>));
 
     registry
         .register(manifest, builder)
@@ -59,15 +59,14 @@ impl TeamsSendAdapter {
     }
 
     fn resolve_secret(name: &str, default: &Option<String>) -> Result<String, MsgError> {
-        if let Ok(value) = std::env::var(name) {
-            if !value.trim().is_empty() {
-                return Ok(value);
-            }
+        if let Some(value) = std::env::var(name)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+        {
+            return Ok(value);
         }
-        if let Some(value) = default {
-            if !value.trim().is_empty() {
-                return Ok(value.clone());
-            }
+        if let Some(value) = default.as_ref().filter(|value| !value.trim().is_empty()) {
+            return Ok(value.clone());
         }
         Err(MsgError::permanent(
             "teams_missing_secret",
@@ -214,7 +213,7 @@ impl SendAdapter for TeamsSendAdapter {
 
         if endpoint.starts_with("mock://") {
             let rest = endpoint.trim_start_matches("mock://");
-            let scenario = rest.splitn(2, '/').next().unwrap_or(rest);
+            let scenario = rest.split('/').next().unwrap_or_default();
             return match scenario {
                 "success" => Ok(SendResult {
                     provider_message_id: "mock-message".into(),
@@ -472,7 +471,7 @@ mod tests {
 
     #[test]
     fn receive_parses_payload() {
-        let adapter = TeamsReceiveAdapter::default();
+        let adapter = TeamsReceiveAdapter;
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let payload = json!({
             "id": "msg-1",

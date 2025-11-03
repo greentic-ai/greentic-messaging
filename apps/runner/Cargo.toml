@@ -31,3 +31,4 @@ gsm-telemetry = { path = "../../libs/telemetry" }
 [dev-dependencies]
 gsm-backpressure = { path = "../../libs/backpressure" }
 gsm-idempotency = { path = "../../libs/idempotency" }
+tracing-subscriber = { workspace = true }

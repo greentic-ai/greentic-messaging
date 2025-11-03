@@ -242,7 +242,8 @@ impl ReceiveAdapter for WebexReceiveAdapter {
 mod tests {
     use super::*;
     use gsm_core::make_tenant_ctx;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::OnceLock;
+    use tokio::sync::Mutex;
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -263,7 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_succeeds() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().await;
         let prev_token = std::env::var("WEBEX_BOT_TOKEN").ok();
         unsafe {
             std::env::set_var("WEBEX_BOT_TOKEN", "token-123");
@@ -293,7 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_handles_retryable() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = env_lock().lock().await;
         let prev_token = std::env::var("WEBEX_BOT_TOKEN").ok();
         unsafe {
             std::env::set_var("WEBEX_BOT_TOKEN", "token-123");
@@ -322,7 +323,7 @@ mod tests {
 
     #[test]
     fn receive_parses_webhook() {
-        let adapter = WebexReceiveAdapter::default();
+        let adapter = WebexReceiveAdapter;
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let payload = json!({
             "id": "abc",
