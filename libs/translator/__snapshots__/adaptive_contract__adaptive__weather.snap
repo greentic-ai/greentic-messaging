@@ -1,0 +1,58 @@
+---
+source: libs/translator/tests/adaptive_contract.rs
+assertion_line: 40
+expression: snapshot_value
+---
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "actions": [
+    {
+      "title": "Detailed Forecast",
+      "type": "Action.OpenUrl",
+      "url": "https://weather.example.com/acme"
+    },
+    {
+      "data": {
+        "refresh": true
+      },
+      "title": "Refresh",
+      "type": "Action.Submit"
+    }
+  ],
+  "body": [
+    {
+      "size": "Medium",
+      "text": "Daily Weather",
+      "type": "TextBlock",
+      "weight": "Bolder"
+    },
+    {
+      "text": "Here is the latest weather update for your city.",
+      "type": "TextBlock",
+      "wrap": true
+    },
+    {
+      "type": "Image",
+      "url": "https://cdn.greentic.ai/weather/cloudy.png"
+    },
+    {
+      "facts": [
+        {
+          "title": "Condition",
+          "value": "Partly Cloudy"
+        },
+        {
+          "title": "High",
+          "value": "21°C"
+        },
+        {
+          "title": "Low",
+          "value": "12°C"
+        }
+      ],
+      "type": "FactSet"
+    }
+  ],
+  "type": "AdaptiveCard",
+  "version": "1.4"
+}

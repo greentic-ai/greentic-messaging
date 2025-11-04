@@ -1,0 +1,56 @@
+[package]
+name = "gsm-testutil"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+e2e = [
+  "reqwest",
+  "tokio",
+  "secrets-core",
+  "gsm-core",
+]
+visual = [
+  "image",
+  "uuid",
+]
+
+[dependencies]
+anyhow = { workspace = true }
+dotenvy = "0.15"
+once_cell = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_bw = { workspace = true }
+
+[dependencies.jsonschema]
+version = "0.17"
+default-features = false
+features = ["draft201909"]
+
+[dependencies.reqwest]
+workspace = true
+optional = true
+
+[dependencies.tokio]
+workspace = true
+optional = true
+
+[dependencies.image]
+workspace = true
+optional = true
+
+[dependencies.uuid]
+workspace = true
+optional = true
+
+[dependencies.secrets-core]
+workspace = true
+optional = true
+
+[dependencies.gsm-core]
+version = "0.2.1"
+path = "../core"
+optional = true

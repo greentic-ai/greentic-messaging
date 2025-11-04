@@ -7,6 +7,7 @@ publish = false
 [features]
 default = []
 mock-http = []
+e2e = ["dep:gsm-testutil"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -28,8 +29,10 @@ gsm-telemetry = { workspace = true }
 async-trait = { workspace = true }
 metrics = { workspace = true }
 futures = { workspace = true }
+gsm-testutil = { path = "../../libs/testutil", optional = true, features = ["visual"] }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["macros"] }
 tower = { workspace = true }
 http-body-util = { workspace = true }
+dotenvy = "0.15"

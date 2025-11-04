@@ -1,0 +1,12 @@
+{
+  "title": "Hello from Greentic",
+  "body": [
+    {
+      "type": "text",
+      "text": "Welcome to the Greentic messaging sandbox.",
+      "markdown": true
+    }
+  ],
+  "actions": []
+}
+

@@ -1,0 +1,45 @@
+{
+  "title": "Daily Weather",
+  "body": [
+    {
+      "type": "text",
+      "text": "Here is the latest weather update for your city.",
+      "markdown": true
+    },
+    {
+      "type": "fact",
+      "label": "Condition",
+      "value": "Partly Cloudy"
+    },
+    {
+      "type": "fact",
+      "label": "High",
+      "value": "21°C"
+    },
+    {
+      "type": "fact",
+      "label": "Low",
+      "value": "12°C"
+    },
+    {
+      "type": "image",
+      "url": "https://cdn.greentic.ai/weather/cloudy.png"
+    }
+  ],
+  "actions": [
+    {
+      "type": "openUrl",
+      "title": "Detailed Forecast",
+      "url": "https://weather.example.com/acme",
+      "jwt": false
+    },
+    {
+      "type": "postback",
+      "title": "Refresh",
+      "data": {
+        "refresh": true
+      }
+    }
+  ]
+}
+

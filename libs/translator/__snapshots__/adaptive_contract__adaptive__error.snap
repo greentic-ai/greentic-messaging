@@ -1,0 +1,35 @@
+---
+source: libs/translator/tests/adaptive_contract.rs
+assertion_line: 40
+expression: snapshot_value
+---
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "actions": [
+    {
+      "title": "Contact Support",
+      "type": "Action.OpenUrl",
+      "url": "https://support.greentic.ai/help"
+    }
+  ],
+  "body": [
+    {
+      "size": "Medium",
+      "text": "Action Failed",
+      "type": "TextBlock",
+      "weight": "Bolder"
+    },
+    {
+      "text": "We were unable to complete your request.",
+      "type": "TextBlock",
+      "wrap": true
+    },
+    {
+      "text": "Try again later or contact support if the problem persists.",
+      "type": "TextBlock",
+      "wrap": true
+    }
+  ],
+  "type": "AdaptiveCard",
+  "version": "1.4"
+}

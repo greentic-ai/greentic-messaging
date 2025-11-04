@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[features]
+default = []
+mock-http = []
+e2e = ["dep:gsm-testutil"]
+
 [dependencies]
 anyhow = { workspace = true }
 gsm-core = { path = "../../libs/core" }
@@ -20,7 +25,9 @@ metrics = { workspace = true }
 gsm-telemetry = { workspace = true }
 gsm-egress-common = { path = "../egress-common" }
 async-trait = { workspace = true }
+gsm-testutil = { path = "../../libs/testutil", optional = true, features = ["e2e"] }
 
 [dev-dependencies]
 axum = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+dotenvy = "0.15"

@@ -1,0 +1,28 @@
+---
+source: libs/translator/tests/slack_contract.rs
+assertion_line: 41
+expression: snapshot_value
+---
+[
+  {
+    "blocks": [
+      {
+        "text": {
+          "emoji": true,
+          "text": "Hello from Greentic",
+          "type": "plain_text"
+        },
+        "type": "header"
+      },
+      {
+        "text": {
+          "text": "Welcome to the Greentic messaging sandbox.",
+          "type": "mrkdwn"
+        },
+        "type": "section"
+      }
+    ],
+    "text": "Hello from Greentic",
+    "thread_ts": "1700000000.900100"
+  }
+]

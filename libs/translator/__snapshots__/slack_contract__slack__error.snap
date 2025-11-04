@@ -1,0 +1,49 @@
+---
+source: libs/translator/tests/slack_contract.rs
+assertion_line: 41
+expression: snapshot_value
+---
+[
+  {
+    "blocks": [
+      {
+        "text": {
+          "emoji": true,
+          "text": "Action Failed",
+          "type": "plain_text"
+        },
+        "type": "header"
+      },
+      {
+        "text": {
+          "text": "We were unable to complete your request.",
+          "type": "mrkdwn"
+        },
+        "type": "section"
+      },
+      {
+        "text": {
+          "text": "Try again later or contact support if the problem persists.",
+          "type": "mrkdwn"
+        },
+        "type": "section"
+      },
+      {
+        "elements": [
+          {
+            "text": {
+              "emoji": true,
+              "text": "Contact Support",
+              "type": "plain_text"
+            },
+            "type": "button",
+            "url": "https://support.greentic.ai/help"
+          }
+        ],
+        "type": "actions"
+      }
+    ],
+    "text": "Action Failed",
+    "thread_ts": "1700000000.900100"
+  }
+]

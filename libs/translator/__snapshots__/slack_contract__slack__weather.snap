@@ -1,0 +1,64 @@
+---
+source: libs/translator/tests/slack_contract.rs
+assertion_line: 41
+expression: snapshot_value
+---
+[
+  {
+    "blocks": [
+      {
+        "text": {
+          "emoji": true,
+          "text": "Daily Weather",
+          "type": "plain_text"
+        },
+        "type": "header"
+      },
+      {
+        "text": {
+          "text": "Here is the latest weather update for your city.",
+          "type": "mrkdwn"
+        },
+        "type": "section"
+      },
+      {
+        "text": {
+          "text": "• *Condition*: Partly Cloudy\n• *High*: 21°C\n• *Low*: 12°C",
+          "type": "mrkdwn"
+        },
+        "type": "section"
+      },
+      {
+        "alt_text": "image",
+        "image_url": "https://cdn.greentic.ai/weather/cloudy.png",
+        "type": "image"
+      },
+      {
+        "elements": [
+          {
+            "text": {
+              "emoji": true,
+              "text": "Detailed Forecast",
+              "type": "plain_text"
+            },
+            "type": "button",
+            "url": "https://weather.example.com/acme"
+          },
+          {
+            "action_id": "postback_1",
+            "text": {
+              "emoji": true,
+              "text": "Refresh",
+              "type": "plain_text"
+            },
+            "type": "button",
+            "value": "{\"refresh\":true}"
+          }
+        ],
+        "type": "actions"
+      }
+    ],
+    "text": "Daily Weather",
+    "thread_ts": "1700000000.900100"
+  }
+]

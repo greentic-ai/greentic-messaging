@@ -1,0 +1,57 @@
+---
+source: libs/translator/tests/adaptive_contract.rs
+assertion_line: 40
+expression: snapshot_value
+---
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "actions": [
+    {
+      "title": "View Report",
+      "type": "Action.OpenUrl",
+      "url": "https://approvals.greentic.ai/reports/24819"
+    },
+    {
+      "data": {
+        "decision": "approved"
+      },
+      "title": "Approve",
+      "type": "Action.Submit"
+    },
+    {
+      "data": {
+        "decision": "rejected"
+      },
+      "title": "Reject",
+      "type": "Action.Submit"
+    }
+  ],
+  "body": [
+    {
+      "size": "Medium",
+      "text": "Expense Approval Needed",
+      "type": "TextBlock",
+      "weight": "Bolder"
+    },
+    {
+      "text": "An expense report requires your attention.",
+      "type": "TextBlock",
+      "wrap": true
+    },
+    {
+      "facts": [
+        {
+          "title": "Employee",
+          "value": "Daria Smith"
+        },
+        {
+          "title": "Amount",
+          "value": "$248.19"
+        }
+      ],
+      "type": "FactSet"
+    }
+  ],
+  "type": "AdaptiveCard",
+  "version": "1.4"
+}

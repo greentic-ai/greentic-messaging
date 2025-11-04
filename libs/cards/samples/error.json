@@ -1,0 +1,24 @@
+{
+  "title": "Action Failed",
+  "body": [
+    {
+      "type": "text",
+      "text": "We were unable to complete your request.",
+      "markdown": false
+    },
+    {
+      "type": "text",
+      "text": "Try again later or contact support if the problem persists.",
+      "markdown": false
+    }
+  ],
+  "actions": [
+    {
+      "type": "openUrl",
+      "title": "Contact Support",
+      "url": "https://support.greentic.ai/help",
+      "jwt": false
+    }
+  ]
+}
+

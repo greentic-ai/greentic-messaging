@@ -1,0 +1,12 @@
+{
+  "name": "greentic-playwright-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "screenshot": "node index.mjs"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.46.0"
+  }
+}

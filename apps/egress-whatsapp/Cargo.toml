@@ -7,6 +7,7 @@ publish = false
 [features]
 default = []
 mock-http = []
+e2e = ["dep:gsm-testutil"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -26,3 +27,7 @@ gsm-dlq = { path = "../../libs/dlq" }
 futures = { workspace = true }
 metrics = { workspace = true }
 gsm-telemetry = { workspace = true }
+gsm-testutil = { path = "../../libs/testutil", optional = true }
+
+[dev-dependencies]
+dotenvy = "0.15"

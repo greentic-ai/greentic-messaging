@@ -1,0 +1,69 @@
+---
+source: libs/translator/tests/slack_contract.rs
+assertion_line: 41
+expression: snapshot_value
+---
+[
+  {
+    "blocks": [
+      {
+        "text": {
+          "emoji": true,
+          "text": "Expense Approval Needed",
+          "type": "plain_text"
+        },
+        "type": "header"
+      },
+      {
+        "text": {
+          "text": "An expense report requires your attention.",
+          "type": "mrkdwn"
+        },
+        "type": "section"
+      },
+      {
+        "text": {
+          "text": "• *Employee*: Daria Smith\n• *Amount*: $248.19",
+          "type": "mrkdwn"
+        },
+        "type": "section"
+      },
+      {
+        "elements": [
+          {
+            "text": {
+              "emoji": true,
+              "text": "View Report",
+              "type": "plain_text"
+            },
+            "type": "button",
+            "url": "https://approvals.greentic.ai/reports/24819"
+          },
+          {
+            "action_id": "postback_1",
+            "text": {
+              "emoji": true,
+              "text": "Approve",
+              "type": "plain_text"
+            },
+            "type": "button",
+            "value": "{\"decision\":\"approved\"}"
+          },
+          {
+            "action_id": "postback_2",
+            "text": {
+              "emoji": true,
+              "text": "Reject",
+              "type": "plain_text"
+            },
+            "type": "button",
+            "value": "{\"decision\":\"rejected\"}"
+          }
+        ],
+        "type": "actions"
+      }
+    ],
+    "text": "Expense Approval Needed",
+    "thread_ts": "1700000000.900100"
+  }
+]

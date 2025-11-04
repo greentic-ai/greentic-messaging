@@ -1,0 +1,156 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Slack Block Kit message",
+  "type": "object",
+  "required": [
+    "text",
+    "blocks"
+  ],
+  "properties": {
+    "text": {
+      "type": "string"
+    },
+    "thread_ts": {
+      "type": "string"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/block"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "block": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "section",
+            "header",
+            "image",
+            "actions"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/textObject"
+        },
+        "image_url": {
+          "type": "string"
+        },
+        "alt_text": {
+          "type": "string"
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/element"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "section"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "text"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "image"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "image_url",
+              "alt_text"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "actions"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "elements"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "textObject": {
+      "type": "object",
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "plain_text",
+            "mrkdwn"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "emoji": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "element": {
+      "type": "object",
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "button"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/textObject"
+        },
+        "url": {
+          "type": "string"
+        },
+        "action_id": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+

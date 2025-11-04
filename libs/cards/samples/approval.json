@@ -1,0 +1,43 @@
+{
+  "title": "Expense Approval Needed",
+  "body": [
+    {
+      "type": "text",
+      "text": "An expense report requires your attention.",
+      "markdown": false
+    },
+    {
+      "type": "fact",
+      "label": "Employee",
+      "value": "Daria Smith"
+    },
+    {
+      "type": "fact",
+      "label": "Amount",
+      "value": "$248.19"
+    }
+  ],
+  "actions": [
+    {
+      "type": "openUrl",
+      "title": "View Report",
+      "url": "https://approvals.greentic.ai/reports/24819",
+      "jwt": true
+    },
+    {
+      "type": "postback",
+      "title": "Approve",
+      "data": {
+        "decision": "approved"
+      }
+    },
+    {
+      "type": "postback",
+      "title": "Reject",
+      "data": {
+        "decision": "rejected"
+      }
+    }
+  ]
+}
+

@@ -7,6 +7,7 @@ publish = false
 [features]
 default = []
 mock-http = []
+e2e = ["dep:gsm-testutil"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -27,3 +28,7 @@ futures = { workspace = true }
 gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
 async-trait = { workspace = true }
+gsm-testutil = { path = "../../libs/testutil", optional = true }
+
+[dev-dependencies]
+dotenvy = "0.15"

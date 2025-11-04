@@ -132,6 +132,15 @@ mock-http`).
    ```
 4. Add the Graph subscription through the admin subject (`greentic.subs.admin`) or use the runner to trigger messages; cards are translated into Adaptive Cards for Teams.
 
+### Teams Test Credentials
+
+1. Register (or reuse) an Azure AD application with the Microsoft Graph `ChatMessage.Send` **application** permission and create a client secret dedicated to CI/testing.
+2. Collect the following values: `TEAMS_TENANT_ID`, `TEAMS_CLIENT_ID`, `TEAMS_CLIENT_SECRET`, and the target `TEAMS_CHAT_ID`.
+3. Verify the chat and persist the secrets with the helper:
+   `cargo run --manifest-path scripts/Cargo.toml --bin teams_setup -- --tenant <tenant> --client-id <client_id> --client-secret <client_secret> --chat-id <chat_id> --output .env`
+4. Run the Teams E2E test when needed:
+   `cargo test -p gsm-egress-teams --features e2e -- --ignored --nocapture`
+
 ## Admin & Security Helpers
 
 Optional guard rails apply to all ingress services (Telegram, Slack, etc.) through `apps/ingress-common/src/security.rs`. Leave them unset for local dev, or export them and supply matching headers when you need protection.
@@ -255,6 +264,13 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    ```
 5. Configure Meta to call `/ingress/whatsapp/{tenant}` with your verify token. Inbound messages publish to NATS and are delivered via egress; card responses automatically fall back to templates or deep links when the 24-hour session window has expired.
 
+### WhatsApp Cloud API Test Credentials
+
+1. Generate a permanent user access token in the [Meta Developer Dashboard](https://developers.facebook.com/apps/) with the `whatsapp_business_messaging` permission and copy your phone number ID.
+2. Verify the credentials with the helper script (optionally writing them to `.env`):
+   `cargo run --manifest-path scripts/Cargo.toml --bin whatsapp_setup -- --token <token> --phone-id <phone_id> --recipient <E.164 number> --output .env`
+3. Your `.env` should now include `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, and `WHATSAPP_RECIPIENT`, which the WhatsApp E2E test consumes.
+
 ## Webex Integration
 
 1. Create a [Webex bot](https://developer.webex.com/my-apps/new/bot) and note the Bot Access Token. Configure a webhook pointing to `/webex/messages` with a secret.
@@ -272,3 +288,37 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    FLOW=examples/flows/weather_webex.yaml PLATFORM=webex make run-runner
    ```
 4. Set the webhook target URL (`https://<public>/webex/messages`). Messages sent to the bot are normalised, deduplicated, and republished through NATS; the egress worker handles rate limits, retries, and Adaptive Card rendering for Webex spaces.
+
+### Webex Test Credentials
+
+1. Visit <https://developer.webex.com/my-apps> and create a **Bot**. Copy the **Bot Access Token** when it is shown and store it as `WEBEX_BOT_TOKEN`.
+2. Create (or pick) a Webex space for testing, then add the bot to the space so it can post messages.
+3. List rooms accessible to the bot to find the room ID:
+   `curl --request GET "https://webexapis.com/v1/rooms?type=group" --header "Authorization: Bearer $WEBEX_BOT_TOKEN" --header "Content-Type: application/json"`
+   Use the `id` that matches your space and set it as `WEBEX_ROOM_ID`.
+4. Optionally verify the bot can post with:
+   `curl --request POST "https://webexapis.com/v1/messages" --header "Authorization: Bearer $WEBEX_BOT_TOKEN" --header "Content-Type: application/json" --data '{"roomId":"<WEBEX_ROOM_ID>","text":"Webex bot connected"}'`
+
+## Visual Regression Tooling
+
+Optional tooling under `tools/` supports screenshot and Adaptive Card regression tests.
+
+1. Install dependencies (this generates `package-lock.json` for each tool):
+   ```bash
+   (cd tools/playwright && npm install)
+   (cd tools/renderers && npm install)
+   ```
+2. Capture a screenshot via Playwright (credentials can also come from environment variables):
+   ```bash
+   TEST_LOGIN_EMAIL=you@example.com TEST_LOGIN_PASSWORD=secret \
+     node tools/playwright/index.mjs --permalink https://app.local/chat/123 \
+     --out tools/playwright/output/example.png
+   ```
+3. Render Adaptive Card JSON locally:
+   ```bash
+   node tools/renderers/render.js \
+     --in libs/cards/samples/weather.json \
+     --out tools/renderers/output/weather.png
+   ```
+
+After the lockfiles exist, use `npm ci` within each directory for clean, reproducible installs.

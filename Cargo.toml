@@ -24,9 +24,11 @@ members = [
   "libs/translator",
   "libs/security",
   "libs/telemetry",
+  "libs/testutil",
   "libs/idempotency",
   "libs/backpressure",
   "libs/dlq",
+  "scripts",
   "tools/nats-demo",
   "tools/mock-weather-tool",
   "apps/cli-dlq",
@@ -91,3 +93,4 @@ security = { package = "greentic-messaging-security", version = "0.2.1", path = 
 unicode-segmentation = "1"
 urlencoding = "2"
 uuid = { version = "1", features = ["v4","serde"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

@@ -21,3 +21,4 @@ greentic-types = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
+gsm-testutil = { path = "../testutil" }

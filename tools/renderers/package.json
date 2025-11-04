@@ -1,0 +1,13 @@
+{
+  "name": "greentic-adaptive-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node render.js"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.46.0",
+    "adaptivecards": "^3.0.0"
+  }
+}

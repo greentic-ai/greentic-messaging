@@ -1,0 +1,24 @@
+---
+source: libs/translator/tests/adaptive_contract.rs
+assertion_line: 40
+expression: snapshot_value
+---
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "actions": [],
+  "body": [
+    {
+      "size": "Medium",
+      "text": "Hello from Greentic",
+      "type": "TextBlock",
+      "weight": "Bolder"
+    },
+    {
+      "text": "Welcome to the Greentic messaging sandbox.",
+      "type": "TextBlock",
+      "wrap": true
+    }
+  ],
+  "type": "AdaptiveCard",
+  "version": "1.4"
+}
