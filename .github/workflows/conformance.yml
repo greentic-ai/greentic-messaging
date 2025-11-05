@@ -1,0 +1,164 @@
+name: conformance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *"
+
+jobs:
+  e2e:
+    name: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: slack
+            target: conformance-slack
+            required: "SLACK_BOT_TOKEN SLACK_CHANNEL_ID"
+            any_of: ""
+          - platform: telegram
+            target: conformance-telegram
+            required: "TELEGRAM_BOT_TOKEN"
+            any_of: "TELEGRAM_CHAT_ID TELEGRAM_CHAT_HANDLE"
+          - platform: webex
+            target: conformance-webex
+            required: "WEBEX_BOT_TOKEN WEBEX_ROOM_ID"
+            any_of: ""
+          - platform: whatsapp
+            target: conformance-whatsapp
+            required: "WHATSAPP_TOKEN WHATSAPP_PHONE_ID WHATSAPP_RECIPIENT"
+            any_of: ""
+          - platform: teams
+            target: conformance-teams
+            required: "TEAMS_TENANT_ID TEAMS_CLIENT_ID TEAMS_CLIENT_SECRET TEAMS_CHAT_ID"
+            any_of: ""
+    env:
+      CARGO_TERM_COLOR: always
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_CHAT_HANDLE: ${{ secrets.TELEGRAM_CHAT_HANDLE }}
+      WEBEX_BOT_TOKEN: ${{ secrets.WEBEX_BOT_TOKEN }}
+      WEBEX_ROOM_ID: ${{ secrets.WEBEX_ROOM_ID }}
+      WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+      WHATSAPP_PHONE_ID: ${{ secrets.WHATSAPP_PHONE_ID }}
+      WHATSAPP_RECIPIENT: ${{ secrets.WHATSAPP_RECIPIENT }}
+      TEAMS_TENANT_ID: ${{ secrets.TEAMS_TENANT_ID }}
+      TEAMS_CLIENT_ID: ${{ secrets.TEAMS_CLIENT_ID }}
+      TEAMS_CLIENT_SECRET: ${{ secrets.TEAMS_CLIENT_SECRET }}
+      TEAMS_CHAT_ID: ${{ secrets.TEAMS_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          if [ -n "$REQUIRED_SECRETS" ]; then
+            for key in $REQUIRED_SECRETS; do
+              [ -z "$key" ] && continue
+              value="${!key:-}"
+              if [ -z "$value" ]; then
+                missing+=("$key")
+              fi
+            done
+          fi
+
+          if [ -n "$ANY_OF_SECRETS" ]; then
+            have_any=false
+            for key in $ANY_OF_SECRETS; do
+              [ -z "$key" ] && continue
+              value="${!key:-}"
+              if [ -n "$value" ]; then
+                have_any=true
+                break
+              fi
+            done
+            if [ "$have_any" = false ]; then
+              missing+=("one of {$ANY_OF_SECRETS}")
+            fi
+          fi
+
+          if [ ${#missing[@]} -ne 0 ]; then
+            printf '::notice::Skipping %s conformance run - missing secrets: %s\n' "$PLATFORM" "${missing[*]}"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          REQUIRED_SECRETS: ${{ matrix.required }}
+          ANY_OF_SECRETS: ${{ matrix.any_of }}
+          PLATFORM: ${{ matrix.platform }}
+
+      - name: Setup Node.js
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            tools/playwright/package-lock.json
+            tools/renderers/package-lock.json
+
+      - name: Install Playwright dependencies
+        if: steps.gate.outputs.skip != 'true'
+        run: npm ci
+        working-directory: tools/playwright
+
+      - name: Install renderer dependencies
+        if: steps.gate.outputs.skip != 'true'
+        run: npm ci
+        working-directory: tools/renderers
+
+      - name: Install Playwright browsers
+        if: steps.gate.outputs.skip != 'true'
+        run: npx playwright install --with-deps
+        working-directory: tools/playwright
+
+      - name: Install Rust toolchain
+        if: steps.gate.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        if: steps.gate.outputs.skip != 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Prepare artifact directories
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          rm -rf tools/playwright/output || true
+          mkdir -p tools/playwright/output
+          rm -rf target/e2e-artifacts || true
+          mkdir -p target/e2e-artifacts
+
+      - name: Start supporting stack
+        if: steps.gate.outputs.skip != 'true'
+        run: make stack-up
+
+      - name: Run ${{ matrix.platform }} conformance
+        if: steps.gate.outputs.skip != 'true'
+        run: make ${{ matrix.target }}
+
+      - name: Tear down stack
+        if: always() && steps.gate.outputs.skip != 'true'
+        run: make stack-down
+
+      - name: Upload Playwright artifacts
+        if: always() && steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.platform }}
+          path: tools/playwright/output
+          if-no-files-found: ignore
+
+      - name: Upload conformance artifacts
+        if: always() && steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts-${{ matrix.platform }}
+          path: target/e2e-artifacts
+          if-no-files-found: ignore

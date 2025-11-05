@@ -1,4 +1,15 @@
-.PHONY: all build check fmt lint test run-runner
+.PHONY: all build check fmt lint test run-runner stack-up stack-down \
+	conformance conformance-slack conformance-telegram conformance-webex \
+	conformance-whatsapp conformance-teams
+
+STACK_FILE ?= docker/stack.yml
+
+ifeq ($(wildcard $(STACK_FILE)),)
+STACK_FILE := docker/docker-compose.yml
+endif
+
+COMPOSE := docker compose -f $(STACK_FILE)
+E2E_ARGS := --features e2e -- --ignored --nocapture
 all: build
 build:
 	cargo build
@@ -13,9 +24,9 @@ test:
 run-runner:
 	RUST_LOG=info cargo run -p gsm-runner
 stack-up:
-	docker compose -f docker/docker-compose.yml up -d
+	$(COMPOSE) up -d
 stack-down:
-	docker compose -f docker/docker-compose.yml down -v
+	$(COMPOSE) down -v
 nats-ui:
 	open http://localhost:8222 || xdg-open http://localhost:8222 || true
 run-nats-demo:
@@ -67,3 +78,21 @@ run-subscriptions-teams:
 	NATS_URL=$${NATS_URL:-nats://127.0.0.1:4222} cargo run -p gsm-subscriptions-teams
 run-mock-weather-tool:
 	RUST_LOG=info cargo run -p mock-weather-tool
+
+conformance: conformance-slack conformance-telegram conformance-webex conformance-whatsapp conformance-teams
+	@echo "Conformance suite complete"
+
+conformance-slack:
+	cargo test -p gsm-egress-slack $(E2E_ARGS)
+
+conformance-telegram:
+	cargo test -p egress-telegram $(E2E_ARGS)
+
+conformance-webex:
+	cargo test -p gsm-egress-webex $(E2E_ARGS)
+
+conformance-whatsapp:
+	cargo test -p gsm-egress-whatsapp $(E2E_ARGS)
+
+conformance-teams:
+	cargo test -p gsm-egress-teams $(E2E_ARGS)
