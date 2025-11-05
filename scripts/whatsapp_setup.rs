@@ -59,7 +59,8 @@ async fn main() -> Result<()> {
 
     println!(
         "Verified phone: {} ({})",
-        info.display_phone_number.unwrap_or_else(|| "unknown".into()),
+        info.display_phone_number
+            .unwrap_or_else(|| "unknown".into()),
         info.verified_name.unwrap_or_else(|| "unverified".into())
     );
 
@@ -71,7 +72,15 @@ async fn main() -> Result<()> {
 
     if let Some(path) = output_arg.or_else(|| env::var("WHATSAPP_ENV_PATH").ok()) {
         persist_env(&path, &token, &phone_id, recipient.as_deref())?;
-        println!("Stored WHATSAPP_TOKEN/PHONE_ID{} in {}", if recipient.is_some() { "/RECIPIENT" } else { "" }, path);
+        println!(
+            "Stored WHATSAPP_TOKEN/PHONE_ID{} in {}",
+            if recipient.is_some() {
+                "/RECIPIENT"
+            } else {
+                ""
+            },
+            path
+        );
     } else {
         println!("Add to your .env:");
         println!("WHATSAPP_TOKEN={token}");

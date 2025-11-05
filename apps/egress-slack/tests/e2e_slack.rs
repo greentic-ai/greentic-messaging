@@ -5,9 +5,12 @@ use gsm_core::{CardBlock, MessageCard, OutKind, OutMessage, Platform, make_tenan
 use gsm_testutil::e2e::assertions::{assert_has_block_type, message_contains_text};
 use gsm_testutil::visual;
 use gsm_translator::slack::to_slack_payloads;
-use reqwest::Client;
+use reqwest::header::RETRY_AFTER;
+use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use std::error::Error;
+use std::future::Future;
+use tokio::time::{Duration, sleep};
 
 const WEATHER_CARD_PATH: &str = "../cards/samples/weather.json";
 
@@ -54,6 +57,48 @@ impl std::fmt::Display for NetworkUnavailable {
 
 impl Error for NetworkUnavailable {}
 
+async fn request_with_retry<F, Fut>(mut op: F) -> Result<reqwest::Response, reqwest::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<reqwest::Response, reqwest::Error>>,
+{
+    const MAX_ATTEMPTS: usize = 2;
+    let mut delay = Duration::from_millis(500);
+
+    for attempt in 0..MAX_ATTEMPTS {
+        match op().await {
+            Ok(resp) => {
+                if resp.status() == StatusCode::TOO_MANY_REQUESTS && attempt + 1 < MAX_ATTEMPTS {
+                    let wait = retry_after_delay(&resp).unwrap_or(delay);
+                    drop(resp);
+                    sleep(wait).await;
+                    delay *= 2;
+                    continue;
+                }
+                return Ok(resp);
+            }
+            Err(err) => {
+                if attempt + 1 < MAX_ATTEMPTS && (err.is_connect() || err.is_timeout()) {
+                    sleep(delay).await;
+                    delay *= 2;
+                    continue;
+                }
+                return Err(err);
+            }
+        }
+    }
+
+    unreachable!("request_with_retry exhausted attempts without returning");
+}
+
+fn retry_after_delay(resp: &reqwest::Response) -> Option<Duration> {
+    resp.headers()
+        .get(RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+}
+
 async fn run_slack_e2e(token: String, channel: String) -> Result<()> {
     let client = Client::new();
 
@@ -88,16 +133,26 @@ async fn run_slack_e2e(token: String, channel: String) -> Result<()> {
             .ok_or_else(|| anyhow!("payload is not an object"))?;
         obj.insert("channel".to_string(), json!(channel));
 
-        let resp = client
-            .post("https://slack.com/api/chat.postMessage")
-            .bearer_auth(&token)
-            .json(&body)
-            .send()
-            .await
-            .map_err(handle_reqwest_error)?;
+        let post_url = "https://slack.com/api/chat.postMessage".to_string();
+        let response = request_with_retry(|| {
+            let client = client.clone();
+            let token = token.clone();
+            let body = body.clone();
+            let post_url = post_url.clone();
+            async move {
+                client
+                    .post(&post_url)
+                    .bearer_auth(&token)
+                    .json(&body)
+                    .send()
+                    .await
+            }
+        })
+        .await
+        .map_err(handle_reqwest_error)?;
 
-        let status = resp.status();
-        let body: Value = resp
+        let status = response.status();
+        let body: Value = response
             .json()
             .await
             .context("chat.postMessage decode failed")?;
@@ -118,18 +173,29 @@ async fn run_slack_e2e(token: String, channel: String) -> Result<()> {
 
     let ts = posted_ts.ok_or_else(|| anyhow!("Slack response missing ts"))?;
 
-    let history = client
-        .get("https://slack.com/api/conversations.history")
-        .bearer_auth(&token)
-        .query(&[
-            ("channel", channel.as_str()),
-            ("latest", ts.as_str()),
-            ("inclusive", "true"),
-            ("limit", "1"),
-        ])
-        .send()
-        .await
-        .map_err(handle_reqwest_error)?;
+    let history_url = "https://slack.com/api/conversations.history".to_string();
+    let history = request_with_retry(|| {
+        let client = client.clone();
+        let token = token.clone();
+        let channel = channel.clone();
+        let ts = ts.clone();
+        let history_url = history_url.clone();
+        async move {
+            client
+                .get(&history_url)
+                .bearer_auth(&token)
+                .query(&[
+                    ("channel", channel.as_str()),
+                    ("latest", ts.as_str()),
+                    ("inclusive", "true"),
+                    ("limit", "1"),
+                ])
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
 
     let history_body: Value = history
         .json()
@@ -170,6 +236,42 @@ async fn run_slack_e2e(token: String, channel: String) -> Result<()> {
         }
     }
 
+    if let Err(err) = delete_slack_message(&client, &token, &channel, &ts).await {
+        eprintln!("failed to delete slack message: {err:#}");
+    }
+
+    Ok(())
+}
+
+async fn delete_slack_message(client: &Client, token: &str, channel: &str, ts: &str) -> Result<()> {
+    let delete_url = "https://slack.com/api/chat.delete".to_string();
+    let response = request_with_retry(|| {
+        let client = client.clone();
+        let token = token.to_string();
+        let channel = channel.to_string();
+        let ts = ts.to_string();
+        let delete_url = delete_url.clone();
+        async move {
+            client
+                .post(&delete_url)
+                .bearer_auth(&token)
+                .json(&json!({
+                    "channel": channel,
+                    "ts": ts,
+                }))
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
+
+    let body: Value = response.json().await.context("chat.delete decode failed")?;
+
+    if !body.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+        return Err(anyhow!("chat.delete returned error: {body}"));
+    }
+
     Ok(())
 }
 
@@ -179,13 +281,24 @@ async fn fetch_permalink(
     channel: &str,
     ts: &str,
 ) -> Result<Option<String>> {
-    let response = client
-        .get("https://slack.com/api/chat.getPermalink")
-        .bearer_auth(token)
-        .query(&[("channel", channel), ("message_ts", ts)])
-        .send()
-        .await
-        .map_err(handle_reqwest_error)?;
+    let permalink_url = "https://slack.com/api/chat.getPermalink".to_string();
+    let response = request_with_retry(|| {
+        let client = client.clone();
+        let token = token.to_string();
+        let channel = channel.to_string();
+        let ts = ts.to_string();
+        let permalink_url = permalink_url.clone();
+        async move {
+            client
+                .get(&permalink_url)
+                .bearer_auth(&token)
+                .query(&[("channel", channel.as_str()), ("message_ts", ts.as_str())])
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
 
     let body: Value = response
         .json()

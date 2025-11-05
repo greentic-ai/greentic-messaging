@@ -3,11 +3,14 @@
 use anyhow::{Context, Result, anyhow};
 use gsm_core::{CardAction, CardBlock, MessageCard};
 use gsm_testutil::load_card;
-use reqwest::Client;
+use reqwest::header::RETRY_AFTER;
+use reqwest::{Client, StatusCode};
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::error::Error;
+use std::future::Future;
+use tokio::time::{Duration, sleep};
 
 const APPROVAL_CARD_PATH: &str = "../cards/samples/approval.json";
 
@@ -61,6 +64,48 @@ impl std::fmt::Display for NetworkUnavailable {
 
 impl Error for NetworkUnavailable {}
 
+async fn request_with_retry<F, Fut>(mut op: F) -> Result<reqwest::Response, reqwest::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<reqwest::Response, reqwest::Error>>,
+{
+    const MAX_ATTEMPTS: usize = 2;
+    let mut delay = Duration::from_millis(500);
+
+    for attempt in 0..MAX_ATTEMPTS {
+        match op().await {
+            Ok(resp) => {
+                if resp.status() == StatusCode::TOO_MANY_REQUESTS && attempt + 1 < MAX_ATTEMPTS {
+                    let wait = retry_after_delay(&resp).unwrap_or(delay);
+                    drop(resp);
+                    sleep(wait).await;
+                    delay *= 2;
+                    continue;
+                }
+                return Ok(resp);
+            }
+            Err(err) => {
+                if attempt + 1 < MAX_ATTEMPTS && (err.is_connect() || err.is_timeout()) {
+                    sleep(delay).await;
+                    delay *= 2;
+                    continue;
+                }
+                return Err(err);
+            }
+        }
+    }
+
+    unreachable!("request_with_retry exhausted attempts without returning");
+}
+
+fn retry_after_delay(resp: &reqwest::Response) -> Option<Duration> {
+    resp.headers()
+        .get(RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+}
+
 async fn run_whatsapp_e2e(token: String, phone_id: String, recipient: String) -> Result<()> {
     let client = Client::new();
     let card_value = load_card!(APPROVAL_CARD_PATH);
@@ -76,26 +121,42 @@ async fn run_whatsapp_e2e(token: String, phone_id: String, recipient: String) ->
 
     let mut interactive = Map::new();
     interactive.insert("type".into(), Value::String("button".into()));
-    interactive.insert("body".into(), Value::Object({
-        let mut body = Map::new();
-        body.insert("text".into(), Value::String(body_text));
-        body
-    }));
-    interactive.insert("action".into(), Value::Object({
-        let mut action = Map::new();
-        action.insert("buttons".into(), Value::Array(buttons));
-        action
-    }));
+    interactive.insert(
+        "body".into(),
+        Value::Object({
+            let mut body = Map::new();
+            body.insert("text".into(), Value::String(body_text));
+            body
+        }),
+    );
+    interactive.insert(
+        "action".into(),
+        Value::Object({
+            let mut action = Map::new();
+            action.insert("buttons".into(), Value::Array(buttons));
+            action
+        }),
+    );
 
     request_body.insert("interactive", Value::Object(interactive));
 
-    let send_response = client
-        .post(format!("https://graph.facebook.com/v18.0/{phone_id}/messages"))
-        .bearer_auth(&token)
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(handle_reqwest_error)?;
+    let send_url = format!("https://graph.facebook.com/v18.0/{phone_id}/messages");
+    let send_response = request_with_retry(|| {
+        let client = client.clone();
+        let token = token.clone();
+        let send_url = send_url.clone();
+        let request_body = request_body.clone();
+        async move {
+            client
+                .post(&send_url)
+                .bearer_auth(&token)
+                .json(&request_body)
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
 
     let send_status = send_response.status();
     let send_body: WhatsAppSendResponse = send_response
@@ -118,14 +179,16 @@ async fn run_whatsapp_e2e(token: String, phone_id: String, recipient: String) ->
         .context("whatsapp send response missing message id")?;
 
     // Query the message delivery state.
-    let fetch_response = client
-        .get(format!(
-            "https://graph.facebook.com/v18.0/{phone_id}/messages?message_id={message_id}"
-        ))
-        .bearer_auth(&token)
-        .send()
-        .await
-        .map_err(handle_reqwest_error)?;
+    let fetch_url =
+        format!("https://graph.facebook.com/v18.0/{phone_id}/messages?message_id={message_id}");
+    let fetch_response = request_with_retry(|| {
+        let client = client.clone();
+        let token = token.clone();
+        let fetch_url = fetch_url.clone();
+        async move { client.get(&fetch_url).bearer_auth(&token).send().await }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
 
     let fetch_status = fetch_response.status();
     let fetch_body: WhatsAppMessagesQuery = fetch_response
@@ -153,7 +216,46 @@ async fn run_whatsapp_e2e(token: String, phone_id: String, recipient: String) ->
 
     println!("whatsapp message {message_id} status: {delivered}");
 
+    if let Err(err) = delete_whatsapp_message(&client, &token, &phone_id, &message_id).await {
+        eprintln!("failed to delete whatsapp message {message_id}: {err:#}");
+    }
+
     Ok(())
+}
+
+async fn delete_whatsapp_message(
+    client: &Client,
+    token: &str,
+    phone_id: &str,
+    message_id: &str,
+) -> Result<()> {
+    let delete_url = format!("https://graph.facebook.com/v18.0/{phone_id}/messages");
+    let response = request_with_retry(|| {
+        let client = client.clone();
+        let token = token.to_string();
+        let delete_url = delete_url.clone();
+        let message_id = message_id.to_string();
+        async move {
+            client
+                .delete(&delete_url)
+                .bearer_auth(&token)
+                .query(&[("message_id", message_id.as_str())])
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
+
+    let status = response.status();
+    if status.is_success() {
+        Ok(())
+    } else {
+        let body = response.text().await.unwrap_or_default();
+        Err(anyhow!(
+            "failed to delete whatsapp message: status {status}, body {body}"
+        ))
+    }
 }
 
 fn build_body_text(card: &MessageCard) -> String {
@@ -183,7 +285,10 @@ fn build_buttons(card: &MessageCard) -> Vec<Value> {
         if let CardAction::Postback { title, .. } = action {
             buttons.push(Value::Object(button_payload(index, title)));
         } else if let CardAction::OpenUrl { title, url, .. } = action {
-            buttons.push(Value::Object(button_payload(index, &format!("{title} ({url})"))));
+            buttons.push(Value::Object(button_payload(
+                index,
+                &format!("{title} ({url})"),
+            )));
         }
     }
 
@@ -197,7 +302,10 @@ fn build_buttons(card: &MessageCard) -> Vec<Value> {
 fn button_payload(index: usize, title: &str) -> Map<String, Value> {
     let mut reply = Map::new();
     reply.insert("id".into(), Value::String(format!("btn_{index}")));
-    reply.insert("title".into(), Value::String(title.chars().take(20).collect()));
+    reply.insert(
+        "title".into(),
+        Value::String(title.chars().take(20).collect()),
+    );
 
     let mut button = Map::new();
     button.insert("type".into(), Value::String("reply".into()));

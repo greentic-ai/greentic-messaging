@@ -4,10 +4,13 @@ use anyhow::{Context, Result, anyhow, ensure};
 use gsm_core::{CardBlock, MessageCard, OutKind, OutMessage, Platform, make_tenant_ctx};
 use gsm_testutil::e2e::assertions::message_contains_text;
 use gsm_translator::{TelegramTranslator, Translator};
-use reqwest::Client;
+use reqwest::header::RETRY_AFTER;
+use reqwest::{Client, StatusCode};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::error::Error;
+use std::future::Future;
+use tokio::time::{Duration, sleep};
 
 const WEATHER_CARD_PATH: &str = "../cards/samples/weather.json";
 
@@ -56,6 +59,48 @@ impl std::fmt::Display for NetworkUnavailable {
 }
 
 impl Error for NetworkUnavailable {}
+
+async fn request_with_retry<F, Fut>(mut op: F) -> Result<reqwest::Response, reqwest::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<reqwest::Response, reqwest::Error>>,
+{
+    const MAX_ATTEMPTS: usize = 2;
+    let mut delay = Duration::from_millis(500);
+
+    for attempt in 0..MAX_ATTEMPTS {
+        match op().await {
+            Ok(resp) => {
+                if resp.status() == StatusCode::TOO_MANY_REQUESTS && attempt + 1 < MAX_ATTEMPTS {
+                    let wait = retry_after_delay(&resp).unwrap_or(delay);
+                    drop(resp);
+                    sleep(wait).await;
+                    delay *= 2;
+                    continue;
+                }
+                return Ok(resp);
+            }
+            Err(err) => {
+                if attempt + 1 < MAX_ATTEMPTS && (err.is_connect() || err.is_timeout()) {
+                    sleep(delay).await;
+                    delay *= 2;
+                    continue;
+                }
+                return Err(err);
+            }
+        }
+    }
+
+    unreachable!("request_with_retry exhausted attempts without returning");
+}
+
+fn retry_after_delay(resp: &reqwest::Response) -> Option<Duration> {
+    resp.headers()
+        .get(RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+}
 
 async fn run_telegram_e2e(token: String, chat: ChatSpecifier) -> Result<()> {
     let client = Client::new();
@@ -111,12 +156,15 @@ async fn run_telegram_e2e(token: String, chat: ChatSpecifier) -> Result<()> {
         body.remove("method");
         body.insert("chat_id".into(), Value::String(chat_id.clone()));
 
-        let response = client
-            .post(format!("{base}/{method}"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(handle_reqwest_error)?;
+        let request_url = format!("{base}/{method}");
+        let response = request_with_retry(|| {
+            let client = client.clone();
+            let request_url = request_url.clone();
+            let body = body.clone();
+            async move { client.post(&request_url).json(&body).send().await }
+        })
+        .await
+        .map_err(handle_reqwest_error)?;
 
         let status = response.status();
         let body: TelegramResponse = response
@@ -161,6 +209,54 @@ async fn run_telegram_e2e(token: String, chat: ChatSpecifier) -> Result<()> {
         .await
         .context("failed to verify message in history")?;
 
+    for message in &sent_messages {
+        if let Some(message_id) = message.get("message_id").and_then(Value::as_i64) {
+            if let Err(err) = delete_telegram_message(&client, &base, &chat_id, message_id).await {
+                eprintln!("failed to delete telegram message {message_id}: {err:#}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn delete_telegram_message(
+    client: &Client,
+    base: &str,
+    chat_id: &str,
+    message_id: i64,
+) -> Result<()> {
+    let delete_url = format!("{base}/deleteMessage");
+    let response = request_with_retry(|| {
+        let client = client.clone();
+        let delete_url = delete_url.clone();
+        let chat_id = chat_id.to_string();
+        async move {
+            client
+                .post(&delete_url)
+                .json(&json!({
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                }))
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
+
+    let body: TelegramResponse = response
+        .json()
+        .await
+        .context("failed to decode deleteMessage response")?;
+
+    if !body.ok {
+        return Err(anyhow!(
+            "deleteMessage returned error: {:?}",
+            body.description
+        ));
+    }
+
     Ok(())
 }
 
@@ -171,12 +267,21 @@ async fn verify_history(client: &Client, base: &str, chat_id: &str, message: &Va
         .unwrap_or_default()
         .to_string();
 
-    let response = client
-        .post(format!("{base}/getChat"))
-        .json(&serde_json::json!({ "chat_id": chat_id }))
-        .send()
-        .await
-        .map_err(handle_reqwest_error)?;
+    let get_chat_url = format!("{base}/getChat");
+    let response = request_with_retry(|| {
+        let client = client.clone();
+        let get_chat_url = get_chat_url.clone();
+        let chat_id = chat_id.to_string();
+        async move {
+            client
+                .post(&get_chat_url)
+                .json(&json!({ "chat_id": chat_id }))
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
 
     let chat: TelegramChatResponse = response
         .json()
@@ -218,12 +323,21 @@ fn handle_reqwest_error(err: reqwest::Error) -> anyhow::Error {
 }
 
 async fn resolve_chat_handle(client: &Client, base: &str, handle: &str) -> Result<String> {
-    let response = client
-        .post(format!("{base}/getChat"))
-        .json(&serde_json::json!({ "chat_id": handle }))
-        .send()
-        .await
-        .map_err(handle_reqwest_error)?;
+    let get_chat_url = format!("{base}/getChat");
+    let response = request_with_retry(|| {
+        let client = client.clone();
+        let get_chat_url = get_chat_url.clone();
+        let handle = handle.to_string();
+        async move {
+            client
+                .post(&get_chat_url)
+                .json(&json!({ "chat_id": handle }))
+                .send()
+                .await
+        }
+    })
+    .await
+    .map_err(handle_reqwest_error)?;
 
     let body: TelegramChatResponse = response
         .json()

@@ -39,7 +39,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
