@@ -3,6 +3,7 @@ name = "gsm-testutil"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Shared test utilities and harness helpers for Greentic messaging adapters"
 
 [features]
 default = []
