@@ -1,7 +1,9 @@
-use greentic_messaging_providers_webchat::config::Config;
-use greentic_messaging_providers_webchat::{StandaloneState, WebChatProvider, standalone_router};
 use greentic_secrets::spec::{
-    Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
+    Scope, SecretUri, SecretVersion, SecretsBackend, VersionedSecret, helpers::record_from_plain,
+};
+use gsm_core::platforms::webchat::{
+    config::Config,
+    standalone::{StandaloneState, router},
 };
 use std::sync::Arc;
 
@@ -12,11 +14,12 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("WEBCHAT_JWT_SIGNING_KEY").unwrap_or_else(|_| "local-dev-secret".into());
     let secrets = Arc::new(StaticSecretsBackend::new(signing_secret));
     let signing_scope = Scope::new("global", "webchat", None)?;
-    let provider = WebChatProvider::new(config, secrets).with_signing_scope(signing_scope);
+    let provider = gsm_core::platforms::webchat::WebChatProvider::new(config, secrets)
+        .with_signing_scope(signing_scope);
     let state = Arc::new(StandaloneState::new(provider).await?);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8090").await?;
-    let app = standalone_router(Arc::clone(&state));
+    let app = router(Arc::clone(&state));
     axum::serve(listener, app.into_make_service()).await?;
     Ok(())
 }
@@ -59,24 +62,18 @@ impl SecretsBackend for StaticSecretsBackend {
 
     fn list(
         &self,
-        _scope: &greentic_secrets::spec::Scope,
+        _scope: &Scope,
         _category_prefix: Option<&str>,
         _name_prefix: Option<&str>,
     ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
         unimplemented!("static backend does not support list operations")
     }
 
-    fn delete(
-        &self,
-        _uri: &SecretUri,
-    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+    fn delete(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {
         unimplemented!("static backend does not support delete operations")
     }
 
-    fn versions(
-        &self,
-        _uri: &SecretUri,
-    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretVersion>> {
+    fn versions(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<Vec<SecretVersion>> {
         unimplemented!("static backend does not support version operations")
     }
 

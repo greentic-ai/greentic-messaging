@@ -1,8 +1,11 @@
-use greentic_messaging_providers_webchat::activity_bridge::normalize_activity;
-use greentic_messaging_providers_webchat::session::WebchatSession;
-use greentic_messaging_providers_webchat::types::MessagePayload;
 use greentic_types::{EnvId, TenantCtx, TenantId};
+use gsm_core::platforms::webchat::{
+    normalize_activity, session::WebchatSession, types::MessagePayload,
+};
 use serde_json::json;
+
+#[path = "webchat_support.rs"]
+mod support;
 
 fn tenant_ctx() -> TenantCtx {
     TenantCtx::new(EnvId::from("dev"), TenantId::from("acme"))

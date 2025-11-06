@@ -38,5 +38,7 @@ redis = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 axum = { workspace = true }
+tower = { workspace = true }
+tracing-test = { workspace = true, features = ["no-env-filter"] }

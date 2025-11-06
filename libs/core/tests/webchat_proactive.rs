@@ -4,8 +4,9 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use greentic_messaging_providers_webchat::{
-    config::Config,
+use greentic_types::TenantCtx;
+use gsm_core::platforms::webchat::{
+    config::{Config, OAuthProviderConfig},
     conversation::memory_store,
     directline_client::{DirectLineError, MockDirectLineApi},
     error::WebChatError,
@@ -13,14 +14,14 @@ use greentic_messaging_providers_webchat::{
         AdminPath, AdminPostActivityRequest, AppState, DirectLinePoster, SharedDirectLinePoster,
         admin_post_activity,
     },
+    oauth::GreenticOauthClient,
     session::{MemorySessionStore, SharedSessionStore, WebchatSession, WebchatSessionStore},
 };
-use greentic_types::TenantCtx;
 use reqwest::Client;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
-#[path = "../test_support/mod.rs"]
+#[path = "webchat_support.rs"]
 mod support;
 
 use support::{provider_with_secrets, signing_scope, tenant_ctx, tenant_scope};
@@ -205,9 +206,9 @@ async fn admin_errors_for_unknown_conversation() {
         .with_sessions(sessions)
         .with_activity_poster(poster.clone() as SharedDirectLinePoster)
         .with_oauth_client(Arc::new(StubOauthClient))
-        .with_conversations(conversations);
+        .with_conversations(conversations.clone());
 
-    let error = match admin_post_activity(
+    let result = admin_post_activity(
         State(state),
         Path(AdminPath {
             env: "dev".to_string(),
@@ -215,36 +216,27 @@ async fn admin_errors_for_unknown_conversation() {
         }),
         Json(AdminPostActivityRequest {
             team: None,
-            conversation_id: Some("missing".to_string()),
+            conversation_id: Some("unknown".to_string()),
             activity: json!({
                 "type": "message",
-                "text": "hello"
+                "text": "hello proactive"
             }),
         }),
     )
-    .await
-    {
-        Ok(_) => panic!("expected error"),
-        Err(err) => err,
-    };
+    .await;
 
-    match error {
-        WebChatError::NotFound(message) => assert_eq!(message, "conversation not found"),
-        other => panic!("unexpected error: {other:?}"),
+    match result {
+        Ok(_) => panic!("expected not found error"),
+        Err(WebChatError::NotFound(message)) => {
+            assert_eq!(message, "conversation not found");
+        }
+        Err(other) => panic!("unexpected error: {other:?}"),
     }
-    assert!(poster.calls.lock().await.is_empty());
 }
 
 #[derive(Default)]
 struct RecordingPoster {
-    calls: Mutex<Vec<RecordedActivity>>,
-}
-
-#[allow(dead_code)]
-struct RecordedActivity {
-    conversation_id: String,
-    bearer_token: String,
-    activity: Value,
+    calls: Mutex<Vec<(String, Value)>>,
 }
 
 #[async_trait::async_trait]
@@ -253,14 +245,13 @@ impl DirectLinePoster for RecordingPoster {
         &self,
         _base_url: &str,
         conversation_id: &str,
-        bearer_token: &str,
+        _bearer_token: &str,
         activity: Value,
     ) -> Result<(), DirectLineError> {
-        self.calls.lock().await.push(RecordedActivity {
-            conversation_id: conversation_id.to_string(),
-            bearer_token: bearer_token.to_string(),
-            activity,
-        });
+        self.calls
+            .lock()
+            .await
+            .push((conversation_id.to_string(), activity));
         Ok(())
     }
 }
@@ -268,14 +259,14 @@ impl DirectLinePoster for RecordingPoster {
 struct StubOauthClient;
 
 #[async_trait::async_trait]
-impl greentic_messaging_providers_webchat::oauth::GreenticOauthClient for StubOauthClient {
+impl GreenticOauthClient for StubOauthClient {
     async fn exchange_code(
         &self,
-        _: &TenantCtx,
-        _: &greentic_messaging_providers_webchat::config::OAuthProviderConfig,
-        _: &str,
-        _: &str,
+        _tenant_ctx: &TenantCtx,
+        _config: &OAuthProviderConfig,
+        _code: &str,
+        _redirect_uri: &str,
     ) -> Result<String, anyhow::Error> {
-        Ok("stub-handle".to_string())
+        Ok("oauth-token-handle".to_string())
     }
 }

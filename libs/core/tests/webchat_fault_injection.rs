@@ -6,7 +6,8 @@ use std::{
     },
 };
 
-use greentic_messaging_providers_webchat::{
+use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
+use gsm_core::platforms::webchat::{
     bus::{EventBus, Subject},
     circuit::CircuitSettings,
     ingress::{
@@ -16,7 +17,6 @@ use greentic_messaging_providers_webchat::{
     session::{MemorySessionStore, SharedSessionStore, WebchatSession},
     types::GreenticEvent,
 };
-use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
 use http::StatusCode;
 use serde_json::json;
 use tokio::sync::Mutex;
@@ -26,8 +26,8 @@ fn tenant_ctx() -> TenantCtx {
         .with_team(Some(TeamId::from("support")))
 }
 
-#[tracing_test::traced_test]
 #[tokio::test]
+#[tracing_test::traced_test]
 async fn circuit_opens_and_half_opens_without_leaking_tokens() {
     tokio::time::pause();
 
@@ -88,27 +88,22 @@ async fn circuit_opens_and_half_opens_without_leaking_tokens() {
 
     let handle = tokio::spawn(run_poll_loop(deps, ctx));
 
-    // Allow first failing poll.
     tokio::task::yield_now().await;
     tokio::time::advance(std::time::Duration::from_secs(2)).await;
     tokio::task::yield_now().await;
-    // Second failure triggers circuit open.
     tokio::time::advance(std::time::Duration::from_secs(2)).await;
     tokio::task::yield_now().await;
     assert_eq!(transport.poll_count(), 2);
 
-    // Circuit should stay open until the duration elapses.
     tokio::time::advance(std::time::Duration::from_millis(500)).await;
     tokio::task::yield_now().await;
     assert_eq!(transport.poll_count(), 2);
 
-    // Advance past the open duration; half-open probe should fire and succeed.
     tokio::time::advance(std::time::Duration::from_secs(1)).await;
     tokio::task::yield_now().await;
 
     handle.await.unwrap().unwrap();
 
-    // Circuit opened at least once and logs should mention it.
     logs_assert(|lines: &[&str]| {
         let opened = lines
             .iter()

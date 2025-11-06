@@ -2,12 +2,12 @@ use axum::{
     body::{Body, to_bytes},
     http::Request,
 };
-use greentic_messaging_providers_webchat::config::Config;
-use greentic_messaging_providers_webchat::{StandaloneState, standalone_router};
+use gsm_core::platforms::webchat::config::Config;
+use gsm_core::platforms::webchat::standalone::{StandaloneState, router};
 use std::sync::Arc;
 use tower::ServiceExt;
 
-#[path = "../test_support/mod.rs"]
+#[path = "webchat_support.rs"]
 mod support;
 
 use support::{provider_with_secrets, signing_scope};
@@ -24,7 +24,7 @@ async fn standalone_generate_token_round_trip() {
             .await
             .expect("standalone state"),
     );
-    let app = standalone_router(Arc::clone(&state));
+    let app = router(Arc::clone(&state));
 
     let request = Request::builder()
         .method("POST")

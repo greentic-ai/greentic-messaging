@@ -1,20 +1,19 @@
 # Web Chat Provider (Bot Framework Direct Line)
 
-The Direct Line runtime now lives under **`gsm-core::platforms::webchat`** so it
-can be shared by binaries and other crates without depending on the provider
-layout. The `providers/webchat` crate re-exports the same types for backwards
-compatibility, but new integrations should import from `gsm_core` directly.
+The Direct Line implementation now ships under **`gsm-core::platforms::webchat`**.
+The legacy `providers/webchat` crate has been collapsed to metadata (descriptor +
+schemas); binaries and tests should depend on `gsm-core` directly.
 
-Two deployment modes are available:
+Two operating modes are available:
 
-* **Standalone Direct Line** (feature: `directline_standalone`, enabled by
-  default in both `gsm-core` and the provider). All tokens, conversations, and
-  websockets stay within Greentic.
-* **Legacy proxy** (feature: `directline_proxy_ms`). The original PR-WC1
-  behaviour that swaps Microsoft Direct Line secrets for short-lived tokens.
+- **Proxy (default build)** — WebChat forwards Direct Line calls to Microsoft
+  using the tenant's `webchat/channel_token` secret.
+- **Standalone Direct Line** — Enable the `directline_standalone` feature to keep
+  all tokens, conversation state, and WebSocket fan-out inside Greentic. This is
+  the mode referenced by the PR-WC2 through PR-WC7 prompts.
 
-The documentation below focuses on the standalone setup. Notes about the legacy
-proxy are included for completeness.
+The sections below focus on the standalone server while noting where the proxy
+behaviour differs.
 
 ## Standalone Direct Line endpoints
 
@@ -27,8 +26,7 @@ proxy are included for completeness.
 | `GET` | `/v3/directline/conversations/{id}/stream?t=<conversation_token>&watermark=<n>` | WebSocket stream that delivers activities as they arrive. |
 
 Additional endpoints under `/webchat` (OAuth, proactive admin API, health
-checks) remain gated by the `webchat_bf_mode` feature and are unaffected by the
-standalone mode.
+checks) remain available in both modes.
 
 ### What stays local
 
@@ -58,7 +56,7 @@ At minimum the following entries must exist:
 | Scope | Category / name | Purpose |
 | ----- | ---------------- | ------- |
 | Global signing scope (for example `secrets://global/webchat/_/webchat/jwt_signing_key`) | `webchat/jwt_signing_key` | HS256 key used to mint Direct Line tokens. |
-| Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat/channel_token`) | `webchat/channel_token` | Direct Line secret required when proxying to Microsoft (`directline_proxy_ms`). |
+| Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat/channel_token`) | `webchat/channel_token` | Microsoft's Direct Line secret, only required in proxy mode. |
 | Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/issuer`) | `webchat_oauth/issuer` | OAuth issuer URL used by the `/webchat/oauth/...` routes. |
 | Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/client_id`) | `webchat_oauth/client_id` | OAuth client identifier. |
 | Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/redirect_base`) | `webchat_oauth/redirect_base` | Base URL used to build the OAuth callback URL. |
@@ -70,9 +68,7 @@ hand it to `AppState`/`StandaloneState`:
 ```rust
 use std::sync::Arc;
 use gsm_core::platforms::webchat::{
-    config::Config,
-    provider::WebChatProvider,
-    standalone::{StandaloneState, router as standalone_router},
+    standalone_router, WebChatProvider, Config, StandaloneState,
 };
 use greentic_secrets::spec::Scope;
 
@@ -97,14 +93,14 @@ Tenant scope is supplied through the query parameters:
 Tokens embed `{ ctx: { env, tenant, team? } }` and conversation access is
 validated server-side.
 
-## Legacy proxy mode (optional)
+## Microsoft Direct Line proxy (default build)
 
-Enable `directline_proxy_ms` alongside `webchat_bf_mode` to keep calling
-Microsoft's Direct Line API. The routes match the original
+Without the `directline_standalone` feature the provider proxies straight to
+Microsoft's Direct Line endpoints. The legacy
 `/webchat/{env}/{tenant}[/{team}]/tokens/generate` and
-`/webchat/{env}/{tenant}[/{team}]/conversations/start` endpoints. When this
-feature is active the provider fetches `webchat/channel_token` from the tenant's
-secret scope and uses it to authenticate upstream requests.
+`/webchat/{env}/{tenant}[/{team}]/conversations/start` routes remain available in
+addition to the `/v3/directline/**` surface. The tenant's
+`webchat/channel_token` secret is forwarded as the upstream bearer token.
 
 ## OAuth and proactive messaging
 

@@ -107,9 +107,9 @@ export default function App(): JSX.Element {
         <h1>Greentic Web Chat Demo</h1>
         <p>
           This demo uses the standalone Direct Line surface from{" "}
-          <code>providers/webchat</code> to bridge Microsoft Bot Framework Web Chat to
-          Greentic NG. Configure the environment via the <code>VITE_WEBCHAT_*</code>{" "}
-          variables in <code>.env.local</code>.
+          <code>gsm_core::platforms::webchat</code> to bridge Microsoft Bot Framework Web
+          Chat to Greentic NG. Configure the environment via the{" "}
+          <code>VITE_WEBCHAT_*</code> variables in <code>.env.local</code>.
         </p>
         <dl>
           <div>

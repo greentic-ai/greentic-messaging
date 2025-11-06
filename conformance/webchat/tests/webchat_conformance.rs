@@ -6,7 +6,11 @@ use axum::{
     extract::{Path, State},
     response::IntoResponse,
 };
-use greentic_messaging_providers_webchat::{
+use greentic_secrets::spec::{
+    Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
+};
+use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
+use gsm_core::platforms::webchat::{
     WebChatProvider,
     bus::{EventBus, Subject},
     circuit::CircuitSettings,
@@ -25,10 +29,6 @@ use greentic_messaging_providers_webchat::{
     session::{MemorySessionStore, SharedSessionStore, WebchatSession},
     types::{GreenticEvent, IncomingMessage, MessagePayload},
 };
-use greentic_secrets::spec::{
-    Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
-};
-use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
 use reqwest::Client;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -357,7 +357,7 @@ async fn oauth_callback_posts_token_handle() {
     )
     .with_conversations(conversations.clone());
 
-    let response = greentic_messaging_providers_webchat::oauth::callback(
+    let response = gsm_core::platforms::webchat::oauth::callback(
         State(state),
         axum::extract::Query(CallbackQuery {
             conversation_id: "conv-oauth".to_string(),
@@ -373,7 +373,7 @@ async fn oauth_callback_posts_token_handle() {
     let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
     assert_eq!(
         bytes,
-        greentic_messaging_providers_webchat::oauth::CLOSE_WINDOW_HTML.as_bytes()
+        gsm_core::platforms::webchat::oauth::CLOSE_WINDOW_HTML.as_bytes()
     );
 
     let page = conversations
@@ -553,7 +553,7 @@ impl GreenticOauthClient for StubOauthClient {
     async fn exchange_code(
         &self,
         _: &TenantCtx,
-        _: &greentic_messaging_providers_webchat::config::OAuthProviderConfig,
+        _: &gsm_core::platforms::webchat::config::OAuthProviderConfig,
         _: &str,
         _: &str,
     ) -> Result<String, anyhow::Error> {

@@ -7,22 +7,21 @@ use std::{
     time::Duration,
 };
 
-use greentic_messaging_providers_webchat::activity_bridge::normalize_activity;
-use greentic_messaging_providers_webchat::bus::{EventBus, Subject};
-use greentic_messaging_providers_webchat::circuit::CircuitSettings;
-use greentic_messaging_providers_webchat::ingress::{
-    ActivitiesEnvelope, ActivitiesTransport, ActivitiesTransportResponse, IngressCtx, IngressDeps,
-    SharedActivitiesTransport, run_poll_loop,
-};
-use greentic_messaging_providers_webchat::session::{
-    MemorySessionStore, SharedSessionStore, WebchatSession, WebchatSessionStore,
-};
-use greentic_messaging_providers_webchat::types::{GreenticEvent, IncomingMessage, MessagePayload};
 use greentic_types::{EnvId, TenantCtx, TenantId};
+use gsm_core::platforms::webchat::{
+    bus::{EventBus, Subject},
+    circuit::CircuitSettings,
+    ingress::{
+        ActivitiesEnvelope, ActivitiesTransport, ActivitiesTransportResponse, IngressCtx,
+        IngressDeps, SharedActivitiesTransport, run_poll_loop,
+    },
+    normalize_activity,
+    session::{MemorySessionStore, SharedSessionStore, WebchatSession, WebchatSessionStore},
+    types::{GreenticEvent, IncomingMessage, MessagePayload},
+};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
-use tokio::time::Instant;
+use tokio::{sync::Mutex, time::Instant};
 
 struct RecordingBus {
     events: Mutex<Vec<(String, GreenticEvent)>>,
@@ -200,9 +199,12 @@ async fn poll_loop_retries_with_backoff() {
     ];
     let (transport, counter) = queue_transport(responses);
 
-    let sessions: SharedSessionStore = Arc::new(MemorySessionStore::default());
+    tokio::time::pause();
+    let bus = Arc::new(RecordingBus::new());
+    let store = Arc::new(MemorySessionStore::default());
+    let sessions: SharedSessionStore = store.clone();
     let deps = IngressDeps {
-        bus: Arc::new(RecordingBus::new()),
+        bus,
         sessions,
         dl_base: "https://directline.example/v3/directline".into(),
         transport,
@@ -210,7 +212,7 @@ async fn poll_loop_retries_with_backoff() {
     };
     let ctx = IngressCtx {
         tenant_ctx: tenant_ctx(),
-        conversation_id: "conv-2".into(),
+        conversation_id: "conv-1".into(),
         token: "token".into(),
     };
 
@@ -225,7 +227,7 @@ fn ok_response(activities: Vec<Value>, watermark: Option<&str>) -> ActivitiesTra
         status: StatusCode::OK,
         body: Some(ActivitiesEnvelope {
             activities,
-            watermark: watermark.map(|w| w.to_string()),
+            watermark: watermark.map(|value| value.to_string()),
         }),
     }
 }

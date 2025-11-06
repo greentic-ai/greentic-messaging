@@ -28,7 +28,6 @@ members = [
   "libs/idempotency",
   "libs/backpressure",
   "libs/dlq",
-  "providers/webchat",
   "scripts",
   "tools/nats-demo",
   "tools/mock-weather-tool",

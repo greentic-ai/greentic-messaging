@@ -3,12 +3,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use greentic_messaging_providers_webchat::WebChatProvider;
-use greentic_messaging_providers_webchat::config::Config;
 use greentic_secrets::spec::{
-    Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
+    Scope, SecretUri, SecretVersion, SecretsBackend, VersionedSecret, helpers::record_from_plain,
 };
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
+use gsm_core::platforms::webchat::config::Config;
+use gsm_core::platforms::webchat::provider::WebChatProvider;
 
 #[derive(Clone, Default)]
 pub struct TestSecretsBackend {
@@ -45,7 +45,7 @@ impl SecretsBackend for TestSecretsBackend {
         &self,
         _record: greentic_secrets::spec::SecretRecord,
     ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
-        unimplemented!("test backend does not support put")
+        unimplemented!("test backend does not support writes")
     }
 
     fn get(
@@ -63,24 +63,18 @@ impl SecretsBackend for TestSecretsBackend {
 
     fn list(
         &self,
-        _scope: &greentic_secrets::spec::Scope,
+        _scope: &Scope,
         _category_prefix: Option<&str>,
         _name_prefix: Option<&str>,
     ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
         unimplemented!("test backend does not support list")
     }
 
-    fn delete(
-        &self,
-        _uri: &SecretUri,
-    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+    fn delete(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {
         unimplemented!("test backend does not support delete")
     }
 
-    fn versions(
-        &self,
-        _uri: &SecretUri,
-    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretVersion>> {
+    fn versions(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<Vec<SecretVersion>> {
         unimplemented!("test backend does not support versions")
     }
 

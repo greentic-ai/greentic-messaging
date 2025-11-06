@@ -1,6 +1,7 @@
 ## Web Chat Demo
 
-This Vite + React application exercises the `providers/webchat` endpoints introduced in PR-WC1 – PR-WC5.
+This Vite + React application exercises the Direct Line endpoints exposed by
+`gsm_core::platforms::webchat` (PR-WC1 – PR-WC7).
 
 ### Development
 
@@ -10,7 +11,10 @@ npm install
 npm run dev
 ```
 
-By default the dev server proxies `/v3/directline` to `http://localhost:8090`, so if you run the provider locally nothing else is required. Optional overrides live in `.env.local`:
+By default the dev server proxies `/v3/directline` to `http://localhost:8090`.
+Start the standalone server with
+`cargo run --manifest-path libs/core/Cargo.toml --example run_standalone` and no
+other setup is required. Optional overrides live in `.env.local`:
 
 ```ini
 VITE_WEBCHAT_ENV=dev
