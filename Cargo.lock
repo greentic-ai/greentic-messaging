@@ -138,40 +138,6 @@ dependencies = [
 
 [[package]]
 name = "async-nats"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd3bdd6ea595b2ea504500a3566071beb81125fc15d40a6f6bffa43575f64152"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "futures",
- "memchr",
- "nkeys",
- "nuid",
- "once_cell",
- "portable-atomic",
- "rand 0.8.5",
- "regex",
- "ring",
- "rustls-native-certs",
- "rustls-pemfile",
- "rustls-webpki 0.102.8",
- "serde",
- "serde_json",
- "serde_nanos",
- "serde_repr",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "tracing",
- "tryhard",
- "url",
-]
-
-[[package]]
-name = "async-nats"
 version = "0.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86dde77d8a733a9dbaf865a9eb65c72e09c88f3d14d3dd0d2aecf511920ee4fe"
@@ -261,7 +227,6 @@ dependencies = [
  "async-trait",
  "axum-core 0.4.5",
  "axum-macros 0.4.2",
- "base64 0.22.1",
  "bytes",
  "futures-util",
  "http",
@@ -280,10 +245,8 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
- "sha1",
  "sync_wrapper",
  "tokio",
- "tokio-tungstenite",
  "tower",
  "tower-layer",
  "tower-service",
@@ -298,6 +261,7 @@ checksum = "8a18ed336352031311f4e0b4dd2ff392d4fbb370777c9d18d7fc9d7359f73871"
 dependencies = [
  "axum-core 0.5.5",
  "axum-macros 0.5.0",
+ "base64 0.22.1",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -316,8 +280,10 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
+ "sha1",
  "sync_wrapper",
  "tokio",
+ "tokio-tungstenite",
  "tower",
  "tower-layer",
  "tower-service",
@@ -478,12 +444,6 @@ name = "bytemuck"
 version = "1.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fbdf580320f38b612e485521afda1ee26d10cc9884efaaa750d383e13e3c5f4"
-
-[[package]]
-name = "byteorder"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "byteorder-lite"
@@ -934,7 +894,7 @@ name = "egress-telegram"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "axum 0.8.6",
  "dotenvy",
@@ -953,6 +913,12 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "either"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "elliptic-curve"
@@ -1259,14 +1225,15 @@ name = "greentic-messaging-providers-webchat"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.37.0",
+ "async-nats",
  "async-trait",
- "axum 0.7.9",
+ "axum 0.8.6",
  "futures-util",
+ "greentic-secrets",
  "greentic-types",
  "http",
  "hyper",
- "jsonwebtoken 9.3.1",
+ "jsonwebtoken",
  "metrics",
  "once_cell",
  "redis",
@@ -1274,7 +1241,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "time",
  "tokio",
  "tokio-tungstenite",
@@ -1289,14 +1256,14 @@ name = "greentic-messaging-security"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "axum 0.8.6",
  "base64 0.22.1",
  "greentic-types",
  "gsm-core",
  "hex",
- "jsonwebtoken 10.1.0",
+ "jsonwebtoken",
  "once_cell",
  "rand 0.8.5",
  "rsa",
@@ -1309,6 +1276,17 @@ dependencies = [
  "tracing",
  "urlencoding",
  "uuid",
+]
+
+[[package]]
+name = "greentic-secrets"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8278567df12db1b22c9e1748975d627360f21e9b1f16beef0f08811b45d962a0"
+dependencies = [
+ "greentic-secrets-core",
+ "greentic-secrets-spec",
+ "greentic-types",
 ]
 
 [[package]]
@@ -1353,16 +1331,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "greentic-telemetry"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcdebdf722c62350b0be91a24d320b782118ea301cdf7981814cf2942b57dc3a"
+dependencies = [
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "greentic-types"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca06a03906add513c53951ba44f9d83efef547029cd09e61c89d9fff9ecd3338"
 dependencies = [
+ "greentic-telemetry",
+ "greentic-types-macros",
+ "opentelemetry-otlp",
  "semver",
  "serde",
  "serde_with",
  "thiserror 2.0.17",
  "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "greentic-types-macros"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f4e0703e3560267ebbfe77be9f67bc4f0898b7889073459b91b3dde8ab5fe80"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1396,7 +1408,7 @@ name = "gsm-backpressure"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "greentic-types",
  "gsm-telemetry",
@@ -1413,7 +1425,7 @@ name = "gsm-cli-dlq"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "clap",
  "greentic-types",
  "gsm-core",
@@ -1449,7 +1461,7 @@ name = "gsm-dlq"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "futures",
  "greentic-types",
  "gsm-telemetry",
@@ -1466,7 +1478,7 @@ name = "gsm-egress-common"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "greentic-types",
  "gsm-backpressure",
  "gsm-core",
@@ -1480,7 +1492,7 @@ name = "gsm-egress-slack"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "dotenvy",
  "futures",
@@ -1505,7 +1517,7 @@ name = "gsm-egress-teams"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "dotenvy",
  "futures",
@@ -1531,7 +1543,7 @@ name = "gsm-egress-webchat"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-stream",
  "axum 0.8.6",
  "dashmap",
@@ -1558,7 +1570,7 @@ name = "gsm-egress-webex"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "axum 0.8.6",
  "dotenvy",
@@ -1587,7 +1599,7 @@ name = "gsm-egress-whatsapp"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "dotenvy",
  "futures",
  "greentic-types",
@@ -1612,7 +1624,7 @@ name = "gsm-idempotency"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "greentic-types",
  "gsm-telemetry",
@@ -1629,7 +1641,7 @@ name = "gsm-ingress-common"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "axum 0.8.6",
  "base64 0.22.1",
  "gsm-core",
@@ -1653,7 +1665,7 @@ name = "gsm-ingress-slack"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "axum 0.8.6",
  "greentic-messaging-security",
  "greentic-types",
@@ -1677,7 +1689,7 @@ name = "gsm-ingress-teams"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "axum 0.8.6",
  "greentic-messaging-security",
  "greentic-types",
@@ -1699,7 +1711,7 @@ name = "gsm-ingress-telegram"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "axum 0.8.6",
  "greentic-messaging-security",
@@ -1727,7 +1739,7 @@ name = "gsm-ingress-webchat"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "axum 0.8.6",
  "greentic-messaging-security",
  "greentic-types",
@@ -1750,7 +1762,7 @@ name = "gsm-ingress-webex"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "axum 0.8.6",
  "greentic-types",
@@ -1779,7 +1791,7 @@ name = "gsm-ingress-whatsapp"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "async-trait",
  "axum 0.8.6",
  "greentic-messaging-security",
@@ -1822,7 +1834,7 @@ name = "gsm-runner"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "futures",
  "greentic-types",
  "gsm-backpressure",
@@ -1871,7 +1883,7 @@ name = "gsm-subscriptions-teams"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "futures",
  "greentic-types",
  "gsm-telemetry",
@@ -1974,9 +1986,6 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
-dependencies = [
- "ahash",
-]
 
 [[package]]
 name = "hashbrown"
@@ -1996,15 +2005,6 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
-]
-
-[[package]]
-name = "hashlink"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
-dependencies = [
- "hashbrown 0.14.5",
 ]
 
 [[package]]
@@ -2133,6 +2133,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper-timeout"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b90d566bffbce6a75bd8b09a05aa8c2cb1fabb6cb348f8840c9e4c90a0d83b0"
+dependencies = [
+ "hyper",
+ "hyper-util",
+ "pin-project-lite",
+ "tokio",
+ "tower-service",
+]
+
+[[package]]
 name = "hyper-tls"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2166,7 +2179,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -2394,6 +2407,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2435,21 +2457,6 @@ dependencies = [
  "time",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "jsonwebtoken"
-version = "9.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
-dependencies = [
- "base64 0.22.1",
- "js-sys",
- "pem",
- "ring",
- "serde",
- "serde_json",
- "simple_asn1",
 ]
 
 [[package]]
@@ -2498,9 +2505,9 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.28.0"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c10584274047cb335c23d3e61bcef8e323adae7c5c8c760540f73610177fc3f"
+checksum = "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f"
 dependencies = [
  "cc",
  "pkg-config",
@@ -2697,7 +2704,7 @@ name = "nats-demo"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "async-nats 0.45.0",
+ "async-nats",
  "futures",
  "greentic-types",
  "gsm-core",
@@ -2920,6 +2927,82 @@ dependencies = [
  "libc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "opentelemetry"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b84bcd6ae87133e903af7ef497404dda70c60d0ea14895fc8a5e6722754fc2a0"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "js-sys",
+ "pin-project-lite",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
+name = "opentelemetry-http"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "http",
+ "opentelemetry",
+ "reqwest",
+]
+
+[[package]]
+name = "opentelemetry-otlp"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a2366db2dca4d2ad033cad11e6ee42844fd727007af5ad04a1730f4cb8163bf"
+dependencies = [
+ "http",
+ "opentelemetry",
+ "opentelemetry-http",
+ "opentelemetry-proto",
+ "opentelemetry_sdk",
+ "prost",
+ "reqwest",
+ "thiserror 2.0.17",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "opentelemetry-proto"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
+dependencies = [
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "prost",
+ "tonic",
+ "tonic-prost",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e14ae4f5991976fd48df6d843de219ca6d31b01daaab2dad5af2badeded372bd"
+dependencies = [
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "opentelemetry",
+ "percent-encoding",
+ "rand 0.9.2",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -3158,6 +3241,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
+dependencies = [
+ "bytes",
+ "prost-derive",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3179,7 +3285,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.1",
+ "socket2",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -3216,7 +3322,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.1",
+ "socket2",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -3297,20 +3403,21 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.25.4"
+version = "0.32.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0d7a6955c7511f60f3ba9e86c6d02b3c3f144f8c24b288d1f4e18074ab8bbec"
+checksum = "014cc767fefab6a3e798ca45112bccad9c6e0e218fbd49720042716c73cfef44"
 dependencies = [
- "async-trait",
  "bytes",
+ "cfg-if",
  "combine",
  "futures-util",
  "itoa",
+ "num-bigint",
  "percent-encoding",
  "pin-project-lite",
  "ryu",
  "sha1_smol",
- "socket2 0.5.10",
+ "socket2",
  "tokio",
  "tokio-util",
  "url",
@@ -3364,6 +3471,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",
@@ -3447,14 +3555,14 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.31.0"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b838eba278d213a8beaf485bd313fd580ca4505a00d5871caeb1457c55322cae"
+checksum = "165ca6e57b20e1351573e3729b958bc62f0e48025386970b6e4d29e7a7e71f3f"
 dependencies = [
  "bitflags",
  "fallible-iterator",
  "fallible-streaming-iterator",
- "hashlink 0.9.1",
+ "hashlink",
  "libsqlite3-sys",
  "smallvec",
 ]
@@ -3539,7 +3647,6 @@ version = "0.102.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
 dependencies = [
- "ring",
  "rustls-pki-types",
  "untrusted",
 ]
@@ -3574,7 +3681,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fb771b59f6b1985d1406325ec28f97cfb14256abcec4fdfb37b36a1766d6af7"
 dependencies = [
  "arraydeque",
- "hashlink 0.10.0",
+ "hashlink",
 ]
 
 [[package]]
@@ -3891,16 +3998,6 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "socket2"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
@@ -4124,7 +4221,7 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2 0.6.1",
+ "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]
@@ -4173,9 +4270,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.24.0"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
 dependencies = [
  "futures-util",
  "log",
@@ -4218,6 +4315,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb7613188ce9f7df5bfe185db26c5814347d110db17920415cf2fbcad85e7203"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-timeout",
+ "hyper-util",
+ "percent-encoding",
+ "pin-project",
+ "sync_wrapper",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tonic-prost"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66bd50ad6ce1252d87ef024b3d64fe4c3cf54a86fb9ef4c631fdd0ded7aeaa67"
+dependencies = [
+ "bytes",
+ "prost",
+ "tonic",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4225,7 +4359,9 @@ checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
 dependencies = [
  "futures-core",
  "futures-util",
+ "indexmap",
  "pin-project-lite",
+ "slab",
  "sync_wrapper",
  "tokio",
  "tokio-util",
@@ -4309,6 +4445,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-opentelemetry"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e6e5658463dd88089aba75c7791e1d3120633b1bfde22478b28f625a9bb1b8e"
+dependencies = [
+ "js-sys",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "rustversion",
+ "smallvec",
+ "thiserror 2.0.17",
+ "tracing",
+ "tracing-core",
+ "tracing-log",
+ "tracing-subscriber",
+ "web-time",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4365,19 +4520,18 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.24.0"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
+checksum = "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
 dependencies = [
- "byteorder",
  "bytes",
  "data-encoding",
  "http",
  "httparse",
  "log",
- "rand 0.8.5",
+ "rand 0.9.2",
  "sha1",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "utf-8",
 ]
 

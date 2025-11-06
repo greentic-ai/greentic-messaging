@@ -7,17 +7,22 @@ use greentic_messaging_providers_webchat::{StandaloneState, standalone_router};
 use std::sync::Arc;
 use tower::ServiceExt;
 
+#[path = "../test_support/mod.rs"]
+mod support;
+
+use support::{provider_with_secrets, signing_scope};
+
 #[tokio::test]
 async fn standalone_generate_token_round_trip() {
-    // Ensure deterministic config for the standalone signing key.
-    unsafe {
-        std::env::set_var("WEBCHAT_JWT_SIGNING_KEY", "test-signing-key");
-    }
-
+    let provider = provider_with_secrets(
+        Config::with_base_url("http://localhost"),
+        signing_scope(),
+        &[],
+    );
     let state = Arc::new(
-        StandaloneState::new(Config::with_base_url("http://localhost"))
+        StandaloneState::new(provider)
             .await
-            .unwrap(),
+            .expect("standalone state"),
     );
     let app = standalone_router(Arc::clone(&state));
 

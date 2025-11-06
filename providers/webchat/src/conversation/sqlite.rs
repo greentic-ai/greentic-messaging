@@ -4,15 +4,15 @@ use std::{
     sync::Arc,
 };
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use tokio::{
-    sync::{broadcast, Mutex},
+    sync::{Mutex, broadcast},
     task::spawn_blocking,
 };
 
 use super::{
-    Activity, ActivityPage, ConversationStore, SharedConversationStore, StoreError, StoredActivity,
-    MAX_ACTIVITY_HISTORY,
+    Activity, ActivityPage, ConversationStore, MAX_ACTIVITY_HISTORY, SharedConversationStore,
+    StoreError, StoredActivity,
 };
 use greentic_types::TenantCtx;
 
@@ -62,9 +62,11 @@ impl SqliteConversationStore {
         .map_err(|err| StoreError::Internal(err.into()))?
     }
 
-    async fn load_record(&self, conversation_id: &str) -> Result<Option<PersistedRecord>, StoreError>
-    where
-    {
+    async fn load_record(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Option<PersistedRecord>, StoreError>
+where {
         let id = conversation_id.to_string();
         self.with_conn(move |conn| {
             let mut stmt = conn
@@ -112,8 +114,8 @@ impl SqliteConversationStore {
         let id = conversation_id.to_string();
         let ctx_json =
             serde_json::to_string(&record.ctx).map_err(|err| StoreError::Internal(err.into()))?;
-        let activities =
-            serde_json::to_string(&record.activities).map_err(|err| StoreError::Internal(err.into()))?;
+        let activities = serde_json::to_string(&record.activities)
+            .map_err(|err| StoreError::Internal(err.into()))?;
         let next_watermark = record.next_watermark;
 
         self.with_conn(move |conn| {
@@ -136,11 +138,7 @@ impl SqliteConversationStore {
 impl ConversationStore for SqliteConversationStore {
     async fn create(&self, conversation_id: &str, ctx: TenantCtx) -> Result<(), StoreError> {
         {
-            if self
-                .load_record(conversation_id)
-                .await?
-                .is_some()
-            {
+            if self.load_record(conversation_id).await?.is_some() {
                 return Err(StoreError::AlreadyExists(conversation_id.to_string()));
             }
         }

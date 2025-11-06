@@ -15,18 +15,15 @@ use greentic_messaging_providers_webchat::{
     },
     session::{MemorySessionStore, SharedSessionStore, WebchatSession, WebchatSessionStore},
 };
-use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
+use greentic_types::TenantCtx;
 use reqwest::Client;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
-fn tenant_ctx(env: &str, tenant: &str, team: Option<&str>) -> TenantCtx {
-    let mut ctx = TenantCtx::new(EnvId::from(env), TenantId::from(tenant));
-    if let Some(team) = team {
-        ctx = ctx.with_team(Some(TeamId::from(team)));
-    }
-    ctx
-}
+#[path = "../test_support/mod.rs"]
+mod support;
+
+use support::{provider_with_secrets, signing_scope, tenant_ctx, tenant_scope};
 
 #[tokio::test]
 async fn admin_posts_to_specific_conversation() {
@@ -49,15 +46,17 @@ async fn admin_posts_to_specific_conversation() {
         .unwrap();
 
     let poster = Arc::new(RecordingPoster::default());
-    let state = AppState::new(
+    let scope = tenant_scope("dev", "acme", None);
+    let provider = provider_with_secrets(
         Config::with_base_url("https://directline.test/v3/directline"),
-        direct_line,
-        client,
-    )
-    .with_sessions(sessions)
-    .with_activity_poster(poster.clone() as SharedDirectLinePoster)
-    .with_oauth_client(Arc::new(StubOauthClient))
-    .with_conversations(conversations.clone());
+        signing_scope(),
+        &[(&scope, "webchat", "channel_token", "dl-secret")],
+    );
+    let state = AppState::new(provider, direct_line, client.clone())
+        .with_sessions(sessions)
+        .with_activity_poster(poster.clone() as SharedDirectLinePoster)
+        .with_oauth_client(Arc::new(StubOauthClient))
+        .with_conversations(conversations.clone());
 
     let Json(payload) = admin_post_activity(
         State(state),
@@ -140,15 +139,17 @@ async fn admin_broadcast_respects_proactive_flags() {
         .unwrap();
 
     let poster = Arc::new(RecordingPoster::default());
-    let state = AppState::new(
+    let scope = tenant_scope("dev", "acme", None);
+    let provider = provider_with_secrets(
         Config::with_base_url("https://directline.test/v3/directline"),
-        direct_line,
-        client,
-    )
-    .with_sessions(sessions)
-    .with_activity_poster(poster.clone() as SharedDirectLinePoster)
-    .with_oauth_client(Arc::new(StubOauthClient))
-    .with_conversations(conversations.clone());
+        signing_scope(),
+        &[(&scope, "webchat", "channel_token", "dl-secret")],
+    );
+    let state = AppState::new(provider, direct_line, client.clone())
+        .with_sessions(sessions)
+        .with_activity_poster(poster.clone() as SharedDirectLinePoster)
+        .with_oauth_client(Arc::new(StubOauthClient))
+        .with_conversations(conversations.clone());
 
     let Json(payload) = admin_post_activity(
         State(state),
@@ -194,15 +195,17 @@ async fn admin_errors_for_unknown_conversation() {
     let conversations = memory_store();
 
     let poster = Arc::new(RecordingPoster::default());
-    let state = AppState::new(
+    let scope = tenant_scope("dev", "acme", None);
+    let provider = provider_with_secrets(
         Config::with_base_url("https://directline.test/v3/directline"),
-        direct_line,
-        client,
-    )
-    .with_sessions(sessions)
-    .with_activity_poster(poster.clone() as SharedDirectLinePoster)
-    .with_oauth_client(Arc::new(StubOauthClient))
-    .with_conversations(conversations);
+        signing_scope(),
+        &[(&scope, "webchat", "channel_token", "dl-secret")],
+    );
+    let state = AppState::new(provider, direct_line, client.clone())
+        .with_sessions(sessions)
+        .with_activity_poster(poster.clone() as SharedDirectLinePoster)
+        .with_oauth_client(Arc::new(StubOauthClient))
+        .with_conversations(conversations);
 
     let error = match admin_post_activity(
         State(state),

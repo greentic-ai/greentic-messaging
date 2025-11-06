@@ -1,11 +1,11 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use redis::{aio::ConnectionManager, AsyncCommands};
-use tokio::sync::{broadcast, Mutex};
+use redis::{AsyncCommands, aio::ConnectionManager};
+use tokio::sync::{Mutex, broadcast};
 
 use super::{
-    Activity, ActivityPage, ConversationStore, SharedConversationStore, StoreError, StoredActivity,
-    MAX_ACTIVITY_HISTORY,
+    Activity, ActivityPage, ConversationStore, MAX_ACTIVITY_HISTORY, SharedConversationStore,
+    StoreError, StoredActivity,
 };
 use greentic_types::TenantCtx;
 
@@ -47,7 +47,10 @@ impl ConversationStore for RedisConversationStore {
     async fn create(&self, conversation_id: &str, ctx: TenantCtx) -> Result<(), StoreError> {
         let mut conn = self.connection().await?;
         let key = self.key(conversation_id);
-        let exists: bool = conn.exists(&key).await.map_err(|err| StoreError::Internal(err.into()))?;
+        let exists: bool = conn
+            .exists(&key)
+            .await
+            .map_err(|err| StoreError::Internal(err.into()))?;
         if exists {
             return Err(StoreError::AlreadyExists(conversation_id.to_string()));
         }
@@ -56,7 +59,8 @@ impl ConversationStore for RedisConversationStore {
             activities: Vec::new(),
             next_watermark: 0,
         };
-        let payload = serde_json::to_string(&record).map_err(|err| StoreError::Internal(err.into()))?;
+        let payload =
+            serde_json::to_string(&record).map_err(|err| StoreError::Internal(err.into()))?;
         conn.set::<_, _, ()>(&key, payload)
             .await
             .map_err(|err| StoreError::Internal(err.into()))?;
@@ -95,7 +99,8 @@ impl ConversationStore for RedisConversationStore {
         };
         record.activities.push(stored.clone());
         record.next_watermark = record.next_watermark.saturating_add(1);
-        let payload = serde_json::to_string(&record).map_err(|err| StoreError::Internal(err.into()))?;
+        let payload =
+            serde_json::to_string(&record).map_err(|err| StoreError::Internal(err.into()))?;
         conn.set::<_, _, ()>(&key, payload)
             .await
             .map_err(|err| StoreError::Internal(err.into()))?;

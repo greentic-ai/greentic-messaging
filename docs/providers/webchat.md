@@ -17,9 +17,9 @@ proxy are included for completeness.
 | ------ | ---- | ----------- |
 | `POST` | `/v3/directline/tokens/generate?env=<env>&tenant=<tenant>[&team=<team>]` | Mint a short-lived Direct Line user token. |
 | `POST` | `/v3/directline/conversations` | Requires `Authorization: Bearer <token>`; returns a conversation-bound token and optional `streamUrl`. |
-| `GET` | `/v3/directline/conversations/:id/activities?watermark=<n>` | Poll for activities that occurred after watermark `n`. |
-| `POST` | `/v3/directline/conversations/:id/activities` | Submit a user activity into the conversation. |
-| `GET` | `/v3/directline/conversations/:id/stream?t=<conversation_token>&watermark=<n>` | WebSocket stream that delivers activities as they arrive. |
+| `GET` | `/v3/directline/conversations/{id}/activities?watermark=<n>` | Poll for activities that occurred after watermark `n`. |
+| `POST` | `/v3/directline/conversations/{id}/activities` | Submit a user activity into the conversation. |
+| `GET` | `/v3/directline/conversations/{id}/stream?t=<conversation_token>&watermark=<n>` | WebSocket stream that delivers activities as they arrive. |
 
 Additional endpoints under `/webchat` (OAuth, proactive admin API, health
 checks) remain gated by the `webchat_bf_mode` feature and are unaffected by the
@@ -47,17 +47,35 @@ standalone mode.
 
 ### Configuration
 
-Standalone mode requires an HS256 signing key:
+Standalone mode resolves all secrets via an injected `Arc<dyn SecretsBackend>`.
+At minimum the following entries must exist:
 
-```
-WEBCHAT_JWT_SIGNING_KEY=local-dev-secret
+| Scope | Category / name | Purpose |
+| ----- | ---------------- | ------- |
+| Global signing scope (for example `secrets://global/webchat/_/webchat/jwt_signing_key`) | `webchat/jwt_signing_key` | HS256 key used to mint Direct Line tokens. |
+| Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat/channel_token`) | `webchat/channel_token` | Direct Line secret required when proxying to Microsoft (`directline_proxy_ms`). |
+| Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/issuer`) | `webchat_oauth/issuer` | OAuth issuer URL used by the `/webchat/oauth/...` routes. |
+| Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/client_id`) | `webchat_oauth/client_id` | OAuth client identifier. |
+| Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/redirect_base`) | `webchat_oauth/redirect_base` | Base URL used to build the OAuth callback URL. |
+| Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/client_secret`, optional) | `webchat_oauth/client_secret` | Optional client secret forwarded to `GreenticOauthClient`. |
+
+Inject the backend when constructing `WebChatProvider` and hand it to
+`AppState`/`StandaloneState`:
+
+```rust
+use std::sync::Arc;
+use greentic_messaging_providers_webchat::{WebChatProvider, config::Config, StandaloneState, standalone_router};
+use greentic_secrets::spec::Scope;
+
+let backend: Arc<dyn greentic_secrets::spec::SecretsBackend + Send + Sync> = build_backend();
+let signing_scope = Scope::new("global", "webchat", None)?;
+let provider = WebChatProvider::new(Config::default(), backend).with_signing_scope(signing_scope);
+let state = Arc::new(StandaloneState::new(provider).await?);
+let app = standalone_router(Arc::clone(&state));
 ```
 
-Production deployments should source the key from the secrets backend
-(`webchat/jwt/signing_key`). Tokens default to a 30 minute TTL. A simple
-per-IP token bucket limits `/tokens/generate` to 5 requests per minute.
-Manage the signing secret via `greentic-secrets`; the environment variable is
-reserved for local development only.
+Tokens default to a 30 minute TTL. `/v3/directline/tokens/generate` is rate-limited
+to 5 requests per minute per client IP.
 
 ### Tenant context
 
@@ -73,22 +91,17 @@ validated server-side.
 ## Legacy proxy mode (optional)
 
 Enable `directline_proxy_ms` to keep calling Microsoft's Direct Line API. The
-routes match the original `/webchat/:env/:tenant[:team]/tokens/generate` and
-`/webchat/:env/:tenant[:team]/conversations/start` endpoints. Configure secrets
-via `WEBCHAT_DIRECT_LINE_SECRET__{ENV}__{TENANT}[__{TEAM}]` (or legacy
-`DL_SECRET__...`).
+routes match the original `/webchat/{env}/{tenant}[/{team}]/tokens/generate` and
+`/webchat/{env}/{tenant}[/{team}]/conversations/start` endpoints. When this
+feature is active the provider fetches `webchat/channel_token` from the tenant's
+secret scope and uses it to authenticate upstream requests.
 
 ## OAuth and proactive messaging
 
 OAuthCard support and the proactive admin API continue to live under the
 `/webchat` prefix regardless of Direct Line mode. Refer to PR-WC4/PR-WC5 for
-payload details — the configuration keys remain unchanged:
-
-```
-WEBCHAT_OAUTH_ISSUER__{ENV}__{TENANT}[__{TEAM}]
-WEBCHAT_OAUTH_CLIENT_ID__{ENV}__{TENANT}[__{TEAM}]
-WEBCHAT_OAUTH_REDIRECT_BASE__{ENV}__{TENANT}[__{TEAM}]
-```
+payload details. The provider resolves OAuth configuration from the tenant
+scope using the `webchat_oauth/*` secrets listed above.
 
 ## Demo application
 

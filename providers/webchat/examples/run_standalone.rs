@@ -1,14 +1,86 @@
 use greentic_messaging_providers_webchat::config::Config;
-use greentic_messaging_providers_webchat::{StandaloneState, standalone_router};
+use greentic_messaging_providers_webchat::{StandaloneState, WebChatProvider, standalone_router};
+use greentic_secrets::spec::{
+    Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
+};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Config::from_env();
-    let state = Arc::new(StandaloneState::new(config).await?);
+    let config = Config::default();
+    let signing_secret =
+        std::env::var("WEBCHAT_JWT_SIGNING_KEY").unwrap_or_else(|_| "local-dev-secret".into());
+    let secrets = Arc::new(StaticSecretsBackend::new(signing_secret));
+    let signing_scope = Scope::new("global", "webchat", None)?;
+    let provider = WebChatProvider::new(config, secrets).with_signing_scope(signing_scope);
+    let state = Arc::new(StandaloneState::new(provider).await?);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8090").await?;
     let app = standalone_router(Arc::clone(&state));
     axum::serve(listener, app.into_make_service()).await?;
     Ok(())
+}
+
+#[derive(Clone)]
+struct StaticSecretsBackend {
+    secret: String,
+}
+
+impl StaticSecretsBackend {
+    fn new(secret: String) -> Self {
+        Self { secret }
+    }
+}
+
+impl SecretsBackend for StaticSecretsBackend {
+    fn put(
+        &self,
+        _record: greentic_secrets::spec::SecretRecord,
+    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+        unimplemented!("static backend does not support write operations")
+    }
+
+    fn get(
+        &self,
+        uri: &SecretUri,
+        _version: Option<u64>,
+    ) -> greentic_secrets::spec::Result<Option<VersionedSecret>> {
+        if uri.category() == "webchat" && uri.name() == "jwt_signing_key" {
+            let record = record_from_plain(self.secret.clone());
+            Ok(Some(VersionedSecret {
+                version: 1,
+                deleted: false,
+                record: Some(record),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn list(
+        &self,
+        _scope: &greentic_secrets::spec::Scope,
+        _category_prefix: Option<&str>,
+        _name_prefix: Option<&str>,
+    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
+        unimplemented!("static backend does not support list operations")
+    }
+
+    fn delete(
+        &self,
+        _uri: &SecretUri,
+    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+        unimplemented!("static backend does not support delete operations")
+    }
+
+    fn versions(
+        &self,
+        _uri: &SecretUri,
+    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretVersion>> {
+        unimplemented!("static backend does not support version operations")
+    }
+
+    fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {
+        Ok(uri.category() == "webchat" && uri.name() == "jwt_signing_key")
+    }
 }

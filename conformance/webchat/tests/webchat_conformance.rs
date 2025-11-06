@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
-use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex as StdMutex};
 
 use axum::{
     Json,
@@ -7,6 +7,7 @@ use axum::{
     response::IntoResponse,
 };
 use greentic_messaging_providers_webchat::{
+    WebChatProvider,
     bus::{EventBus, Subject},
     circuit::CircuitSettings,
     config::Config,
@@ -24,6 +25,9 @@ use greentic_messaging_providers_webchat::{
     session::{MemorySessionStore, SharedSessionStore, WebchatSession},
     types::{GreenticEvent, IncomingMessage, MessagePayload},
 };
+use greentic_secrets::spec::{
+    Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
+};
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
 use reqwest::Client;
 use serde_json::{Value, json};
@@ -37,8 +41,114 @@ fn tenant_ctx(env: &str, tenant: &str, team: Option<&str>) -> TenantCtx {
     ctx
 }
 
-fn build_state(
+#[derive(Clone, Default)]
+struct TestSecretsBackend {
+    inner: Arc<StdMutex<HashMap<String, VersionedSecret>>>,
+}
+
+impl TestSecretsBackend {
+    fn insert_secret(&self, scope: Scope, category: &str, name: &str, value: &str) {
+        let uri = SecretUri::new(scope, category.to_string(), name.to_string())
+            .expect("valid secret uri");
+        let record = record_from_plain(value.to_string());
+        let secret = VersionedSecret {
+            version: 1,
+            deleted: false,
+            record: Some(record),
+        };
+        self.inner
+            .lock()
+            .expect("lock secrets map")
+            .insert(uri.to_string(), secret);
+    }
+}
+
+impl SecretsBackend for TestSecretsBackend {
+    fn put(
+        &self,
+        _record: greentic_secrets::spec::SecretRecord,
+    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+        unimplemented!("test backend does not support writes")
+    }
+
+    fn get(
+        &self,
+        uri: &SecretUri,
+        _version: Option<u64>,
+    ) -> greentic_secrets::spec::Result<Option<VersionedSecret>> {
+        Ok(self
+            .inner
+            .lock()
+            .expect("lock secrets map")
+            .get(&uri.to_string())
+            .cloned())
+    }
+
+    fn list(
+        &self,
+        _scope: &greentic_secrets::spec::Scope,
+        _category_prefix: Option<&str>,
+        _name_prefix: Option<&str>,
+    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
+        unimplemented!("test backend does not support listing")
+    }
+
+    fn delete(
+        &self,
+        _uri: &SecretUri,
+    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+        unimplemented!("test backend does not support delete")
+    }
+
+    fn versions(
+        &self,
+        _uri: &SecretUri,
+    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretVersion>> {
+        unimplemented!("test backend does not support versions")
+    }
+
+    fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {
+        Ok(self
+            .inner
+            .lock()
+            .expect("lock secrets map")
+            .contains_key(&uri.to_string()))
+    }
+}
+
+fn signing_scope() -> Scope {
+    Scope::new("global", "webchat", None).expect("valid signing scope")
+}
+
+fn tenant_scope(env: &str, tenant: &str, team: Option<&str>) -> Scope {
+    Scope::new(
+        env.to_ascii_lowercase(),
+        tenant.to_ascii_lowercase(),
+        team.map(|value| value.to_ascii_lowercase()),
+    )
+    .expect("valid tenant scope")
+}
+
+fn provider_with_secrets(
     config: Config,
+    signing_scope: Scope,
+    secrets: &[(&Scope, &str, &str, &str)],
+) -> WebChatProvider {
+    let backend = TestSecretsBackend::default();
+    backend.insert_secret(
+        signing_scope.clone(),
+        "webchat",
+        "jwt_signing_key",
+        "test-signing-key",
+    );
+    for (scope, category, name, value) in secrets {
+        backend.insert_secret((**scope).clone(), category, name, value);
+    }
+    WebChatProvider::new(config, Arc::new(backend)).with_signing_scope(signing_scope)
+}
+
+fn build_state(
+    provider: WebChatProvider,
     direct_line: Arc<MockDirectLineApi>,
     sessions: SharedSessionStore,
     transport: SharedActivitiesTransport,
@@ -46,7 +156,7 @@ fn build_state(
     oauth: Arc<dyn GreenticOauthClient>,
 ) -> AppState {
     let client = Client::builder().build().unwrap();
-    AppState::new(config, direct_line, client.clone())
+    AppState::new(provider, direct_line, client.clone())
         .with_sessions(sessions)
         .with_transport(transport)
         .with_activity_poster(poster)
@@ -215,31 +325,30 @@ async fn oauth_callback_posts_token_handle() {
         .await
         .unwrap();
 
-    let oauth_map: Arc<std::collections::HashMap<String, String>> = Arc::new(
-        [
-            (
-                "WEBCHAT_OAUTH_ISSUER__DEV__ACME".to_string(),
-                "https://oauth.greentic.dev".to_string(),
-            ),
-            (
-                "WEBCHAT_OAUTH_CLIENT_ID__DEV__ACME".to_string(),
-                "client-xyz".to_string(),
-            ),
-            (
-                "WEBCHAT_OAUTH_REDIRECT_BASE__DEV__ACME".to_string(),
-                "https://messaging.greentic.dev".to_string(),
-            ),
-        ]
-        .into_iter()
-        .collect(),
-    );
-
     let conversations = memory_store();
+    let oauth_scope = tenant_scope("dev", "acme", None);
+    let provider = provider_with_secrets(
+        Config::with_base_url("https://directline.test/v3/directline"),
+        signing_scope(),
+        &[
+            (&oauth_scope, "webchat", "channel_token", "dl-secret"),
+            (
+                &oauth_scope,
+                "webchat_oauth",
+                "issuer",
+                "https://oauth.greentic.dev",
+            ),
+            (&oauth_scope, "webchat_oauth", "client_id", "client-xyz"),
+            (
+                &oauth_scope,
+                "webchat_oauth",
+                "redirect_base",
+                "https://messaging.greentic.dev",
+            ),
+        ],
+    );
     let state = build_state(
-        Config::with_base_url("https://directline.test/v3/directline").with_oauth_lookup({
-            let map = Arc::clone(&oauth_map);
-            move |key| map.get(key).cloned()
-        }),
+        provider,
         Arc::new(MockDirectLineApi::default()),
         sessions,
         Arc::new(ScriptedTransport::default()),
@@ -311,8 +420,14 @@ async fn admin_endpoint_posts_and_skips_sessions() {
         .unwrap();
     sessions.set_proactive("conv-b", false).await.unwrap();
 
-    let state = build_state(
+    let proactive_scope = tenant_scope("dev", "acme", None);
+    let provider = provider_with_secrets(
         Config::with_base_url("https://directline.test/v3/directline"),
+        signing_scope(),
+        &[(&proactive_scope, "webchat", "channel_token", "dl-secret")],
+    );
+    let state = build_state(
+        provider,
         Arc::new(MockDirectLineApi::default()),
         sessions,
         Arc::new(ScriptedTransport::default()),

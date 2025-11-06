@@ -16,11 +16,11 @@ use crate::conversation::{
     Activity, ChannelAccount, ConversationAccount, SharedConversationStore, StoreError, noop_store,
 };
 use crate::{
+    WebChatProvider,
     auth::RouteContext,
     backoff,
     bus::{NoopBus, SharedBus},
     circuit::{CircuitBreaker, CircuitLabels, CircuitSettings},
-    config::Config,
     directline_client::{ConversationResponse, DirectLineApi, DirectLineError, TokenResponse},
     error::WebChatError,
     ingress::{
@@ -39,7 +39,7 @@ use reqwest::Client;
 use tokio::{spawn, sync::Mutex as AsyncMutex};
 
 pub struct AppState {
-    pub config: Config,
+    pub provider: WebChatProvider,
     pub direct_line: Arc<dyn DirectLineApi>,
     pub http_client: Client,
     pub transport: SharedActivitiesTransport,
@@ -57,7 +57,7 @@ pub struct AppState {
 impl Clone for AppState {
     fn clone(&self) -> Self {
         Self {
-            config: self.config.clone(),
+            provider: self.provider.clone(),
             direct_line: Arc::clone(&self.direct_line),
             http_client: self.http_client.clone(),
             transport: Arc::clone(&self.transport),
@@ -75,7 +75,11 @@ impl Clone for AppState {
 }
 
 impl AppState {
-    pub fn new(config: Config, direct_line: Arc<dyn DirectLineApi>, http_client: Client) -> Self {
+    pub fn new(
+        provider: WebChatProvider,
+        direct_line: Arc<dyn DirectLineApi>,
+        http_client: Client,
+    ) -> Self {
         let transport_client = http_client.clone();
         let poster_client = http_client.clone();
         let oauth_client_http = http_client.clone();
@@ -87,7 +91,7 @@ impl AppState {
             Arc::new(ReqwestGreenticOauthClient::new(oauth_client_http));
         let circuit_settings = CircuitSettings::default();
         Self {
-            config,
+            provider,
             direct_line,
             http_client,
             transport,
@@ -143,7 +147,7 @@ impl AppState {
         validate_activity_for_post(&activity)?;
         self.activity_poster
             .post_activity(
-                self.config.direct_line_base(),
+                self.provider.config().direct_line_base(),
                 conversation_id,
                 bearer_token,
                 activity,
@@ -157,23 +161,23 @@ pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/webchat/healthz", get(healthz))
         .route(
-            "/webchat/:env/:tenant/tokens/generate",
+            "/webchat/{env}/{tenant}/tokens/generate",
             post(generate_token),
         )
         .route(
-            "/webchat/:env/:tenant/:team/tokens/generate",
+            "/webchat/{env}/{tenant}/{team}/tokens/generate",
             post(generate_token),
         )
         .route(
-            "/webchat/:env/:tenant/conversations/start",
+            "/webchat/{env}/{tenant}/conversations/start",
             post(start_conversation),
         )
         .route(
-            "/webchat/:env/:tenant/:team/conversations/start",
+            "/webchat/{env}/{tenant}/{team}/conversations/start",
             post(start_conversation),
         )
         .route(
-            "/webchat/admin/:env/:tenant/post-activity",
+            "/webchat/admin/{env}/{tenant}/post-activity",
             post(admin_post_activity),
         )
         .route("/webchat/oauth/start", get(crate::oauth::start))
@@ -229,18 +233,34 @@ async fn generate_token(
     let env_metric = ctx.env().to_string();
     let tenant_metric = ctx.tenant().to_string();
     let team_metric = team_label.to_string();
+    let tenant_ctx = build_tenant_ctx(&ctx);
 
-    let secret = state.config.resolve_secret(&ctx).ok_or_else(|| {
-        counter!(
-            "webchat_errors_total",
-            "kind" => "missing_secret",
-            "env" => env_metric.clone(),
-            "tenant" => tenant_metric.clone(),
-            "team" => team_metric.clone()
-        )
-        .increment(1);
-        WebChatError::MissingSecret
-    })?;
+    let secret = state
+        .provider
+        .direct_line_secret(&tenant_ctx)
+        .await
+        .map_err(|err| {
+            counter!(
+                "webchat_errors_total",
+                "kind" => "secret_backend_error",
+                "env" => env_metric.clone(),
+                "tenant" => tenant_metric.clone(),
+                "team" => team_metric.clone()
+            )
+            .increment(1);
+            WebChatError::Internal(err.into())
+        })?
+        .ok_or_else(|| {
+            counter!(
+                "webchat_errors_total",
+                "kind" => "missing_secret",
+                "env" => env_metric.clone(),
+                "tenant" => tenant_metric.clone(),
+                "team" => team_metric.clone()
+            )
+            .increment(1);
+            WebChatError::MissingSecret
+        })?;
 
     let secret = Arc::new(secret);
     let response = call_with_circuit(
@@ -327,7 +347,7 @@ async fn start_conversation(
     let ingress_deps = IngressDeps {
         bus: Arc::clone(&state.bus),
         sessions: Arc::clone(&state.sessions),
-        dl_base: state.config.direct_line_base().to_string(),
+        dl_base: state.provider.config().direct_line_base().to_string(),
         transport: Arc::clone(&state.transport),
         circuit: state.circuit_settings.clone(),
     };
@@ -719,7 +739,7 @@ async fn append_and_broadcast(
         Err(StoreError::QuotaExceeded(_)) => {
             return Err(WebChatError::BadRequest(
                 "conversation backlog quota exceeded",
-            ))
+            ));
         }
         Err(err) => return Err(WebChatError::Internal(err.into())),
     };

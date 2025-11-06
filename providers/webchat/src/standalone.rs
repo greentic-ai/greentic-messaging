@@ -16,10 +16,10 @@ use anyhow::Context as _;
 use axum::{
     Json, Router,
     extract::{
-        ConnectInfo, Extension, Path, Query, WebSocketUpgrade,
+        ConnectInfo, Extension, FromRequestParts, Path, Query, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, request::Parts},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -28,8 +28,8 @@ use tracing::{debug, error, warn};
 use uuid::Uuid;
 
 use crate::{
+    WebChatProvider,
     bus::{NoopBus, SharedBus},
-    config::Config,
     conversation::{
         Activity, ChannelAccount, ConversationAccount, SharedConversationStore, StoredActivity,
         memory_store,
@@ -44,10 +44,30 @@ const TOKEN_TTL_SECONDS: u64 = 1_800;
 const RATE_LIMIT_CAPACITY: usize = 5;
 const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 
+struct RemoteIp(Option<IpAddr>);
+
+impl<S> FromRequestParts<S> for RemoteIp
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        let ip = parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|ConnectInfo(addr)| addr.ip());
+        std::future::ready(Ok(RemoteIp(ip)))
+    }
+}
+
 /// Shared state for the standalone Direct Line server.
 #[derive(Clone)]
 pub struct StandaloneState {
-    pub config: Config,
+    pub provider: WebChatProvider,
     pub conversations: SharedConversationStore,
     pub sessions: SharedSessionStore,
     pub bus: SharedBus,
@@ -57,12 +77,12 @@ pub struct StandaloneState {
 impl StandaloneState {
     /// Builds a new state wired to the provided conversation store.
     pub async fn with_store(
-        config: Config,
+        provider: WebChatProvider,
         conversations: SharedConversationStore,
         sessions: SharedSessionStore,
         bus: SharedBus,
     ) -> anyhow::Result<Self> {
-        let signing_keys = config
+        let signing_keys = provider
             .signing_keys()
             .await
             .context("failed to resolve Direct Line signing key")?;
@@ -70,7 +90,7 @@ impl StandaloneState {
             debug!("jwt keys already installed: {err}");
         }
         Ok(Self {
-            config,
+            provider,
             conversations,
             sessions,
             bus,
@@ -79,9 +99,9 @@ impl StandaloneState {
     }
 
     /// Builds a new state with the default in-memory conversation store.
-    pub async fn new(config: Config) -> anyhow::Result<Self> {
+    pub async fn new(provider: WebChatProvider) -> anyhow::Result<Self> {
         Self::with_store(
-            config,
+            provider,
             memory_store(),
             Arc::new(MemorySessionStore::default()),
             Arc::new(NoopBus::default()),
@@ -101,15 +121,15 @@ fn router_blueprint() -> Router {
             post(start_conversation_handler),
         )
         .route(
-            "/v3/directline/conversations/:id/activities",
+            "/v3/directline/conversations/{id}/activities",
             get(list_activities_handler).post(post_activity_handler),
         )
         .route(
-            "/v3/directline/conversations/:id/stream",
+            "/v3/directline/conversations/{id}/stream",
             get(conversation_stream_handler),
         )
         .route(
-            "/webchat/admin/:env/:tenant/post-activity",
+            "/webchat/admin/{env}/{tenant}/post-activity",
             post(admin_post_activity_handler),
         )
 }
@@ -159,13 +179,11 @@ struct TokenResponse {
 
 async fn generate_token_handler(
     Extension(state): Extension<Arc<StandaloneState>>,
-    maybe_addr: Option<ConnectInfo<SocketAddr>>,
+    remote: RemoteIp,
     Query(query): Query<TenantQuery>,
     Json(body): Json<GenerateTokenRequest>,
 ) -> Result<Json<TokenResponse>, StatusCode> {
-    let ip = maybe_addr
-        .map(|ConnectInfo(sock)| sock.ip())
-        .unwrap_or_else(|| IpAddr::from([127, 0, 0, 1]));
+    let ip = remote.0.unwrap_or_else(|| IpAddr::from([127, 0, 0, 1]));
     if !state.rate_limiter.check(ip) {
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }
@@ -676,7 +694,12 @@ fn stream_url_from_headers(
         .get(axum::http::header::HOST)
         .and_then(|value| value.to_str().ok())
     {
-        let scheme = if state.config.direct_line_base().starts_with("https://") {
+        let scheme = if state
+            .provider
+            .config()
+            .direct_line_base()
+            .starts_with("https://")
+        {
             "wss"
         } else {
             "ws"
@@ -901,8 +924,9 @@ mod tests {
     use super::*;
 
     use crate::{
+        WebChatProvider,
         bus::{EventBus, Subject},
-        config::{SigningKeyProvider, SigningKeys},
+        config::Config,
         session::WebchatSessionStore,
         types::{GreenticEvent, MessagePayload},
     };
@@ -912,19 +936,80 @@ mod tests {
         http::{self, HeaderMap, HeaderValue, StatusCode},
         response::IntoResponse,
     };
+    use greentic_secrets::spec::{
+        Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
+    };
     use serde_json::json;
     use tokio::sync::Mutex;
 
     #[derive(Clone)]
-    struct TestSigningKeyProvider;
+    struct TestSecretsBackend {
+        secret: String,
+    }
 
-    #[async_trait::async_trait]
-    impl SigningKeyProvider for TestSigningKeyProvider {
-        async fn fetch(&self) -> anyhow::Result<SigningKeys> {
-            Ok(SigningKeys {
-                secret: "test-signing-key".to_string(),
-            })
+    impl TestSecretsBackend {
+        fn new(secret: String) -> Self {
+            Self { secret }
         }
+    }
+
+    impl SecretsBackend for TestSecretsBackend {
+        fn put(
+            &self,
+            _record: greentic_secrets::spec::SecretRecord,
+        ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+            unimplemented!("test backend does not support writes")
+        }
+
+        fn get(
+            &self,
+            uri: &SecretUri,
+            _version: Option<u64>,
+        ) -> greentic_secrets::spec::Result<Option<VersionedSecret>> {
+            if uri.category() == "webchat" && uri.name() == "jwt_signing_key" {
+                let record = record_from_plain(self.secret.clone());
+                Ok(Some(VersionedSecret {
+                    version: 1,
+                    deleted: false,
+                    record: Some(record),
+                }))
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn list(
+            &self,
+            _scope: &greentic_secrets::spec::Scope,
+            _category_prefix: Option<&str>,
+            _name_prefix: Option<&str>,
+        ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
+            unimplemented!("test backend does not support listing")
+        }
+
+        fn delete(
+            &self,
+            _uri: &SecretUri,
+        ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+            unimplemented!("test backend does not support delete")
+        }
+
+        fn versions(
+            &self,
+            _uri: &SecretUri,
+        ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretVersion>> {
+            unimplemented!("test backend does not support versions")
+        }
+
+        fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {
+            Ok(uri.category() == "webchat" && uri.name() == "jwt_signing_key")
+        }
+    }
+
+    fn test_provider(base_url: &str) -> WebChatProvider {
+        let backend = Arc::new(TestSecretsBackend::new("test-signing-key".to_string()));
+        let scope = Scope::new("global", "webchat", None).expect("valid signing scope");
+        WebChatProvider::new(Config::with_base_url(base_url), backend).with_signing_scope(scope)
     }
 
     #[tokio::test]
@@ -932,11 +1017,10 @@ mod tests {
         let bus = Arc::new(RecordingBus::default());
         let sessions = Arc::new(MemorySessionStore::default());
         let conversations = memory_store();
-        let config = Config::with_base_url("http://localhost")
-            .with_signing_keys_provider(TestSigningKeyProvider);
+        let provider = test_provider("http://localhost");
         let state = Arc::new(
             StandaloneState::with_store(
-                config,
+                provider,
                 conversations.clone(),
                 sessions.clone(),
                 bus.clone(),
@@ -982,10 +1066,9 @@ mod tests {
         let bus = Arc::new(RecordingBus::default());
         let sessions = Arc::new(MemorySessionStore::default());
         let conversations = memory_store();
-        let config = Config::with_base_url("http://localhost")
-            .with_signing_keys_provider(TestSigningKeyProvider);
+        let provider = test_provider("http://localhost");
         let state = Arc::new(
-            StandaloneState::with_store(config, conversations.clone(), sessions, bus.clone())
+            StandaloneState::with_store(provider, conversations.clone(), sessions, bus.clone())
                 .await
                 .expect("state"),
         );
@@ -1019,11 +1102,10 @@ mod tests {
         let bus = Arc::new(RecordingBus::default());
         let sessions = Arc::new(MemorySessionStore::default());
         let conversations = memory_store();
-        let config = Config::with_base_url("http://localhost")
-            .with_signing_keys_provider(TestSigningKeyProvider);
+        let provider = test_provider("http://localhost");
         let state = Arc::new(
             StandaloneState::with_store(
-                config,
+                provider,
                 conversations.clone(),
                 sessions.clone(),
                 bus.clone(),
@@ -1094,10 +1176,14 @@ mod tests {
             }),
             trusted_origins: None,
         };
-        let Json(response) =
-            generate_token_handler(Extension(Arc::clone(state)), None, Query(query), Json(body))
-                .await
-                .expect("generate token");
+        let Json(response) = generate_token_handler(
+            Extension(Arc::clone(state)),
+            RemoteIp(None),
+            Query(query),
+            Json(body),
+        )
+        .await
+        .expect("generate token");
         response.token
     }
 

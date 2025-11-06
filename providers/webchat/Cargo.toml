@@ -15,10 +15,11 @@ store_sqlite = ["dep:rusqlite", "directline_standalone"]
 store_redis = ["dep:redis", "directline_standalone"]
 
 [dependencies]
-greentic-types = "0.2"
+greentic-types = { version = "0.2", default-features = false }
+greentic-secrets = { version = "0.2", default-features = false, features = ["spec", "core"] }
 anyhow = "1"
 async-trait = "0.1"
-axum = { version = "0.7", features = ["macros", "json", "ws", "tokio"] }
+axum = { version = "0.8", features = ["macros", "json", "ws", "tokio"] }
 http = "1"
 hyper = "1"
 serde = { version = "1", features = ["derive"] }
@@ -29,18 +30,18 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 tower = "0.5"
-async-nats = { version = "0.37", optional = true }
-thiserror = "1"
+async-nats = { version = "0.45", optional = true }
+thiserror = "2"
 metrics = "0.24"
-jsonwebtoken = "9"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 once_cell = "1"
-rusqlite = { version = "0.31", optional = true, features = ["bundled"] }
-redis = { version = "0.25", optional = true, features = ["tokio-comp"] }
+rusqlite = { version = "0.37", optional = true, features = ["bundled"] }
+redis = { version = "0.32", optional = true, features = ["tokio-comp"] }
 
 [dev-dependencies]
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
 hyper = "1"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
-tokio-tungstenite = "0.24"
+tokio-tungstenite = "0.28"
 futures-util = "0.3"

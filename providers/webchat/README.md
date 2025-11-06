@@ -22,9 +22,9 @@ Direct Line protocol:
 | ------ | ---- | ----------- |
 | `POST` | `/v3/directline/tokens/generate?env=<env>&tenant=<tenant>[&team=<team>]` | Mint a short-lived user token scoped to a `TenantCtx`. |
 | `POST` | `/v3/directline/conversations` | Requires `Authorization: Bearer <token>`; returns a conversation-scoped token and stream URL. |
-| `GET` | `/v3/directline/conversations/:id/activities?watermark=<n>` | Poll activities pending for the conversation. |
-| `POST` | `/v3/directline/conversations/:id/activities` | Accept a user activity, mirror it into Greentic, and echo to subscribers. |
-| `GET` | `/v3/directline/conversations/:id/stream?t=<token>&watermark=<n>` | Bidirectional WebSocket that streams activities to Web Chat clients. |
+| `GET` | `/v3/directline/conversations/{id}/activities?watermark=<n>` | Poll activities pending for the conversation. |
+| `POST` | `/v3/directline/conversations/{id}/activities` | Accept a user activity, mirror it into Greentic, and echo to subscribers. |
+| `GET` | `/v3/directline/conversations/{id}/stream?t=<token>&watermark=<n>` | Bidirectional WebSocket that streams activities to Web Chat clients. |
 
 Additional endpoints under `/webchat/...` (health checks, OAuth, proactive
 admin API) remain available via the `webchat_bf_mode` feature.
@@ -44,27 +44,35 @@ admin API) remain available via the `webchat_bf_mode` feature.
 
 ### Configuration
 
-The standalone server signs tokens with an HS256 key. Provide it via one of:
+All configuration now flows through an injected `Arc<dyn SecretsBackend>` which
+is provided when constructing `WebChatProvider`. The provider looks up secrets
+by scope using the following categories:
 
-* `WEBCHAT_JWT_SIGNING_KEY`
-* Secrets backend entry `webchat/jwt/signing_key` (future integration; the
-  environment variable is used for local development).
+| Scope | Category / name | Purpose |
+| ----- | ---------------- | ------- |
+| Global (for example `secrets://global/webchat/_/webchat/jwt_signing_key`) | `webchat/jwt_signing_key` | HS256 signing key used by the standalone Direct Line server. |
+| Tenant (`secrets://{env}/{tenant}/{team?}/webchat/channel_token`) | `webchat/channel_token` | Microsoft's Direct Line secret required when `directline_proxy_ms` is enabled. |
+| Tenant (`secrets://{env}/{tenant}/{team?}/webchat_oauth/issuer`) | `webchat_oauth/issuer` | OAuth issuer URL. |
+| Tenant (`secrets://{env}/{tenant}/{team?}/webchat_oauth/client_id`) | `webchat_oauth/client_id` | OAuth client identifier. |
+| Tenant (`secrets://{env}/{tenant}/{team?}/webchat_oauth/redirect_base`) | `webchat_oauth/redirect_base` | Base URL used to build the OAuth callback. |
+| Tenant (`secrets://{env}/{tenant}/{team?}/webchat_oauth/client_secret`, optional) | `webchat_oauth/client_secret` | Optional secret passed to the OAuth client. |
 
-Tokens are valid for 30 minutes by default. `/v3/directline/tokens/generate` is
-rate-limited per client IP (5 requests per minute).
-
-Signing keys should be managed through `greentic-secrets`. Production
-deployments are expected to populate `secret://webchat/jwt/signing_key`, with
-the environment variable reserved for local development.
+Tokens are valid for 30 minutes by default. `/v3/directline/tokens/generate`
+is rate-limited per client IP (5 requests per minute).
 
 ### Embedding
 
 ```rust
 use std::sync::Arc;
-use greentic_messaging_providers_webchat::{config::Config, standalone_router, StandaloneState};
+use greentic_messaging_providers_webchat::{
+    WebChatProvider, config::Config, standalone_router, StandaloneState,
+};
+use greentic_secrets::spec::{Scope, SecretsBackend};
 
-let config = Config::from_env();
-let state = Arc::new(StandaloneState::new(config).await?);
+let backend: Arc<dyn SecretsBackend + Send + Sync> = build_backend();
+let signing_scope = Scope::new("global", "webchat", None)?;
+let provider = WebChatProvider::new(Config::default(), backend).with_signing_scope(signing_scope);
+let state = Arc::new(StandaloneState::new(provider).await?);
 let app = standalone_router(Arc::clone(&state));
 ```
 
@@ -73,24 +81,16 @@ let app = standalone_router(Arc::clone(&state));
 To keep calling Microsoft's Direct Line service, compile with
 `--features directline_proxy_ms`. The legacy routes remain unchanged:
 
-* `POST /webchat/:env/:tenant[:team]/tokens/generate`
-* `POST /webchat/:env/:tenant[:team]/conversations/start`
+* `POST /webchat/{env}/{tenant}[/{team}]/tokens/generate`
+* `POST /webchat/{env}/{tenant}[/{team}]/conversations/start`
 * `GET /webchat/healthz`
 
-Configure Direct Line secrets via the existing
-`WEBCHAT_DIRECT_LINE_SECRET__{ENV}__{TENANT}[__{TEAM}]` environment variables
-(legacy `DL_SECRET__...` keys still work). You can override the upstream base
-URL with `WEBCHAT_DIRECT_LINE_BASE_URL`.
+The provider retrieves the upstream Direct Line secret from the tenant scope's
+`webchat/channel_token` entry before calling Microsoft.
 
 ## Local development
 
 ```bash
-# Standalone Direct Line signing key
-export WEBCHAT_JWT_SIGNING_KEY=local-dev-signing-secret
-
-# Optional legacy proxy secret
-export WEBCHAT_DIRECT_LINE_SECRET__DEV__ACME=your-ms-directline-secret
-
 cargo test -p greentic-messaging-providers-webchat
 ```
 
@@ -99,7 +99,8 @@ standalone endpoints. See its README for usage instructions.
 
 ### Running the standalone server locally
 
-1. Ensure a signing key is available: `export WEBCHAT_JWT_SIGNING_KEY=local-dev-signing-secret`.
+1. Provide a signing key via the secrets backend (the example server will fall
+   back to `WEBCHAT_JWT_SIGNING_KEY` for convenience).
 2. Start the example server: `cargo run --manifest-path providers/webchat/Cargo.toml --example run_standalone`.
    This binds the standalone Direct Line surface to `http://localhost:8090`.
    Point Web Chat at the standalone instance by configuring a Direct Line

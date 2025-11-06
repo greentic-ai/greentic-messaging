@@ -1,37 +1,23 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use axum::{body::to_bytes, extract::State, response::IntoResponse};
 use greentic_messaging_providers_webchat::{
-    config::OAuthProviderConfig,
+    config::{Config, OAuthProviderConfig},
     conversation::memory_store,
     directline_client::{DirectLineError, MockDirectLineApi},
     http::{AppState, DirectLinePoster, SharedDirectLinePoster},
     oauth::{self, CLOSE_WINDOW_HTML, CallbackQuery, GreenticOauthClient, StartQuery},
     session::{MemorySessionStore, SharedSessionStore, WebchatSession, WebchatSessionStore},
 };
-use greentic_types::{EnvId, TenantCtx, TenantId};
+use greentic_types::TenantCtx;
 use reqwest::Client;
 use serde_json::Value;
 use tokio::sync::Mutex;
 
-fn tenant_ctx() -> TenantCtx {
-    TenantCtx::new(EnvId::from("dev"), TenantId::from("acme"))
-}
+#[path = "../test_support/mod.rs"]
+mod support;
 
-fn config_with_oauth(
-    base: &str,
-    entries: &[(&str, &str)],
-) -> greentic_messaging_providers_webchat::config::Config {
-    let map: HashMap<String, String> = entries
-        .iter()
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect();
-    let map = Arc::new(map);
-    greentic_messaging_providers_webchat::config::Config::with_base_url(base).with_oauth_lookup({
-        let map = Arc::clone(&map);
-        move |key| map.get(key).cloned()
-    })
-}
+use support::{provider_with_secrets, signing_scope, tenant_ctx, tenant_scope};
 
 #[tokio::test]
 async fn oauth_start_redirects_to_authorize() {
@@ -42,31 +28,34 @@ async fn oauth_start_redirects_to_authorize() {
     store
         .upsert(WebchatSession::new(
             "conversation-123".to_string(),
-            tenant_ctx(),
+            tenant_ctx("dev", "acme", None),
             "token-abc".to_string(),
         ))
         .await
         .unwrap();
 
-    let state = AppState::new(
-        config_with_oauth(
-            "https://directline.test/v3/directline",
-            &[
-                (
-                    "WEBCHAT_OAUTH_ISSUER__DEV__ACME",
-                    "https://oauth.greentic.dev",
-                ),
-                ("WEBCHAT_OAUTH_CLIENT_ID__DEV__ACME", "client-xyz"),
-                (
-                    "WEBCHAT_OAUTH_REDIRECT_BASE__DEV__ACME",
-                    "https://messaging.greentic.dev",
-                ),
-            ],
-        ),
-        direct_line,
-        client,
-    )
-    .with_sessions(sessions);
+    let oauth_scope = tenant_scope("dev", "acme", None);
+    let provider = provider_with_secrets(
+        Config::with_base_url("https://directline.test/v3/directline"),
+        signing_scope(),
+        &[
+            (&oauth_scope, "webchat", "channel_token", "dl-secret"),
+            (
+                &oauth_scope,
+                "webchat_oauth",
+                "issuer",
+                "https://oauth.greentic.dev",
+            ),
+            (&oauth_scope, "webchat_oauth", "client_id", "client-xyz"),
+            (
+                &oauth_scope,
+                "webchat_oauth",
+                "redirect_base",
+                "https://messaging.greentic.dev",
+            ),
+        ],
+    );
+    let state = AppState::new(provider, direct_line, client.clone()).with_sessions(sessions);
 
     let response = oauth::start(
         State(state),
@@ -109,7 +98,7 @@ async fn oauth_callback_exchanges_code_and_posts_handle() {
     store
         .upsert(WebchatSession::new(
             "conversation-999".to_string(),
-            tenant_ctx(),
+            tenant_ctx("dev", "acme", None),
             "token-directline".to_string(),
         ))
         .await
@@ -123,28 +112,32 @@ async fn oauth_callback_exchanges_code_and_posts_handle() {
     let poster_arc: SharedDirectLinePoster = poster.clone();
     let oauth_arc: Arc<dyn GreenticOauthClient> = oauth_client.clone();
 
-    let state = AppState::new(
-        config_with_oauth(
-            "https://directline.test/v3/directline",
-            &[
-                (
-                    "WEBCHAT_OAUTH_ISSUER__DEV__ACME",
-                    "https://oauth.greentic.dev",
-                ),
-                ("WEBCHAT_OAUTH_CLIENT_ID__DEV__ACME", "client-xyz"),
-                (
-                    "WEBCHAT_OAUTH_REDIRECT_BASE__DEV__ACME",
-                    "https://messaging.greentic.dev",
-                ),
-            ],
-        ),
-        direct_line,
-        client,
-    )
-    .with_sessions(sessions)
-    .with_activity_poster(poster_arc)
-    .with_oauth_client(oauth_arc)
-    .with_conversations(conversations.clone());
+    let oauth_scope = tenant_scope("dev", "acme", None);
+    let provider = provider_with_secrets(
+        Config::with_base_url("https://directline.test/v3/directline"),
+        signing_scope(),
+        &[
+            (&oauth_scope, "webchat", "channel_token", "dl-secret"),
+            (
+                &oauth_scope,
+                "webchat_oauth",
+                "issuer",
+                "https://oauth.greentic.dev",
+            ),
+            (&oauth_scope, "webchat_oauth", "client_id", "client-xyz"),
+            (
+                &oauth_scope,
+                "webchat_oauth",
+                "redirect_base",
+                "https://messaging.greentic.dev",
+            ),
+        ],
+    );
+    let state = AppState::new(provider, direct_line, client.clone())
+        .with_sessions(sessions)
+        .with_activity_poster(poster_arc)
+        .with_oauth_client(oauth_arc)
+        .with_conversations(conversations.clone());
 
     let response = oauth::callback(
         State(state),

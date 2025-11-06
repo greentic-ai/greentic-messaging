@@ -13,12 +13,7 @@ use tracing::warn;
 
 #[cfg(feature = "directline_standalone")]
 use crate::conversation::{Activity, ChannelAccount, StoreError};
-use crate::{
-    config::{Config, OAuthProviderConfig},
-    error::WebChatError,
-    http::AppState,
-    telemetry,
-};
+use crate::{config::OAuthProviderConfig, error::WebChatError, http::AppState, telemetry};
 
 pub fn contains_oauth_card(activity: &Value) -> bool {
     activity
@@ -51,7 +46,12 @@ pub async fn start(
         .map_err(OAuthRouteError::Storage)?
         .ok_or(OAuthRouteError::ConversationNotFound)?;
 
-    let oauth_config = resolve_oauth_config(&state.config, &session.tenant_ctx)?;
+    let oauth_config = state
+        .provider
+        .oauth_config(&session.tenant_ctx)
+        .await
+        .map_err(|err| OAuthRouteError::Resolve(WebChatError::Internal(err.into())))?
+        .ok_or(OAuthRouteError::NotConfigured)?;
 
     let redirect_uri = build_redirect_uri(&oauth_config, &query.conversation_id)?;
     let authorize_url = build_authorize_url(&oauth_config, &redirect_uri, query.state.as_deref())?;
@@ -92,7 +92,12 @@ pub async fn callback(
         .map_err(OAuthRouteError::Storage)?
         .ok_or(OAuthRouteError::ConversationNotFound)?;
 
-    let oauth_config = resolve_oauth_config(&state.config, &session.tenant_ctx)?;
+    let oauth_config = state
+        .provider
+        .oauth_config(&session.tenant_ctx)
+        .await
+        .map_err(|err| OAuthRouteError::Resolve(WebChatError::Internal(err.into())))?
+        .ok_or(OAuthRouteError::NotConfigured)?;
     let redirect_uri = build_redirect_uri(&oauth_config, &query.conversation_id)?;
     let token_handle = state
         .oauth_client
@@ -133,7 +138,7 @@ pub async fn callback(
             Err(StoreError::QuotaExceeded(_)) => {
                 return Err(OAuthRouteError::Resume(WebChatError::BadRequest(
                     "conversation backlog quota exceeded",
-                )))
+                )));
             }
             Err(err) => return Err(OAuthRouteError::Resume(WebChatError::Internal(err.into()))),
         };
@@ -221,15 +226,6 @@ fn build_authorize_url(
     Ok(url)
 }
 
-fn resolve_oauth_config(
-    config: &Config,
-    tenant_ctx: &TenantCtx,
-) -> Result<OAuthProviderConfig, OAuthRouteError> {
-    config
-        .resolve_oauth_config(tenant_ctx)
-        .ok_or(OAuthRouteError::NotConfigured)
-}
-
 #[derive(Debug, Deserialize)]
 pub struct StartQuery {
     #[serde(rename = "conversationId")]
@@ -258,6 +254,7 @@ pub enum OAuthRouteError {
     Url(anyhow::Error),
     Storage(anyhow::Error),
     Exchange(anyhow::Error),
+    Resolve(WebChatError),
     Resume(WebChatError),
 }
 
@@ -269,7 +266,8 @@ impl OAuthRouteError {
             OAuthRouteError::NotConfigured => axum::http::StatusCode::NOT_FOUND,
             OAuthRouteError::Url(_)
             | OAuthRouteError::Storage(_)
-            | OAuthRouteError::Exchange(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            | OAuthRouteError::Exchange(_)
+            | OAuthRouteError::Resolve(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             OAuthRouteError::Resume(error) => return error.status(),
         }
     }
@@ -278,7 +276,7 @@ impl OAuthRouteError {
 impl IntoResponse for OAuthRouteError {
     fn into_response(self) -> Response {
         match self {
-            OAuthRouteError::Resume(err) => err.into_response(),
+            OAuthRouteError::Resume(err) | OAuthRouteError::Resolve(err) => err.into_response(),
             OAuthRouteError::BadRequest(message) => {
                 (self.as_status(), Html(message)).into_response()
             }
