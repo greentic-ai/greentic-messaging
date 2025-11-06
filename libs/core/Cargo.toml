@@ -12,6 +12,7 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 greentic-types = { workspace = true }
 secrets-core = { workspace = true }
+greentic-secrets = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 http = { workspace = true }

@@ -107,8 +107,10 @@ fn active_keys() -> anyhow::Result<Arc<JwtKeys>> {
 /// Serialises and signs the supplied claims returning the encoded JWT.
 pub fn sign(claims: &Claims) -> anyhow::Result<String> {
     let keys = active_keys()?;
-    let mut header = Header::default();
-    header.alg = Algorithm::HS256;
+    let header = Header {
+        alg: Algorithm::HS256,
+        ..Header::default()
+    };
     let token = jsonwebtoken::encode(&header, claims, &keys.encoding)?;
     Ok(token)
 }

@@ -50,7 +50,7 @@ pub async fn start(
         .provider
         .oauth_config(&session.tenant_ctx)
         .await
-        .map_err(|err| OAuthRouteError::Resolve(WebChatError::Internal(err.into())))?
+        .map_err(|err| OAuthRouteError::Resolve(WebChatError::Internal(err)))?
         .ok_or(OAuthRouteError::NotConfigured)?;
 
     let redirect_uri = build_redirect_uri(&oauth_config, &query.conversation_id)?;
@@ -96,7 +96,7 @@ pub async fn callback(
         .provider
         .oauth_config(&session.tenant_ctx)
         .await
-        .map_err(|err| OAuthRouteError::Resolve(WebChatError::Internal(err.into())))?
+        .map_err(|err| OAuthRouteError::Resolve(WebChatError::Internal(err)))?
         .ok_or(OAuthRouteError::NotConfigured)?;
     let redirect_uri = build_redirect_uri(&oauth_config, &query.conversation_id)?;
     let token_handle = state
@@ -268,7 +268,7 @@ impl OAuthRouteError {
             | OAuthRouteError::Storage(_)
             | OAuthRouteError::Exchange(_)
             | OAuthRouteError::Resolve(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            OAuthRouteError::Resume(error) => return error.status(),
+            OAuthRouteError::Resume(error) => error.status(),
         }
     }
 }

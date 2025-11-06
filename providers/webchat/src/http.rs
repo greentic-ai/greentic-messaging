@@ -95,7 +95,7 @@ impl AppState {
             direct_line,
             http_client,
             transport,
-            bus: Arc::new(NoopBus::default()),
+            bus: Arc::new(NoopBus),
             sessions: Arc::new(MemorySessionStore::default()),
             activity_poster,
             oauth_client,
@@ -248,7 +248,7 @@ async fn generate_token(
                 "team" => team_metric.clone()
             )
             .increment(1);
-            WebChatError::Internal(err.into())
+            WebChatError::Internal(err)
         })?
         .ok_or_else(|| {
             counter!(
@@ -335,7 +335,7 @@ async fn start_conversation(
             conversation_response.token.clone(),
         ))
         .await
-        .map_err(|err| WebChatError::Internal(err.into()))?;
+        .map_err(WebChatError::Internal)?;
 
     counter!(
         "webchat_conversations_started_total",
@@ -645,7 +645,7 @@ pub async fn admin_post_activity(
             .sessions
             .get(conversation_id)
             .await
-            .map_err(|err| WebChatError::Internal(err.into()))?
+            .map_err(WebChatError::Internal)?
             .ok_or(WebChatError::NotFound("conversation not found"))?;
 
         if !session
@@ -662,16 +662,15 @@ pub async fn admin_post_activity(
             return Err(WebChatError::NotFound("conversation not found"));
         }
 
-        if let Some(team) = team_filter {
-            if session
+        if let Some(team) = team_filter
+            && !session
                 .tenant_ctx
                 .team
                 .as_ref()
                 .map(|value| value.as_ref().eq_ignore_ascii_case(team))
-                != Some(true)
-            {
-                return Err(WebChatError::NotFound("conversation not found"));
-            }
+                .unwrap_or(false)
+        {
+            return Err(WebChatError::NotFound("conversation not found"));
         }
 
         return append_and_broadcast(&state, &session, activity)
@@ -683,7 +682,7 @@ pub async fn admin_post_activity(
         .sessions
         .list_by_tenant(&path.env, &path.tenant, team_filter)
         .await
-        .map_err(|err| WebChatError::Internal(err.into()))?;
+        .map_err(WebChatError::Internal)?;
 
     if sessions.is_empty() {
         return Err(WebChatError::NotFound("no matching sessions"));

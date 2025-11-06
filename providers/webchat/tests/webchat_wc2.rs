@@ -55,10 +55,12 @@ fn webchat_session() -> WebchatSession {
     WebchatSession::new("conv-1".to_string(), tenant_ctx(), "token".into())
 }
 
+type CaseAssertion = Box<dyn Fn(&IncomingMessage) + Send + Sync>;
+
 #[tokio::test]
 async fn normalize_activity_variants() {
     let session = webchat_session();
-    let cases: Vec<(&str, Value, Box<dyn Fn(&IncomingMessage) + Send + Sync>)> = vec![
+    let cases: Vec<(&str, Value, CaseAssertion)> = vec![
         (
             "text",
             json!({

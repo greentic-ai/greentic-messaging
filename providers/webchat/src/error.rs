@@ -65,14 +65,13 @@ impl IntoResponse for WebChatError {
             error: self.message(),
         });
         let mut response = (status, body).into_response();
-        if let Some(retry_after) = self.retry_after() {
-            if let Ok(header) =
+        if let Some(retry_after) = self.retry_after()
+            && let Ok(header) =
                 axum::http::HeaderValue::from_str(&retry_after.as_secs().to_string())
-            {
-                response
-                    .headers_mut()
-                    .insert(axum::http::header::RETRY_AFTER, header);
-            }
+        {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, header);
         }
         response
     }

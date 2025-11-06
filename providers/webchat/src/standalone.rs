@@ -104,7 +104,7 @@ impl StandaloneState {
             provider,
             memory_store(),
             Arc::new(MemorySessionStore::default()),
-            Arc::new(NoopBus::default()),
+            Arc::new(NoopBus),
         )
         .await
     }
@@ -425,16 +425,15 @@ async fn admin_post_activity_handler(
             return Err(StatusCode::NOT_FOUND);
         }
 
-        if let Some(team) = team_filter {
-            if session
+        if let Some(team) = team_filter
+            && !session
                 .tenant_ctx
                 .team
                 .as_ref()
                 .map(|value| value.as_ref().eq_ignore_ascii_case(team))
-                != Some(true)
-            {
-                return Err(StatusCode::NOT_FOUND);
-            }
+                .unwrap_or(false)
+        {
+            return Err(StatusCode::NOT_FOUND);
         }
 
         if !session.proactive_ok {
@@ -919,6 +918,47 @@ struct IpRateLimiter {
     buckets: Mutex<HashMap<IpAddr, TokenBucket>>,
 }
 
+struct TokenBucket {
+    tokens: f64,
+    last: Instant,
+}
+
+impl IpRateLimiter {
+    fn new(capacity: usize, window: Duration) -> Self {
+        let capacity = capacity as f64;
+        let refill_per_sec = if window.is_zero() {
+            capacity
+        } else {
+            capacity / window.as_secs_f64()
+        };
+        Self {
+            capacity,
+            refill_per_sec,
+            buckets: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn check(&self, ip: IpAddr) -> bool {
+        let mut guard = self.buckets.lock().expect("rate limiter mutex poisoned");
+        let entry = guard.entry(ip).or_insert(TokenBucket {
+            tokens: self.capacity,
+            last: Instant::now(),
+        });
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(entry.last).as_secs_f64();
+        if elapsed > 0.0 {
+            entry.tokens = (entry.tokens + elapsed * self.refill_per_sec).min(self.capacity);
+            entry.last = now;
+        }
+        if entry.tokens >= 1.0 {
+            entry.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1245,47 +1285,6 @@ mod tests {
         async fn publish(&self, _subject: &Subject, event: &GreenticEvent) -> anyhow::Result<()> {
             self.events.lock().await.push(event.clone());
             Ok(())
-        }
-    }
-}
-
-struct TokenBucket {
-    tokens: f64,
-    last: Instant,
-}
-
-impl IpRateLimiter {
-    fn new(capacity: usize, window: Duration) -> Self {
-        let capacity = capacity as f64;
-        let refill_per_sec = if window.is_zero() {
-            capacity
-        } else {
-            capacity / window.as_secs_f64()
-        };
-        Self {
-            capacity,
-            refill_per_sec,
-            buckets: Mutex::new(HashMap::new()),
-        }
-    }
-
-    fn check(&self, ip: IpAddr) -> bool {
-        let mut guard = self.buckets.lock().expect("rate limiter mutex poisoned");
-        let entry = guard.entry(ip).or_insert(TokenBucket {
-            tokens: self.capacity,
-            last: Instant::now(),
-        });
-        let now = Instant::now();
-        let elapsed = now.saturating_duration_since(entry.last).as_secs_f64();
-        if elapsed > 0.0 {
-            entry.tokens = (entry.tokens + elapsed * self.refill_per_sec).min(self.capacity);
-            entry.last = now;
-        }
-        if entry.tokens >= 1.0 {
-            entry.tokens -= 1.0;
-            true
-        } else {
-            false
         }
     }
 }

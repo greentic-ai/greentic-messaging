@@ -75,27 +75,23 @@ pub fn normalize_activity(session: &WebchatSession, activity: &Value) -> Option<
 }
 
 fn message_payload(obj: &Map<String, Value>) -> Option<MessagePayload> {
-    if let Some(attachments) = obj.get("attachments").and_then(Value::as_array) {
-        if let Some(preferred) = attachments
+    if let Some(attachments) = obj.get("attachments").and_then(Value::as_array)
+        && let Some(preferred) = attachments
             .iter()
             .find(|attachment| adaptive_card_content_type(attachment))
             .or_else(|| attachments.first())
-        {
-            let content_type = preferred
-                .get("contentType")
-                .or_else(|| preferred.get("content_type"))
-                .and_then(Value::as_str)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "application/octet-stream".into());
-            let content = preferred
-                .get("content")
-                .cloned()
-                .unwrap_or_else(|| Value::Null);
-            return Some(MessagePayload::Attachment {
-                content_type,
-                content,
-            });
-        }
+    {
+        let content_type = preferred
+            .get("contentType")
+            .or_else(|| preferred.get("content_type"))
+            .and_then(Value::as_str)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/octet-stream".into());
+        let content = preferred.get("content").cloned().unwrap_or(Value::Null);
+        return Some(MessagePayload::Attachment {
+            content_type,
+            content,
+        });
     }
 
     let text = obj.get("text").and_then(Value::as_str)?.to_string();
