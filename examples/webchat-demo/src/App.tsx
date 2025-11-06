@@ -14,13 +14,20 @@ type ConversationResponse = {
 
 type Status = "idle" | "loading" | "ready" | "error";
 
-const WEBCHAT_BASE_URL = (import.meta.env.VITE_WEBCHAT_BASE_URL ?? "").replace(/\/$/, "");
+const envVars = import.meta.env as Record<string, string | undefined>;
+
+const WEBCHAT_BASE_URL = (envVars.WEBCHAT_BASE_URL ?? envVars.VITE_WEBCHAT_BASE_URL ?? "")
+  .trim()
+  .replace(/\/$/, "");
 const WEBCHAT_DIRECT_LINE_DOMAIN =
-  (import.meta.env.VITE_WEBCHAT_DIRECTLINE_DOMAIN as string | undefined)?.replace(/\/$/, "") ??
-  "https://localhost:8080/v3/directline";
-const WEBCHAT_ENV = import.meta.env.VITE_WEBCHAT_ENV || "dev";
-const WEBCHAT_TENANT = import.meta.env.VITE_WEBCHAT_TENANT || "demo";
-const WEBCHAT_TEAM = import.meta.env.VITE_WEBCHAT_TEAM || "";
+  (envVars.WEBCHAT_DIRECTLINE_DOMAIN ?? envVars.VITE_WEBCHAT_DIRECTLINE_DOMAIN)?.replace(/\/$/, "") ??
+  "http://localhost:8090/v3/directline";
+const WEBCHAT_ENV = (envVars.WEBCHAT_ENV ?? envVars.VITE_WEBCHAT_ENV ?? "dev").trim() || "dev";
+const WEBCHAT_TENANT = (envVars.WEBCHAT_TENANT ?? envVars.VITE_WEBCHAT_TENANT ?? "demo").trim() || "demo";
+const WEBCHAT_TEAM = (envVars.WEBCHAT_TEAM ?? envVars.VITE_WEBCHAT_TEAM ?? "").trim();
+const WEBCHAT_USER_ID =
+  (envVars.WEBCHAT_USER_ID ?? envVars.VITE_WEBCHAT_USER_ID ?? "greentic-demo-user").trim() ||
+  "greentic-demo-user";
 
 const DIRECT_LINE_ROUTE = `/v3/directline`;
 
@@ -44,7 +51,7 @@ async function postJSON<T>(
   const response = await fetch(resolveUrl(path), {
     method: "POST",
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: JSON.stringify(body ?? {}),
   });
 
   if (!response.ok) {
@@ -73,9 +80,9 @@ export default function App(): JSX.Element {
         query.set("team", WEBCHAT_TEAM);
       }
 
-      const tokenResponse = await postJSON<TokenResponse>(
-        `${DIRECT_LINE_ROUTE}/tokens/generate?${query.toString()}`,
-      );
+      const tokenResponse = await postJSON<TokenResponse>(`${DIRECT_LINE_ROUTE}/tokens/generate?${query.toString()}`, {
+        user: { id: WEBCHAT_USER_ID },
+      });
       setExpiresIn(tokenResponse.expires_in ?? null);
 
       const conversationResponse = await postJSON<ConversationResponse>(

@@ -14,14 +14,17 @@ npm run dev
 By default the dev server proxies `/v3/directline` to `http://localhost:8090`.
 Start the standalone server with
 `cargo run --manifest-path libs/core/Cargo.toml --example run_standalone` and no
-other setup is required. Optional overrides live in `.env.local`:
+other setup is required. Optional overrides live in `examples/webchat-demo/.env.local`
+or your repository `.env`. Supply either `WEBCHAT_*` or `VITE_WEBCHAT_*` keys (both
+prefixes are recognised):
 
 ```ini
-VITE_WEBCHAT_ENV=dev
-VITE_WEBCHAT_TENANT=acme
-VITE_WEBCHAT_TEAM=support # optional
-VITE_WEBCHAT_BASE_URL=https://messaging.example.com # optional
-VITE_WEBCHAT_DIRECTLINE_DOMAIN=https://localhost:8080/v3/directline # optional
+WEBCHAT_ENV=dev
+WEBCHAT_TENANT=acme
+WEBCHAT_TEAM=support                             # optional
+WEBCHAT_BASE_URL=https://messaging.example.com   # optional
+WEBCHAT_DIRECTLINE_DOMAIN=https://localhost:8080/v3/directline  # optional
+WEBCHAT_USER_ID=greentic-demo-user               # optional
 ```
 
 The demo:
