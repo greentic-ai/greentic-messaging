@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use metrics::counter;
 use tracing::{debug, info, warn};
 
+/// Circuit breaker configuration shared across Direct Line polling loops.
 #[derive(Clone, Debug)]
 pub struct CircuitSettings {
     pub failure_threshold: u32,
@@ -25,6 +26,7 @@ enum CircuitState {
     Open { reopen_at: Instant },
 }
 
+/// Lightweight circuit breaker used to guard the Direct Line poll loop.
 pub struct CircuitBreaker {
     state: CircuitState,
     settings: CircuitSettings,
@@ -138,6 +140,7 @@ impl CircuitBreaker {
     }
 }
 
+/// Metric label bundle carried by the circuit breaker.
 #[derive(Clone, Debug)]
 pub struct CircuitLabels {
     pub env: String,

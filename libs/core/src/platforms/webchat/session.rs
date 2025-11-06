@@ -6,6 +6,7 @@ use greentic_types::TenantCtx;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
+/// In-memory representation of the WebChat conversation session.
 #[derive(Clone, Debug)]
 pub struct WebchatSession {
     pub conversation_id: String,
@@ -48,6 +49,7 @@ pub trait WebchatSessionStore: Send + Sync {
     ) -> Result<Vec<WebchatSession>>;
 }
 
+/// Simple in-memory session store used by the standalone server.
 #[derive(Default)]
 pub struct MemorySessionStore {
     inner: RwLock<HashMap<String, WebchatSession>>,

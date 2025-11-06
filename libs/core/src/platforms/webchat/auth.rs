@@ -1,10 +1,3 @@
-//! JWT helpers for the standalone Direct Line feature.
-//!
-//! Implements HS256 signing/verification using configuration supplied by
-//! `Config`. Tokens embed tenant context information so that the Direct Line
-//! server can authorise conversation access without contacting the upstream
-//! Microsoft service.
-
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -13,7 +6,7 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use time::{Duration as TimeDuration, OffsetDateTime};
 
-use crate::config::SigningKeys;
+use super::config::SigningKeys;
 
 const ISSUER: &str = "greentic.webchat";
 const AUDIENCE: &str = "directline";

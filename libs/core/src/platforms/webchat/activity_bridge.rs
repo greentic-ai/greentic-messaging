@@ -4,11 +4,12 @@ use serde_json::{Map, Value};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{
+use super::{
     session::WebchatSession,
     types::{ConversationRef, IncomingMessage, MessagePayload, Participant},
 };
 
+/// Normalises Bot Framework activities into internal Greentic events.
 pub fn normalize_activity(session: &WebchatSession, activity: &Value) -> Option<IncomingMessage> {
     let obj = activity.as_object()?;
     let activity_type = obj.get("type").and_then(Value::as_str).unwrap_or("event");

@@ -118,6 +118,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
+name = "arc-swap"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
+
+[[package]]
 name = "arraydeque"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -283,6 +289,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "backon"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cffb0e931875b666fc4fcb20fee52e9bbd1ef836fd9e9e04ec21555f9f85f7ef"
+dependencies = [
+ "fastrand",
 ]
 
 [[package]]
@@ -1164,14 +1179,13 @@ dependencies = [
  "futures-util",
  "greentic-secrets",
  "greentic-types",
+ "gsm-core",
  "http",
  "hyper",
  "jsonwebtoken",
  "metrics",
  "once_cell",
- "redis",
  "reqwest",
- "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -1376,6 +1390,7 @@ name = "gsm-core"
 version = "0.2.3"
 dependencies = [
  "anyhow",
+ "async-nats",
  "async-trait",
  "axum",
  "bytes",
@@ -1384,11 +1399,19 @@ dependencies = [
  "greentic-secrets-core",
  "greentic-types",
  "http",
+ "jsonwebtoken",
+ "metrics",
+ "once_cell",
+ "redis",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
+ "thiserror 2.0.17",
  "time",
  "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3336,9 +3359,12 @@ version = "0.32.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "014cc767fefab6a3e798ca45112bccad9c6e0e218fbd49720042716c73cfef44"
 dependencies = [
+ "arc-swap",
+ "backon",
  "bytes",
  "cfg-if",
  "combine",
+ "futures-channel",
  "futures-util",
  "itoa",
  "num-bigint",
@@ -3971,9 +3997,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
-version = "2.0.108"
+version = "2.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da58917d35242480a05c2897064da0a80589a2a0476c9a3f2fdc83b53502e917"
+checksum = "2f17c7e013e88258aa9543dcbe81aca68a667a9ac37cd69c9fbc07858bfe0e2f"
 dependencies = [
  "proc-macro2",
  "quote",

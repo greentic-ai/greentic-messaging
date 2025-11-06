@@ -1,3 +1,5 @@
+use std::{sync::Arc, time::Instant};
+
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use greentic_types::TenantCtx;
@@ -5,12 +7,10 @@ use metrics::{counter, histogram};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::Arc;
-use std::time::Instant;
 use time::OffsetDateTime;
 use tracing::warn;
 
-use crate::{
+use super::{
     activity_bridge::normalize_activity,
     backoff,
     bus::{SharedBus, Subject},

@@ -4,8 +4,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tracing::debug;
 
-use crate::types::GreenticEvent;
+use super::types::GreenticEvent;
 
+/// Pub/sub routing subject used by the internal event bus.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Subject(String);
 
@@ -64,7 +65,7 @@ impl EventBus for NatsBus {
     async fn publish(&self, subject: &Subject, event: &GreenticEvent) -> Result<()> {
         let payload = serde_json::to_vec(event)?;
         self.client
-            .publish(subject.as_str(), payload.into())
+            .publish(subject.as_str().to_owned(), payload.into())
             .await?;
         Ok(())
     }

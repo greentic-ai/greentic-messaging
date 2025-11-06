@@ -27,15 +27,15 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
-use crate::{
+use super::{
     WebChatProvider,
+    auth::{self as jwt, Claims, TenantClaims},
     bus::{NoopBus, SharedBus},
     conversation::{
         Activity, ChannelAccount, ConversationAccount, SharedConversationStore, StoredActivity,
         memory_store,
     },
     ingress,
-    jwt::{self, Claims, TenantClaims},
     session::{MemorySessionStore, SharedSessionStore, WebchatSession},
 };
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
@@ -898,12 +898,12 @@ async fn append_bot_activity(
     Ok(())
 }
 
-fn map_store_error(err: crate::conversation::StoreError) -> StatusCode {
+fn map_store_error(err: super::conversation::StoreError) -> StatusCode {
     match err {
-        crate::conversation::StoreError::AlreadyExists(_) => StatusCode::CONFLICT,
-        crate::conversation::StoreError::NotFound(_) => StatusCode::NOT_FOUND,
-        crate::conversation::StoreError::QuotaExceeded(_) => StatusCode::TOO_MANY_REQUESTS,
-        crate::conversation::StoreError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        super::conversation::StoreError::AlreadyExists(_) => StatusCode::CONFLICT,
+        super::conversation::StoreError::NotFound(_) => StatusCode::NOT_FOUND,
+        super::conversation::StoreError::QuotaExceeded(_) => StatusCode::TOO_MANY_REQUESTS,
+        super::conversation::StoreError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
@@ -963,7 +963,7 @@ impl IpRateLimiter {
 mod tests {
     use super::*;
 
-    use crate::{
+    use crate::platforms::webchat::{
         WebChatProvider,
         bus::{EventBus, Subject},
         config::Config,

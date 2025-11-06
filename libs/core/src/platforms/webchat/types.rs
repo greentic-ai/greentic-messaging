@@ -6,12 +6,14 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// Internal bus events emitted by the WebChat platform.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GreenticEvent {
     IncomingMessage(IncomingMessage),
 }
 
+/// Normalised inbound payload consumed by flows.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IncomingMessage {
     pub id: String,
@@ -27,6 +29,7 @@ pub struct IncomingMessage {
 }
 
 impl IncomingMessage {
+    /// Creates a placeholder message for tests.
     pub fn new(id: Option<String>, tenant_ctx: TenantCtx) -> Self {
         Self {
             id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
@@ -48,12 +51,14 @@ impl IncomingMessage {
     }
 }
 
+/// Direct Line conversation reference attached to incoming messages.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ConversationRef {
     pub channel: String,
     pub conversation_id: String,
 }
 
+/// Participant metadata extracted from the activity.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Participant {
     pub id: String,
@@ -63,6 +68,7 @@ pub struct Participant {
     pub role: Option<String>,
 }
 
+/// Supported message payload variants after normalisation.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessagePayload {

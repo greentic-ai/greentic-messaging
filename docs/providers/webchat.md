@@ -1,10 +1,15 @@
 # Web Chat Provider (Bot Framework Direct Line)
 
-The `providers/webchat` crate exposes a Direct Line compatible façade for
-Greentic Messaging. It now supports two deployment modes:
+The Direct Line runtime now lives under **`gsm-core::platforms::webchat`** so it
+can be shared by binaries and other crates without depending on the provider
+layout. The `providers/webchat` crate re-exports the same types for backwards
+compatibility, but new integrations should import from `gsm_core` directly.
+
+Two deployment modes are available:
 
 * **Standalone Direct Line** (feature: `directline_standalone`, enabled by
-  default). All tokens, conversations, and websockets stay within Greentic.
+  default in both `gsm-core` and the provider). All tokens, conversations, and
+  websockets stay within Greentic.
 * **Legacy proxy** (feature: `directline_proxy_ms`). The original PR-WC1
   behaviour that swaps Microsoft Direct Line secrets for short-lived tokens.
 
@@ -59,12 +64,16 @@ At minimum the following entries must exist:
 | Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/redirect_base`) | `webchat_oauth/redirect_base` | Base URL used to build the OAuth callback URL. |
 | Tenant scope (`secrets://{env}/{tenant}/{team?}/webchat_oauth/client_secret`, optional) | `webchat_oauth/client_secret` | Optional client secret forwarded to `GreenticOauthClient`. |
 
-Inject the backend when constructing `WebChatProvider` and hand it to
-`AppState`/`StandaloneState`:
+Inject the backend when constructing `WebChatProvider` (from `gsm_core`) and
+hand it to `AppState`/`StandaloneState`:
 
 ```rust
 use std::sync::Arc;
-use greentic_messaging_providers_webchat::{WebChatProvider, config::Config, StandaloneState, standalone_router};
+use gsm_core::platforms::webchat::{
+    config::Config,
+    provider::WebChatProvider,
+    standalone::{StandaloneState, router as standalone_router},
+};
 use greentic_secrets::spec::Scope;
 
 let backend: Arc<dyn greentic_secrets::spec::SecretsBackend + Send + Sync> = build_backend();
@@ -90,8 +99,9 @@ validated server-side.
 
 ## Legacy proxy mode (optional)
 
-Enable `directline_proxy_ms` to keep calling Microsoft's Direct Line API. The
-routes match the original `/webchat/{env}/{tenant}[/{team}]/tokens/generate` and
+Enable `directline_proxy_ms` alongside `webchat_bf_mode` to keep calling
+Microsoft's Direct Line API. The routes match the original
+`/webchat/{env}/{tenant}[/{team}]/tokens/generate` and
 `/webchat/{env}/{tenant}[/{team}]/conversations/start` endpoints. When this
 feature is active the provider fetches `webchat/channel_token` from the tenant's
 secret scope and uses it to authenticate upstream requests.

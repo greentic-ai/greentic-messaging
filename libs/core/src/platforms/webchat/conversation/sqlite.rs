@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     path::Path,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex},
 };
 
 use rusqlite::{Connection, params};
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 
 #[derive(Clone)]
 pub struct SqliteConversationStore {
-    conn: Arc<Mutex<Connection>>,
+    conn: Arc<StdMutex<Connection>>,
     channels: Arc<Mutex<HashMap<String, broadcast::Sender<StoredActivity>>>>,
 }
 
@@ -35,7 +35,7 @@ pub fn sqlite_store(path: impl AsRef<Path>) -> anyhow::Result<SharedConversation
     let conn = Connection::open(path)?;
     conn.execute_batch(CREATE_TABLE_SQL)?;
     Ok(Arc::new(SqliteConversationStore {
-        conn: Arc::new(Mutex::new(conn)),
+        conn: Arc::new(StdMutex::new(conn)),
         channels: Arc::new(Mutex::new(HashMap::new())),
     }))
 }
@@ -65,8 +65,7 @@ impl SqliteConversationStore {
     async fn load_record(
         &self,
         conversation_id: &str,
-    ) -> Result<Option<PersistedRecord>, StoreError>
-where {
+    ) -> Result<Option<PersistedRecord>, StoreError> {
         let id = conversation_id.to_string();
         self.with_conn(move |conn| {
             let mut stmt = conn
@@ -219,11 +218,13 @@ impl ConversationStore for SqliteConversationStore {
         &self,
         conversation_id: &str,
     ) -> Result<broadcast::Receiver<StoredActivity>, StoreError> {
-        let channels = self.channels.lock().await;
-        let sender = channels
-            .get(conversation_id)
-            .ok_or_else(|| StoreError::NotFound(conversation_id.to_string()))?
-            .clone();
+        let mut guard = self.channels.lock().await;
+        if !guard.contains_key(conversation_id) {
+            return Err(StoreError::NotFound(conversation_id.to_string()));
+        }
+        let sender = guard
+            .entry(conversation_id.to_string())
+            .or_insert_with(|| broadcast::channel(32).0);
         Ok(sender.subscribe())
     }
 }

@@ -1,11 +1,14 @@
 use std::time::Duration;
 
 use anyhow::Error;
-use axum::response::{IntoResponse, Response};
-use axum::{Json, http::StatusCode};
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use serde::Serialize;
 
-use crate::directline_client::DirectLineError;
+use super::directline_client::DirectLineError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WebChatError {

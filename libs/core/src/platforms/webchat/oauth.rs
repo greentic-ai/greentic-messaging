@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 use tracing::warn;
 
 #[cfg(feature = "directline_standalone")]
-use crate::conversation::{Activity, ChannelAccount, StoreError};
-use crate::{config::OAuthProviderConfig, error::WebChatError, http::AppState, telemetry};
+use super::conversation::{Activity, ChannelAccount, StoreError};
+use super::{config::OAuthProviderConfig, error::WebChatError, http::AppState, telemetry};
 
 pub fn contains_oauth_card(activity: &Value) -> bool {
     activity
@@ -33,6 +33,26 @@ pub fn contains_oauth_card(activity: &Value) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StartQuery {
+    #[serde(rename = "conversationId")]
+    pub conversation_id: String,
+    #[serde(default)]
+    pub state: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CallbackQuery {
+    #[serde(rename = "conversationId")]
+    pub conversation_id: String,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 pub async fn start(
@@ -224,26 +244,6 @@ fn build_authorize_url(
         }
     }
     Ok(url)
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StartQuery {
-    #[serde(rename = "conversationId")]
-    pub conversation_id: String,
-    #[serde(default)]
-    pub state: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CallbackQuery {
-    #[serde(rename = "conversationId")]
-    pub conversation_id: String,
-    #[serde(default)]
-    pub code: Option<String>,
-    #[serde(default)]
-    pub state: Option<String>,
-    #[serde(default)]
-    pub error: Option<String>,
 }
 
 #[derive(Debug)]

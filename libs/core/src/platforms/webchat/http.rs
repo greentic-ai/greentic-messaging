@@ -12,13 +12,11 @@ use serde_json::Value;
 use tracing::warn;
 
 #[cfg(feature = "directline_standalone")]
-use crate::conversation::{
+use super::conversation::{
     Activity, ChannelAccount, ConversationAccount, SharedConversationStore, StoreError, noop_store,
 };
-use crate::{
-    WebChatProvider,
-    auth::RouteContext,
-    backoff,
+use super::{
+    WebChatProvider, backoff,
     bus::{NoopBus, SharedBus},
     circuit::{CircuitBreaker, CircuitLabels, CircuitSettings},
     directline_client::{ConversationResponse, DirectLineApi, DirectLineError, TokenResponse},
@@ -28,10 +26,12 @@ use crate::{
         run_poll_loop,
     },
     oauth::{GreenticOauthClient, ReqwestGreenticOauthClient},
+    provider::RouteContext,
     session::{MemorySessionStore, SharedSessionStore, WebchatSession},
     telemetry,
 };
 #[cfg(not(feature = "directline_standalone"))]
+#[allow(dead_code)]
 type SharedConversationStore = ();
 use async_trait::async_trait;
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
@@ -180,8 +180,8 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/webchat/admin/{env}/{tenant}/post-activity",
             post(admin_post_activity),
         )
-        .route("/webchat/oauth/start", get(crate::oauth::start))
-        .route("/webchat/oauth/callback", get(crate::oauth::callback))
+        .route("/webchat/oauth/start", get(super::oauth::start))
+        .route("/webchat/oauth/callback", get(super::oauth::callback))
         .with_state(state)
 }
 
@@ -390,7 +390,8 @@ fn build_tenant_ctx(ctx: &RouteContext) -> TenantCtx {
         TenantId::from(ctx.tenant().to_string()),
     );
     if let Some(team) = ctx.team() {
-        tenant_ctx = tenant_ctx.with_team(Some(TeamId::from(team.to_string())));
+        let team_id = TeamId::from(team.to_string());
+        tenant_ctx = tenant_ctx.with_team(Some(team_id));
     }
     tenant_ctx
 }

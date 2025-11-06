@@ -13,6 +13,7 @@ const MAX_DELAY_MS: u64 = 1_000;
 #[cfg(not(test))]
 const MAX_DELAY_MS: u64 = 30_000;
 
+/// Exponential backoff with full jitter tuned for Direct Line polling failures.
 pub async fn sleep(attempt: u32) {
     let pow = attempt.min(16); // prevent overflow
     let base = BASE_DELAY_MS.saturating_mul(1u64 << pow);

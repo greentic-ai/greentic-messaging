@@ -1,7 +1,7 @@
 use greentic_types::TenantCtx;
 use tracing::info_span;
 
-use crate::auth::RouteContext;
+use crate::platforms::webchat::provider::RouteContext;
 
 pub fn span_for(action: &'static str, ctx: &RouteContext) -> tracing::Span {
     info_span!(

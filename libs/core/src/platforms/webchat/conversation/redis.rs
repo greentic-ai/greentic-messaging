@@ -11,7 +11,7 @@ use greentic_types::TenantCtx;
 
 #[derive(Clone)]
 pub struct RedisConversationStore {
-    client: Arc<redis::Client>,
+    client: redis::Client,
     channels: Arc<Mutex<std::collections::HashMap<String, broadcast::Sender<StoredActivity>>>>,
 }
 
@@ -25,7 +25,7 @@ struct PersistedRecord {
 pub async fn redis_store(connection_string: &str) -> anyhow::Result<SharedConversationStore> {
     let client = redis::Client::open(connection_string)?;
     Ok(Arc::new(RedisConversationStore {
-        client: Arc::new(client),
+        client,
         channels: Arc::new(Mutex::new(std::collections::HashMap::new())),
     }))
 }
@@ -163,11 +163,13 @@ impl ConversationStore for RedisConversationStore {
         &self,
         conversation_id: &str,
     ) -> Result<broadcast::Receiver<StoredActivity>, StoreError> {
-        let mut channels = self.channels.lock().await;
-        let sender = channels
+        let mut guard = self.channels.lock().await;
+        if !guard.contains_key(conversation_id) {
+            return Err(StoreError::NotFound(conversation_id.to_string()));
+        }
+        let sender = guard
             .entry(conversation_id.to_string())
-            .or_insert_with(|| broadcast::channel(32).0)
-            .clone();
+            .or_insert_with(|| broadcast::channel(32).0);
         Ok(sender.subscribe())
     }
 }

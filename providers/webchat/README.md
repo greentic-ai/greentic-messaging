@@ -1,7 +1,11 @@
 # WebChat Direct Line Gateway
 
-The `providers/webchat` crate gives Greentic Messaging a Bot Framework Direct
-Line façade. It now ships with two complementary features:
+The WebChat implementation now lives in the shared `gsm-core` crate under
+`gsm_core::platforms::webchat`. This `providers/webchat` crate re-exports the
+same types so existing call sites keep compiling, but new code should prefer the
+core module directly.
+
+Two complementary features are available:
 
 * `directline_standalone` (default) — hosts a complete Direct Line service in
   process. Tokens and conversations are minted locally without reaching
@@ -64,8 +68,10 @@ is rate-limited per client IP (5 requests per minute).
 
 ```rust
 use std::sync::Arc;
-use greentic_messaging_providers_webchat::{
-    WebChatProvider, config::Config, standalone_router, StandaloneState,
+use gsm_core::platforms::webchat::{
+    provider::WebChatProvider,
+    config::Config,
+    standalone::{StandaloneState, router as standalone_router},
 };
 use greentic_secrets::spec::{Scope, SecretsBackend};
 
@@ -99,8 +105,8 @@ standalone endpoints. See its README for usage instructions.
 
 ### Running the standalone server locally
 
-1. Provide a signing key via the secrets backend (the example server will fall
-   back to `WEBCHAT_JWT_SIGNING_KEY` for convenience).
+1. Provide a signing key via your secrets backend so the provider can resolve
+   `webchat/jwt_signing_key`.
 2. Start the example server: `cargo run --manifest-path providers/webchat/Cargo.toml --example run_standalone`.
    This binds the standalone Direct Line surface to `http://localhost:8090`.
    Point Web Chat at the standalone instance by configuring a Direct Line
