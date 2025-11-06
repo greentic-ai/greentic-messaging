@@ -33,6 +33,10 @@ jobs:
             target: conformance-teams
             required: "TEAMS_TENANT_ID TEAMS_CLIENT_ID TEAMS_CLIENT_SECRET TEAMS_CHAT_ID"
             any_of: ""
+          - platform: webchat
+            target: conformance-webchat
+            required: "WEBCHAT_DIRECT_LINE_SECRET WEBCHAT_ENV WEBCHAT_TENANT"
+            any_of: ""
     env:
       CARGO_TERM_COLOR: always
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -49,6 +53,10 @@ jobs:
       TEAMS_CLIENT_ID: ${{ secrets.TEAMS_CLIENT_ID }}
       TEAMS_CLIENT_SECRET: ${{ secrets.TEAMS_CLIENT_SECRET }}
       TEAMS_CHAT_ID: ${{ secrets.TEAMS_CHAT_ID }}
+      WEBCHAT_DIRECT_LINE_SECRET: ${{ secrets.WEBCHAT_DIRECT_LINE_SECRET }}
+      WEBCHAT_ENV: ${{ secrets.WEBCHAT_ENV }}
+      WEBCHAT_TENANT: ${{ secrets.WEBCHAT_TENANT }}
+      WEBCHAT_TEAM: ${{ secrets.WEBCHAT_TEAM }}
     steps:
       - uses: actions/checkout@v4
 

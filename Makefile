@@ -1,6 +1,6 @@
 .PHONY: all build check fmt lint test run-runner stack-up stack-down \
 	conformance conformance-slack conformance-telegram conformance-webex \
-	conformance-whatsapp conformance-teams
+	conformance-whatsapp conformance-teams conformance-webchat
 
 STACK_FILE ?= docker/stack.yml
 
@@ -79,7 +79,7 @@ run-subscriptions-teams:
 run-mock-weather-tool:
 	RUST_LOG=info cargo run -p mock-weather-tool
 
-conformance: conformance-slack conformance-telegram conformance-webex conformance-whatsapp conformance-teams
+conformance: conformance-slack conformance-telegram conformance-webex conformance-whatsapp conformance-teams conformance-webchat
 	@echo "Conformance suite complete"
 
 conformance-slack:
@@ -96,3 +96,6 @@ conformance-whatsapp:
 
 conformance-teams:
 	cargo test -p gsm-egress-teams $(E2E_ARGS)
+
+conformance-webchat:
+	cargo test -p greentic-webchat-conformance

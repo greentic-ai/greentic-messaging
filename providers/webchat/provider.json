@@ -10,7 +10,7 @@
     "rate_limit": { "rpm": 600, "burst": 200 }
   },
   "endpoints": {
-    "send": "http://localhost:8080/webchat/send",
+    "send": "http://localhost:8090/webchat/send",
     "receive_webhook": "/webchat/incoming"
   }
 }

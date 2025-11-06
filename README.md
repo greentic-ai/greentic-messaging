@@ -234,7 +234,7 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
      }
    }
    ```
-   Tenant is required; team is optional. Open `http://localhost:8090` to try the sample form that ships with the ingress.
+  Tenant is required; team is optional. Open `http://localhost:8090` to try the sample form that ships with the ingress.
 
 ## WhatsApp Integration
 

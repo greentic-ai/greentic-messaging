@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
+use tokio::net::TcpListener;
 
 static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
 
@@ -76,8 +77,17 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "0.0.0.0:8090".into())
         .parse()
         .unwrap();
+    let listener = match TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
+            return Err(anyhow::anyhow!(
+                "port {} already in use; set BIND=0.0.0.0:PORT to override",
+                addr
+            ));
+        }
+        Err(err) => return Err(err.into()),
+    };
     tracing::info!("ingress-webchat listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }

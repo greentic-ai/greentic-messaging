@@ -28,18 +28,20 @@ members = [
   "libs/idempotency",
   "libs/backpressure",
   "libs/dlq",
+  "providers/webchat",
   "scripts",
   "tools/nats-demo",
   "tools/mock-weather-tool",
   "apps/cli-dlq",
   "apps/slack_oauth",
+  "conformance/webchat",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
