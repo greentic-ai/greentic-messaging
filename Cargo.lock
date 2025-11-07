@@ -361,9 +361,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.44"
+version = "1.2.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37521ac7aabe3d13122dc382493e20c9416f299d2ccd5b3a5340a2570cdeb0f3"
+checksum = "35900b6c8d709fb1d854671ae27aeaa9eec2f8b01b364e1619a40da3e6fe2afe"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -780,7 +780,7 @@ dependencies = [
  "axum",
  "dotenvy",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-egress-common",
@@ -1086,7 +1086,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "hex",
  "jsonwebtoken",
@@ -1112,7 +1112,7 @@ checksum = "8278567df12db1b22c9e1748975d627360f21e9b1f16beef0f08811b45d962a0"
 dependencies = [
  "greentic-secrets-core",
  "greentic-secrets-spec",
- "greentic-types",
+ "greentic-types 0.2.3",
 ]
 
 [[package]]
@@ -1193,6 +1193,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "greentic-types"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6362e86ec9aa970380ae6815a2704cbcf208b6cc8f5405bdca4b0fb8446a805"
+dependencies = [
+ "semver",
+ "serde",
+ "serde_with",
+ "thiserror 2.0.17",
+ "time",
+]
+
+[[package]]
 name = "greentic-types-macros"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1211,7 +1224,7 @@ dependencies = [
  "async-trait",
  "axum",
  "greentic-secrets",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "http",
  "reqwest",
@@ -1237,7 +1250,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-telemetry",
  "once_cell",
  "serde",
@@ -1254,7 +1267,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "clap",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-dlq",
  "gsm-telemetry",
@@ -1276,7 +1289,7 @@ dependencies = [
  "dashmap",
  "greentic-secrets",
  "greentic-secrets-core",
- "greentic-types",
+ "greentic-types 0.3.0",
  "http",
  "jsonwebtoken",
  "metrics",
@@ -1302,7 +1315,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-telemetry",
  "nanoid",
  "serde",
@@ -1318,7 +1331,7 @@ version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-nats",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-telemetry",
@@ -1335,7 +1348,7 @@ dependencies = [
  "async-trait",
  "dotenvy",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-dlq",
@@ -1360,7 +1373,7 @@ dependencies = [
  "async-trait",
  "dotenvy",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-dlq",
@@ -1387,7 +1400,7 @@ dependencies = [
  "axum",
  "dashmap",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-dlq",
@@ -1414,7 +1427,7 @@ dependencies = [
  "axum",
  "dotenvy",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-dlq",
@@ -1441,7 +1454,7 @@ dependencies = [
  "async-nats",
  "dotenvy",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-dlq",
@@ -1465,7 +1478,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-telemetry",
  "once_cell",
  "serde",
@@ -1507,7 +1520,7 @@ dependencies = [
  "async-nats",
  "axum",
  "greentic-messaging-security",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1531,7 +1544,7 @@ dependencies = [
  "async-nats",
  "axum",
  "greentic-messaging-security",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1554,7 +1567,7 @@ dependencies = [
  "async-trait",
  "axum",
  "greentic-messaging-security",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1581,7 +1594,7 @@ dependencies = [
  "async-nats",
  "axum",
  "greentic-messaging-security",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1604,7 +1617,7 @@ dependencies = [
  "async-nats",
  "async-trait",
  "axum",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-idempotency",
  "gsm-ingress-common",
@@ -1634,7 +1647,7 @@ dependencies = [
  "async-trait",
  "axum",
  "greentic-messaging-security",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-dlq",
  "gsm-idempotency",
@@ -1658,7 +1671,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dashmap",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "reqwest",
  "serde",
@@ -1675,7 +1688,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-backpressure",
  "gsm-core",
  "gsm-dlq",
@@ -1703,7 +1716,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-telemetry",
  "http-body-util",
@@ -1724,7 +1737,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-telemetry",
  "reqwest",
  "serde",
@@ -1739,7 +1752,7 @@ name = "gsm-telemetry"
 version = "0.2.3"
 dependencies = [
  "anyhow",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "once_cell",
  "tracing",
@@ -1771,7 +1784,7 @@ version = "0.2.3"
 dependencies = [
  "anyhow",
  "greentic-messaging-security",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-telemetry",
  "gsm-testutil",
@@ -2282,9 +2295,9 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "10.1.0"
+version = "10.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d119c6924272d16f0ab9ce41f7aa0bfef9340c00b0bb7ca3dd3b263d4a9150b"
+checksum = "c76e1c7d7df3e34443b3621b459b066a7b79644f059fc8b2db7070c825fd417e"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -2441,7 +2454,7 @@ version = "0.2.3"
 dependencies = [
  "anyhow",
  "axum",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-telemetry",
  "serde",
  "serde_json",
@@ -2455,7 +2468,7 @@ version = "0.2.3"
 dependencies = [
  "anyhow",
  "axum",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-telemetry",
  "serde",
  "serde_json",
@@ -2470,7 +2483,7 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-telemetry",
  "serde",
  "serde_json",
@@ -2504,7 +2517,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "futures",
- "greentic-types",
+ "greentic-types 0.3.0",
  "gsm-core",
  "gsm-telemetry",
  "serde",
@@ -3089,9 +3102,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.41"
+version = "1.0.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce25767e7b499d1b604768e7cde645d14cc8584231ea6b295e9c9eb22c02e1d1"
+checksum = "a338cc41d27e6cc6dce6cefc13a0729dfbb81c262b1f519331575dd80ef3067f"
 dependencies = [
  "proc-macro2",
 ]
