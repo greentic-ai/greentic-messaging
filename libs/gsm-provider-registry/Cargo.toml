@@ -20,7 +20,7 @@ greentic-types = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 dashmap = { workspace = true }
-gsm-core = { version = "0.2.1", path = "../core" }
+gsm-core = { workspace = true }
 reqwest = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

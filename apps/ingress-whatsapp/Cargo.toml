@@ -20,7 +20,7 @@ gsm-ingress-common = { path = "../ingress-common" }
 gsm-dlq = { path = "../../libs/dlq" }
 hmac = { workspace = true }
 sha2 = { workspace = true }
-security = { package = "greentic-messaging-security", path = "../../libs/security" }
+security = { workspace = true }
 gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
 reqwest = { workspace = true }

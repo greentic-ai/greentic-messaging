@@ -52,6 +52,5 @@ workspace = true
 optional = true
 
 [dependencies.gsm-core]
-version = "0.2.1"
-path = "../core"
+workspace = true
 optional = true

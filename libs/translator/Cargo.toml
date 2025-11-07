@@ -9,9 +9,9 @@ license.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gsm-core = { version = "0.2.1", path = "../core" }
+gsm-core = { workspace = true }
 unicode-segmentation = { workspace = true }
-security = { package = "greentic-messaging-security", version = "0.2.1", path = "../security" }
+security = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
 urlencoding = { workspace = true }

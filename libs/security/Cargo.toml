@@ -20,7 +20,7 @@ async-trait = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
-gsm-core = { version = "0.2.1", path = "../core" }
+gsm-core = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 urlencoding = { workspace = true }

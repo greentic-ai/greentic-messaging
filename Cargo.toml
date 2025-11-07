@@ -90,9 +90,9 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "std"] }
 tracing-test = "0.2"
-gsm-core = { version = "0.2.1", path = "libs/core" }
-gsm-telemetry = { version = "0.2.1", path = "libs/telemetry" }
-security = { package = "greentic-messaging-security", version = "0.2.1", path = "libs/security" }
+gsm-core = { version = "0.3.0", path = "libs/core" }
+gsm-telemetry = { version = "0.3.0", path = "libs/telemetry" }
+security = { package = "greentic-messaging-security", version = "0.3.0", path = "libs/security" }
 unicode-segmentation = "1"
 urlencoding = "2"
 uuid = { version = "1", features = ["v4","serde"] }

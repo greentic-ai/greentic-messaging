@@ -18,7 +18,7 @@ gsm-core = { path = "../../libs/core" }
 gsm-ingress-common = { path = "../ingress-common" }
 gsm-dlq = { path = "../../libs/dlq" }
 gsm-idempotency = { path = "../../libs/idempotency" }
-security = { package = "greentic-messaging-security", path = "../../libs/security" }
+security = { workspace = true }
 gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
 serde_yaml_bw = { workspace = true }
