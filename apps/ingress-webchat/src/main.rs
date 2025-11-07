@@ -226,7 +226,7 @@ async fn webhook(
         }
     };
     if let Some(team) = team {
-        invocation.ctx.team = Some(TeamId::from(team));
+        invocation.ctx.team = Some(TeamId(team));
     }
     set_current_tenant_ctx(invocation.ctx.clone());
 

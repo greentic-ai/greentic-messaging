@@ -19,8 +19,8 @@ pub trait Provider: Send + Sync {}
 /// let registry: ProviderRegistry<MyProvider> = ProviderRegistry::default();
 /// let key = ProviderKey {
 ///     platform: Platform::Slack,
-///     env: EnvId::from("dev"),
-///     tenant: TenantId::from("acme"),
+///     env: EnvId("dev".into()),
+///     tenant: TenantId("acme".into()),
 ///     team: None,
 /// };
 /// registry.put(key.clone(), Arc::new(MyProvider));

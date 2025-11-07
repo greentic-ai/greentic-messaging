@@ -8,7 +8,7 @@ use serde_json::json;
 mod support;
 
 fn tenant_ctx() -> TenantCtx {
-    TenantCtx::new(EnvId::from("dev"), TenantId::from("acme"))
+    TenantCtx::new(EnvId("dev".to_string()), TenantId("acme".to_string()))
 }
 
 #[test]

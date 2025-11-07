@@ -101,9 +101,9 @@ pub fn signing_scope() -> Scope {
 }
 
 pub fn tenant_ctx(env: &str, tenant: &str, team: Option<&str>) -> TenantCtx {
-    let mut ctx = TenantCtx::new(EnvId::from(env), TenantId::from(tenant));
+    let mut ctx = TenantCtx::new(EnvId(env.to_string()), TenantId(tenant.to_string()));
     if let Some(team) = team {
-        ctx = ctx.with_team(Some(TeamId::from(team)));
+        ctx = ctx.with_team(Some(TeamId(team.to_string())));
     }
     ctx
 }

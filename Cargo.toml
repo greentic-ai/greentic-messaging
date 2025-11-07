@@ -40,7 +40,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.2.3"
+version = "0.3.0"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
@@ -85,7 +85,9 @@ thiserror = "2"
 time = { version = "0.3", features = ["macros","parsing"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tower = { version = "0.5", features = ["util", "limit", "timeout"] }
+tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
+tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "std"] }
 tracing-test = "0.2"
 gsm-core = { version = "0.2.1", path = "libs/core" }

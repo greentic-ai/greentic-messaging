@@ -10,11 +10,11 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "json"] }
 gsm-core = { path = "../../libs/core", features = ["directline_standalone"] }
 greentic-types = { workspace = true }
+greentic-secrets = { workspace = true }
 http = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
-greentic-secrets = "0.2.1"
 
 [dependencies]
 serde_json = "1"

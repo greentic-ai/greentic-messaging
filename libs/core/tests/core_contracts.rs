@@ -106,15 +106,15 @@ fn provider_key_hash_matches() {
 
     let key_a = ProviderKey {
         platform: Platform::Teams,
-        env: EnvId::from("prod"),
-        tenant: TenantId::from("acme"),
-        team: Some(TeamId::from("alpha")),
+        env: EnvId("prod".into()),
+        tenant: TenantId("acme".into()),
+        team: Some(TeamId("alpha".into())),
     };
     let key_b = ProviderKey {
         platform: Platform::Teams,
-        env: EnvId::from("prod"),
-        tenant: TenantId::from("acme"),
-        team: Some(TeamId::from("alpha")),
+        env: EnvId("prod".into()),
+        tenant: TenantId("acme".into()),
+        team: Some(TeamId("alpha".into())),
     };
     assert_eq!(key_a, key_b);
 
@@ -125,7 +125,7 @@ fn provider_key_hash_matches() {
     assert_eq!(hasher_a.finish(), hasher_b.finish());
 
     let key_c = ProviderKey {
-        team: Some(TeamId::from("beta")),
+        team: Some(TeamId("beta".into())),
         ..key_a.clone()
     };
     assert_ne!(key_a, key_c);

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactWebChat, { createDirectLine } from "botframework-webchat";
 
 type TokenResponse = {
@@ -6,22 +6,22 @@ type TokenResponse = {
   expires_in: number;
 };
 
-type ConversationResponse = {
-  token: string;
-  conversationId: string;
-  streamUrl?: string;
-};
-
 type Status = "idle" | "loading" | "ready" | "error";
 
 const envVars = import.meta.env as Record<string, string | undefined>;
+const IS_DEV = import.meta.env.DEV;
 
 const WEBCHAT_BASE_URL = (envVars.WEBCHAT_BASE_URL ?? envVars.VITE_WEBCHAT_BASE_URL ?? "")
   .trim()
   .replace(/\/$/, "");
-const WEBCHAT_DIRECT_LINE_DOMAIN =
-  (envVars.WEBCHAT_DIRECTLINE_DOMAIN ?? envVars.VITE_WEBCHAT_DIRECTLINE_DOMAIN)?.replace(/\/$/, "") ??
-  "http://localhost:8090/v3/directline";
+const DIRECT_LINE_ROUTE = `/v3/directline`;
+const WEBCHAT_DIRECT_LINE_DOMAIN = (
+  envVars.WEBCHAT_DIRECTLINE_DOMAIN ??
+  envVars.VITE_WEBCHAT_DIRECTLINE_DOMAIN ??
+  DIRECT_LINE_ROUTE
+)
+  .trim()
+  .replace(/\/$/, "") || DIRECT_LINE_ROUTE;
 const WEBCHAT_ENV = (envVars.WEBCHAT_ENV ?? envVars.VITE_WEBCHAT_ENV ?? "dev").trim() || "dev";
 const WEBCHAT_TENANT = (envVars.WEBCHAT_TENANT ?? envVars.VITE_WEBCHAT_TENANT ?? "demo").trim() || "demo";
 const WEBCHAT_TEAM = (envVars.WEBCHAT_TEAM ?? envVars.VITE_WEBCHAT_TEAM ?? "").trim();
@@ -29,7 +29,16 @@ const WEBCHAT_USER_ID =
   (envVars.WEBCHAT_USER_ID ?? envVars.VITE_WEBCHAT_USER_ID ?? "greentic-demo-user").trim() ||
   "greentic-demo-user";
 
-const DIRECT_LINE_ROUTE = `/v3/directline`;
+if (IS_DEV) {
+  console.info("[webchat-demo] configuration", {
+    baseUrl: WEBCHAT_BASE_URL || "(relative)",
+    directLineDomain: WEBCHAT_DIRECT_LINE_DOMAIN || DIRECT_LINE_ROUTE,
+    env: WEBCHAT_ENV,
+    tenant: WEBCHAT_TENANT,
+    team: WEBCHAT_TEAM || "(none)",
+    userId: WEBCHAT_USER_ID,
+  });
+}
 
 function resolveUrl(path: string): string {
   if (WEBCHAT_BASE_URL) {
@@ -47,15 +56,26 @@ async function postJSON<T>(
     "content-type": "application/json",
     ...extraHeaders,
   };
+  const url = resolveUrl(path);
+  if (IS_DEV) {
+    console.info("[webchat-demo] POST", url, body ?? {});
+  }
 
-  const response = await fetch(resolveUrl(path), {
+  const response = await fetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify(body ?? {}),
   });
 
+  if (IS_DEV) {
+    console.info("[webchat-demo] response", response.status, response.statusText, "for", url);
+  }
+
   if (!response.ok) {
     const text = await response.text();
+    if (IS_DEV) {
+      console.error("[webchat-demo] request failed", url, text);
+    }
     throw new Error(`${response.status} ${response.statusText}: ${text}`);
   }
 
@@ -67,10 +87,18 @@ export default function App(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [directLine, setDirectLine] = useState<ReturnType<typeof createDirectLine>>();
   const [expiresIn, setExpiresIn] = useState<number | null>(null);
+  const startedRef = useRef(false);
 
   const refreshSession = useCallback(async () => {
     setStatus("loading");
     setError(null);
+    if (IS_DEV) {
+      console.info("[webchat-demo] refreshing session", {
+        env: WEBCHAT_ENV,
+        tenant: WEBCHAT_TENANT,
+        team: WEBCHAT_TEAM || "-",
+      });
+    }
     try {
       const query = new URLSearchParams({
         env: WEBCHAT_ENV,
@@ -84,17 +112,23 @@ export default function App(): JSX.Element {
         user: { id: WEBCHAT_USER_ID },
       });
       setExpiresIn(tokenResponse.expires_in ?? null);
-
-      const conversationResponse = await postJSON<ConversationResponse>(
-        `${DIRECT_LINE_ROUTE}/conversations`,
-        undefined,
-        { Authorization: `Bearer ${tokenResponse.token}` },
-      );
+      if (IS_DEV) {
+        console.info("[webchat-demo] token issued", { expires_in: tokenResponse.expires_in });
+      }
 
       const dl = createDirectLine({
-        token: conversationResponse.token,
-        domain: WEBCHAT_DIRECT_LINE_DOMAIN,
+        token: tokenResponse.token,
+        domain: WEBCHAT_DIRECT_LINE_DOMAIN || DIRECT_LINE_ROUTE,
+        webSocket: false,
       });
+      if (IS_DEV) {
+        dl.connectionStatus$.subscribe((status) => {
+          console.info("[webchat-demo] directline status", status);
+        });
+        dl.activity$.subscribe((activity) => {
+          console.info("[webchat-demo] directline activity", activity.type);
+        });
+      }
       setDirectLine(dl);
       setStatus("ready");
     } catch (err) {
@@ -105,6 +139,10 @@ export default function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    if (startedRef.current) {
+      return;
+    }
+    startedRef.current = true;
     void refreshSession();
   }, [refreshSession]);
 

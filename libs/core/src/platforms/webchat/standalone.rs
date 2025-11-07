@@ -291,6 +291,14 @@ async fn list_activities_handler(
     let watermark = query
         .watermark
         .as_deref()
+        .and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
         .map(parse_watermark)
         .transpose()?;
     let page = state
@@ -633,14 +641,11 @@ fn tenant_ctx_from_query(query: &TenantQuery) -> Result<TenantCtx, StatusCode> {
     if env.is_empty() || tenant.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
-    let mut ctx = TenantCtx::new(
-        EnvId::from(env.to_string()),
-        TenantId::from(tenant.to_string()),
-    );
+    let mut ctx = TenantCtx::new(EnvId(env.to_string()), TenantId(tenant.to_string()));
     if let Some(team) = &query.team {
         let team = team.trim();
         if !team.is_empty() {
-            ctx = ctx.with_team(Some(TeamId::from(team.to_string())));
+            ctx = ctx.with_team(Some(TeamId(team.to_string())));
         }
     }
     Ok(ctx)
@@ -648,11 +653,11 @@ fn tenant_ctx_from_query(query: &TenantQuery) -> Result<TenantCtx, StatusCode> {
 
 fn tenant_ctx_from_claims(claims: &Claims) -> Result<TenantCtx, StatusCode> {
     let mut ctx = TenantCtx::new(
-        EnvId::from(claims.ctx.env.clone()),
-        TenantId::from(claims.ctx.tenant.clone()),
+        EnvId(claims.ctx.env.clone()),
+        TenantId(claims.ctx.tenant.clone()),
     );
     if let Some(team) = &claims.ctx.team {
-        ctx = ctx.with_team(Some(TeamId::from(team.clone())));
+        ctx = ctx.with_team(Some(TeamId(team.clone())));
     }
     Ok(ctx)
 }

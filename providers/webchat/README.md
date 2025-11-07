@@ -72,6 +72,23 @@ its README for usage.
 3. Configure Web Chat (or the demo app) with `domain: "https://localhost:8080/v3/directline"`
    when running through a local HTTPS terminator.
 
+Optional CORS and logging env vars:
+
+```bash
+export WEBCHAT_CORS_ALLOWED=http://localhost:5174
+export CORS_ALLOWED_HEADERS=Authorization,Content-Type,x-ms-bot-agent,x-requested-with
+export CORS_ALLOWED_METHODS=GET,POST,OPTIONS
+export CORS_MAX_AGE=600
+export WEBCHAT_LOG_FILE=/tmp/webchat-standalone.log
+```
+
+(`CORS_ALLOWED_ORIGINS` is still read for backwards compatibility, but
+`WEBCHAT_CORS_ALLOWED` is preferred so it matches the rest of the WebChat config.)
+
+Set `WEBCHAT_LOG_FILE=/path/to/webchat.log` (defaults to `webchat-standalone.log`
+in the current directory) to capture structured request/response logs while you
+debug local runs. Adjust `RUST_LOG` to raise/lower verbosity.
+
 ### Manual end-to-end test
 
 1. Mint a user token:  

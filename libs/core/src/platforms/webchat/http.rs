@@ -386,11 +386,11 @@ const DEFAULT_EXPIRY_SECONDS: u64 = 1800;
 
 fn build_tenant_ctx(ctx: &RouteContext) -> TenantCtx {
     let mut tenant_ctx = TenantCtx::new(
-        EnvId::from(ctx.env().to_string()),
-        TenantId::from(ctx.tenant().to_string()),
+        EnvId(ctx.env().to_string()),
+        TenantId(ctx.tenant().to_string()),
     );
     if let Some(team) = ctx.team() {
-        let team_id = TeamId::from(team.to_string());
+        let team_id = TeamId(team.to_string());
         tenant_ctx = tenant_ctx.with_team(Some(team_id));
     }
     tenant_ctx

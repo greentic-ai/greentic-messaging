@@ -22,8 +22,8 @@ use serde_json::json;
 use tokio::sync::Mutex;
 
 fn tenant_ctx() -> TenantCtx {
-    TenantCtx::new(EnvId::from("dev"), TenantId::from("acme"))
-        .with_team(Some(TeamId::from("support")))
+    TenantCtx::new(EnvId("dev".to_string()), TenantId("acme".to_string()))
+        .with_team(Some(TeamId("support".to_string())))
 }
 
 #[tokio::test]

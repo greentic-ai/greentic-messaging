@@ -17,7 +17,7 @@ use super::{
     circuit::{CircuitBreaker, CircuitLabels, CircuitSettings},
     session::{SharedSessionStore, WebchatSession},
     telemetry,
-    types::GreenticEvent,
+    types::{GreenticEvent, MessagePayload},
 };
 
 #[derive(Clone, Debug, Deserialize)]
@@ -140,6 +140,16 @@ impl Ingress {
                 &message.id,
             );
             let _guard = span.enter();
+            tracing::info!(
+                target = "webchat::ingress",
+                conversation = %conversation_id,
+                env = %tenant_ctx.env,
+                tenant = %tenant_ctx.tenant,
+                team = ?tenant_ctx.team,
+                payload = %describe_payload(&message.payload),
+                text = ?message_text(&message.payload),
+                "incoming activity received"
+            );
             self.bus.publish(&subject, &event).await?;
             session.last_seen_at = OffsetDateTime::now_utc();
             self.sessions.upsert(session).await?;
@@ -339,4 +349,19 @@ pub async fn run_poll_loop(deps: IngressDeps, ctx: IngressCtx) -> Result<()> {
     }
 
     Ok(())
+}
+fn describe_payload(payload: &MessagePayload) -> &'static str {
+    match payload {
+        MessagePayload::Text { .. } => "text",
+        MessagePayload::Typing => "typing",
+        MessagePayload::Event { .. } => "event",
+        MessagePayload::Attachment { .. } => "attachment",
+    }
+}
+
+fn message_text(payload: &MessagePayload) -> Option<&str> {
+    match payload {
+        MessagePayload::Text { text, .. } => Some(text.as_str()),
+        _ => None,
+    }
 }
