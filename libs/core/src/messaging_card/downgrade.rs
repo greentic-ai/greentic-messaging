@@ -210,7 +210,7 @@ mod tests {
         let ir = builder.build();
 
         let ctx = DowngradeContext::new(Tier::Premium, Tier::Basic).with_platform("tests");
-        let downgraded = PolicyDowngradeEngine::default().downgrade(&ir, ctx);
+        let downgraded = PolicyDowngradeEngine.downgrade(&ir, ctx);
         assert_eq!(downgraded.tier, Tier::Basic);
         assert!(
             downgraded
@@ -236,7 +236,7 @@ mod tests {
         let ir = builder.build();
 
         let ctx = DowngradeContext::new(Tier::Premium, Tier::Advanced);
-        let downgraded = PolicyDowngradeEngine::default().downgrade(&ir, ctx);
+        let downgraded = PolicyDowngradeEngine.downgrade(&ir, ctx);
         assert_eq!(downgraded.elements.len(), 3);
         assert!(downgraded.meta.warnings.is_empty());
     }

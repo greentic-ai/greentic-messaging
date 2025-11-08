@@ -76,13 +76,14 @@ impl MessageCardIr {
             return Tier::Premium;
         }
 
-        let advanced = self.elements.iter().any(|element| match element {
-            Element::Image { .. } | Element::FactSet { .. } => true,
-            _ => false,
-        }) || self
-            .actions
+        let advanced = self
+            .elements
             .iter()
-            .any(|action| matches!(action, IrAction::Postback { .. }));
+            .any(|element| matches!(element, Element::Image { .. } | Element::FactSet { .. }))
+            || self
+                .actions
+                .iter()
+                .any(|action| matches!(action, IrAction::Postback { .. }));
 
         if advanced {
             Tier::Advanced
@@ -155,7 +156,7 @@ pub enum IrAction {
     Postback { title: String, data: Value },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Meta {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub capabilities: BTreeSet<String>,
@@ -167,18 +168,6 @@ pub struct Meta {
     pub adaptive_payload: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_link: Option<AppLink>,
-}
-
-impl Default for Meta {
-    fn default() -> Self {
-        Self {
-            capabilities: BTreeSet::new(),
-            source: None,
-            warnings: Vec::new(),
-            adaptive_payload: None,
-            app_link: None,
-        }
-    }
 }
 
 impl Meta {
@@ -200,6 +189,31 @@ pub struct AppLink {
     pub tenant: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jwt: Option<AppLinkJwt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AppLinkJwt {
+    pub secret: String,
+    #[serde(default = "default_app_link_jwt_algorithm")]
+    pub algorithm: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audience: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    #[serde(default = "default_app_link_jwt_ttl")]
+    pub ttl_seconds: u64,
+}
+
+fn default_app_link_jwt_algorithm() -> String {
+    "HS256".into()
+}
+
+fn default_app_link_jwt_ttl() -> u64 {
+    900
 }
 
 #[derive(Debug, Default)]

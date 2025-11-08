@@ -1,3 +1,4 @@
+use anyhow::{Context, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -132,9 +133,35 @@ pub enum CardAction {
 
 impl Flow {
     pub fn load_from_file(path: &str) -> anyhow::Result<Self> {
-        let txt = std::fs::read_to_string(path)?;
-        let f: Flow = serde_yaml_bw::from_str(&txt)?;
-        Ok(f)
+        let txt = std::fs::read_to_string(path)
+            .with_context(|| format!("reading flow definition at {path}"))?;
+        let flow: Flow = serde_yaml_bw::from_str(&txt)
+            .with_context(|| format!("parsing flow yaml at {path}"))?;
+        flow.validate()?;
+        Ok(flow)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("flow missing id");
+        }
+        if self.kind.trim().is_empty() {
+            bail!("flow {} missing type", self.id);
+        }
+        if self.r#in.trim().is_empty() {
+            bail!("flow {} missing entry point `in`", self.id);
+        }
+        if self.nodes.is_empty() {
+            bail!("flow {} defines no nodes", self.id);
+        }
+        if !self.nodes.contains_key(&self.r#in) {
+            bail!(
+                "flow {} entry point `{}` not found in nodes",
+                self.id,
+                self.r#in
+            );
+        }
+        Ok(())
     }
 }
 

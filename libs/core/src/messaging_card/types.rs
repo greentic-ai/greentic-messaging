@@ -39,20 +39,11 @@ impl Default for MessageCard {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ImageRef {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alt: Option<String>,
-}
-
-impl Default for ImageRef {
-    fn default() -> Self {
-        Self {
-            url: String::new(),
-            alt: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

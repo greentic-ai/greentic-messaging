@@ -4,7 +4,10 @@ use tracing::warn;
 use crate::messaging_card::ir::{Element, InputKind, MessageCardIr};
 use crate::messaging_card::tier::Tier;
 
-use super::{PlatformRenderer, RenderOutput, resolve_open_url};
+use super::{
+    PlatformRenderer, RenderMetrics, RenderOutput, TELEGRAM_TEXT_LIMIT, enforce_text_limit,
+    resolve_url_with_policy, sanitize_text_for_tier,
+};
 
 const MAX_BUTTONS: usize = 10;
 const MAX_PER_ROW: usize = 3;
@@ -23,13 +26,20 @@ impl PlatformRenderer for TelegramRenderer {
 
     fn render(&self, ir: &MessageCardIr) -> RenderOutput {
         let mut warnings = Vec::new();
+        let mut metrics = RenderMetrics::default();
         let mut lines: Vec<String> = Vec::new();
 
         if let Some(title) = &ir.head.title {
-            lines.push(format!("<b>{}</b>", html_escape(title)));
+            let escaped = sanitized_html(title, ir.tier, &mut metrics);
+            if !escaped.is_empty() {
+                lines.push(format!("<b>{}</b>", escaped));
+            }
         }
         if let Some(text) = &ir.head.text {
-            lines.push(html_escape(text));
+            let escaped = sanitized_html(text, ir.tier, &mut metrics);
+            if !escaped.is_empty() {
+                lines.push(escaped);
+            }
         }
 
         let mut primary_consumed = ir.head.text.is_none();
@@ -42,16 +52,17 @@ impl PlatformRenderer for TelegramRenderer {
                         continue;
                     }
                     primary_consumed = true;
-                    lines.push(html_escape(text));
+                    let escaped = sanitized_html(text, ir.tier, &mut metrics);
+                    if !escaped.is_empty() {
+                        lines.push(escaped);
+                    }
                 }
                 Element::Image { url, .. } => lines.push(url.clone()),
                 Element::FactSet { facts } => {
                     for fact in facts {
-                        lines.push(format!(
-                            "• <b>{}</b>: {}",
-                            html_escape(&fact.label),
-                            html_escape(&fact.value)
-                        ));
+                        let label = sanitized_html(&fact.label, ir.tier, &mut metrics);
+                        let value = sanitized_html(&fact.value, ir.tier, &mut metrics);
+                        lines.push(format!("• <b>{}</b>: {}", label, value));
                     }
                 }
                 Element::Input {
@@ -65,10 +76,14 @@ impl PlatformRenderer for TelegramRenderer {
                         target = "gsm.mcard.telegram",
                         "inputs not supported on Telegram"
                     );
-                    let prompt = label.as_deref().unwrap_or("Input");
+                    let prompt = label
+                        .as_deref()
+                        .map(|value| sanitize_text_for_tier(value, ir.tier, &mut metrics))
+                        .unwrap_or_else(|| "Input".into());
+                    let prompt_escaped = html_escape(prompt.trim());
                     let prompt_text = match kind {
                         InputKind::Text => {
-                            format!("<i>{}</i>: reply with your answer.", html_escape(prompt))
+                            format!("<i>{}</i>: reply with your answer.", prompt_escaped)
                         }
                         InputKind::Choice => {
                             let opts = if choices.is_empty() {
@@ -76,15 +91,15 @@ impl PlatformRenderer for TelegramRenderer {
                             } else {
                                 choices
                                     .iter()
-                                    .map(|c| html_escape(&c.title))
+                                    .map(|c| {
+                                        let sanitized =
+                                            sanitize_text_for_tier(&c.title, ir.tier, &mut metrics);
+                                        html_escape(sanitized.trim())
+                                    })
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             };
-                            format!(
-                                "<i>{}</i>: reply with one of [{}].",
-                                html_escape(prompt),
-                                opts
-                            )
+                            format!("<i>{}</i>: reply with one of [{}].", prompt_escaped, opts)
                         }
                     };
                     lines.push(prompt_text);
@@ -93,26 +108,43 @@ impl PlatformRenderer for TelegramRenderer {
         }
 
         if let Some(footer) = &ir.head.footer {
-            lines.push(html_escape(footer));
+            let escaped = sanitized_html(footer, ir.tier, &mut metrics);
+            if !escaped.is_empty() {
+                lines.push(escaped);
+            }
         }
 
         let text = lines.join("\n");
+        let limited = enforce_text_limit(
+            &text,
+            TELEGRAM_TEXT_LIMIT,
+            "telegram.body_truncated",
+            &mut metrics,
+            &mut warnings,
+        );
         let mut payload = RenderOutput::new(json!({
             "method": "sendMessage",
             "parse_mode": "HTML",
-            "text": text,
+            "text": limited,
         }));
 
-        if let Some(keyboard) = build_keyboard(ir, &mut warnings) {
+        if let Some(keyboard) = build_keyboard(ir, &mut warnings, &mut metrics) {
             payload.payload["reply_markup"] = json!({ "inline_keyboard": keyboard });
         }
 
         payload.warnings = warnings;
+        payload.limit_exceeded = metrics.limit_exceeded;
+        payload.sanitized_count = metrics.sanitized_count;
+        payload.url_blocked_count = metrics.url_blocked_count;
         payload
     }
 }
 
-fn build_keyboard(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Option<Vec<Vec<Value>>> {
+fn build_keyboard(
+    ir: &MessageCardIr,
+    warnings: &mut Vec<String>,
+    metrics: &mut RenderMetrics,
+) -> Option<Vec<Vec<Value>>> {
     if ir.actions.is_empty() {
         return None;
     }
@@ -129,15 +161,17 @@ fn build_keyboard(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Option<Vec<
         }
         match action {
             super::IrAction::OpenUrl { title, url } => {
-                buttons.push(json!({
-                    "text": html_escape(title),
-                    "url": resolve_open_url(&ir.meta, url),
-                }));
+                if let Some(resolved) = resolve_url_with_policy(&ir.meta, url, metrics, warnings) {
+                    buttons.push(json!({
+                        "text": sanitized_html(title, ir.tier, metrics),
+                        "url": resolved,
+                    }));
+                }
             }
             super::IrAction::Postback { title, data } => {
                 let data_str = serde_json::to_string(data).unwrap_or_else(|_| "{}".into());
                 buttons.push(json!({
-                    "text": html_escape(title),
+                    "text": sanitized_html(title, ir.tier, metrics),
                     "callback_data": data_str,
                 }));
             }
@@ -159,4 +193,9 @@ fn html_escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+fn sanitized_html(text: &str, tier: Tier, metrics: &mut RenderMetrics) -> String {
+    let sanitized = sanitize_text_for_tier(text, tier, metrics);
+    html_escape(sanitized.trim())
 }

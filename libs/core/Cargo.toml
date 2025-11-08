@@ -29,6 +29,7 @@ dashmap = { workspace = true }
 reqwest = { workspace = true }
 jsonwebtoken = { workspace = true }
 once_cell = { workspace = true }
+regex = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
 thiserror = { workspace = true }

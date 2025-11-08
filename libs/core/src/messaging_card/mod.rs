@@ -35,15 +35,15 @@ pub struct MessageCardEngine {
 impl Default for MessageCardEngine {
     fn default() -> Self {
         let mut registry = RendererRegistry::default();
-        registry.register(TeamsRenderer::default());
-        registry.register(WebChatRenderer::default());
-        registry.register(SlackRenderer::default());
-        registry.register(WebexRenderer::default());
-        registry.register(TelegramRenderer::default());
-        registry.register(WhatsAppRenderer::default());
+        registry.register(TeamsRenderer);
+        registry.register(WebChatRenderer);
+        registry.register(SlackRenderer);
+        registry.register(WebexRenderer);
+        registry.register(TelegramRenderer);
+        registry.register(WhatsAppRenderer);
         Self {
             renderer_registry: registry,
-            downgrade: PolicyDowngradeEngine::default(),
+            downgrade: PolicyDowngradeEngine,
             telemetry: Arc::new(NullTelemetry),
         }
     }
@@ -53,7 +53,7 @@ impl MessageCardEngine {
     pub fn new(renderer_registry: RendererRegistry) -> Self {
         Self {
             renderer_registry,
-            downgrade: PolicyDowngradeEngine::default(),
+            downgrade: PolicyDowngradeEngine,
             telemetry: Arc::new(NullTelemetry),
         }
     }
@@ -116,6 +116,9 @@ impl MessageCardEngine {
             render_ir.tier,
             render_ir.meta.warnings.len(),
             rendered.used_modal,
+            rendered.limit_exceeded,
+            rendered.sanitized_count,
+            rendered.url_blocked_count,
         );
         Some(rendered.payload)
     }

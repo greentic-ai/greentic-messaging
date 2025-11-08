@@ -1,0 +1,25 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.6",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "ShowCard Snapshot",
+      "wrap": true,
+      "weight": "Bolder"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.ShowCard",
+      "title": "More",
+      "card": {
+        "type": "AdaptiveCard",
+        "body": [
+          { "type": "TextBlock", "text": "Nested", "wrap": true }
+        ]
+      }
+    }
+  ]
+}

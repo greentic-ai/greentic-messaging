@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 #[test]
 fn webex_basic_snapshot() {
-    let renderer = WebexRenderer::default();
+    let renderer = WebexRenderer;
     let ir = sample_ir(false);
     let rendered = renderer.render(&ir);
     assert_eq!(rendered.payload, load_fixture("webex/basic.json"));
@@ -23,7 +23,7 @@ fn webex_basic_snapshot() {
 
 #[test]
 fn webex_interactive_snapshot_downgrades_inputs() {
-    let renderer = WebexRenderer::default();
+    let renderer = WebexRenderer;
     let ir = sample_ir(true);
     let rendered = renderer.render(&ir);
     assert_eq!(rendered.payload, load_fixture("webex/interactive.json"));
@@ -74,6 +74,8 @@ fn sample_ir(include_input: bool) -> MessageCardIr {
         secret: Some("secret-token".into()),
         tenant: None,
         scope: None,
+        state: None,
+        jwt: None,
     });
     ir
 }

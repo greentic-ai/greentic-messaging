@@ -1,0 +1,11 @@
+{
+  "title": "Large Payload",
+  "text": "BLOCK",
+  "actions": [
+    {
+      "type": "open_url",
+      "title": "Docs",
+      "url": "https://allowed.example/docs"
+    }
+  ]
+}

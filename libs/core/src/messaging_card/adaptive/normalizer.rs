@@ -9,8 +9,10 @@ pub fn ac_to_ir(card: &Value) -> Result<MessageCardIr> {
         .as_object()
         .context("adaptive card must be an object")?;
 
-    let mut ir = MessageCardIr::default();
-    ir.tier = Tier::Advanced;
+    let mut ir = MessageCardIr {
+        tier: Tier::Advanced,
+        ..MessageCardIr::default()
+    };
 
     if let Some(title) = root.get("title").and_then(|v| v.as_str()) {
         ir.head.title = Some(title.to_string());
@@ -151,7 +153,7 @@ fn normalize_action(value: &Value, meta: &mut Meta) -> Result<Option<IrAction>> 
                 .and_then(|v| v.as_str())
                 .unwrap_or("Submit")
                 .to_string();
-            let data = obj.get("data").cloned().unwrap_or_else(|| Value::Null);
+            let data = obj.get("data").cloned().unwrap_or(Value::Null);
             Ok(Some(IrAction::Postback { title, data }))
         }
         "Action.ShowCard" => {

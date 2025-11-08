@@ -1,0 +1,32 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.6",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Input Snapshot",
+      "wrap": true,
+      "weight": "Bolder"
+    },
+    {
+      "type": "Input.Text",
+      "id": "inputName",
+      "label": "Your name",
+      "isRequired": true
+    },
+    {
+      "type": "Input.ChoiceSet",
+      "id": "inputChoice",
+      "label": "Pick",
+      "choices": [
+        { "title": "One", "value": "1" },
+        { "title": "Two", "value": "2" }
+      ],
+      "style": "compact"
+    }
+  ],
+  "actions": [
+    { "type": "Action.Submit", "title": "Submit", "data": { "ok": true } }
+  ]
+}

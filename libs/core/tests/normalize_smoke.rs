@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use gsm_core::messaging_card::{MessageCardIr, ValidateError, normalizer};
+use gsm_core::messaging_card::{ValidateError, normalizer};
 use serde_json::Value;
 
 #[test]

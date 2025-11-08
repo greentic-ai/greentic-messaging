@@ -34,13 +34,14 @@ members = [
   "apps/cli-dlq",
   "apps/slack_oauth",
   "conformance/webchat",
+  "tools/dev-viewer",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
@@ -76,7 +77,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rsa = { version = "0.9", features = ["pem"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-jsonschema = "0.17"
+jsonschema = "0.33"
 serde_yaml_bw = "2.4.1"
 secrets-core = { package = "greentic-secrets-core", version = "0.2" }
 sha1 = "0.10"

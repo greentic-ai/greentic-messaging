@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 #[test]
 fn whatsapp_basic_snapshot() {
-    let renderer = WhatsAppRenderer::default();
+    let renderer = WhatsAppRenderer;
     let ir = sample_ir(false, 2);
     let rendered = renderer.render(&ir);
     assert_eq!(rendered.payload, load_fixture("whatsapp/basic.json"));
@@ -17,7 +17,7 @@ fn whatsapp_basic_snapshot() {
 
 #[test]
 fn whatsapp_trims_buttons_and_warns() {
-    let renderer = WhatsAppRenderer::default();
+    let renderer = WhatsAppRenderer;
     let ir = sample_ir(false, 5);
     let rendered = renderer.render(&ir);
     assert_eq!(
@@ -34,7 +34,7 @@ fn whatsapp_trims_buttons_and_warns() {
 
 #[test]
 fn whatsapp_inputs_downgraded() {
-    let renderer = WhatsAppRenderer::default();
+    let renderer = WhatsAppRenderer;
     let ir = sample_ir(true, 2);
     let rendered = renderer.render(&ir);
     assert_eq!(
@@ -108,6 +108,8 @@ fn sample_ir(include_input: bool, action_count: usize) -> MessageCardIr {
         secret: Some("secret-token".into()),
         tenant: None,
         scope: None,
+        state: None,
+        jwt: None,
     });
     ir
 }

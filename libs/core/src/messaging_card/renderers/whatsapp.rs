@@ -4,7 +4,10 @@ use tracing::warn;
 use crate::messaging_card::ir::{Element, InputKind, IrAction, MessageCardIr};
 use crate::messaging_card::tier::Tier;
 
-use super::{PlatformRenderer, RenderOutput, resolve_open_url};
+use super::{
+    PlatformRenderer, RenderMetrics, RenderOutput, WHATSAPP_TEXT_LIMIT, enforce_text_limit,
+    resolve_url_with_policy, sanitize_text_for_tier,
+};
 
 const MAX_BUTTONS: usize = 3;
 
@@ -22,15 +25,18 @@ impl PlatformRenderer for WhatsAppRenderer {
 
     fn render(&self, ir: &MessageCardIr) -> RenderOutput {
         let mut warnings = Vec::new();
+        let mut metrics = RenderMetrics::default();
         let mut body_lines = Vec::new();
 
         if let Some(title) = &ir.head.title {
-            body_lines.push(title.trim().to_string());
+            let sanitized = sanitize_text_for_tier(title, ir.tier, &mut metrics);
+            body_lines.push(sanitized.trim().to_string());
         }
-        if let Some(text) = &ir.head.text {
-            if !text.trim().is_empty() {
-                body_lines.push(text.trim().to_string());
-            }
+        if let Some(text) = &ir.head.text
+            && !text.trim().is_empty()
+        {
+            let sanitized = sanitize_text_for_tier(text, ir.tier, &mut metrics);
+            body_lines.push(sanitized.trim().to_string());
         }
 
         let primary_text = ir.head.text.as_deref().map(str::to_string);
@@ -40,20 +46,23 @@ impl PlatformRenderer for WhatsAppRenderer {
             match element {
                 Element::Text { text, .. } => {
                     if !skipped_primary {
-                        if let Some(primary) = &primary_text {
-                            if primary == text {
-                                skipped_primary = true;
-                                continue;
-                            }
+                        if let Some(primary) = &primary_text
+                            && primary == text
+                        {
+                            skipped_primary = true;
+                            continue;
                         }
                         skipped_primary = true;
                     }
-                    body_lines.push(text.trim().to_string());
+                    let sanitized = sanitize_text_for_tier(text, ir.tier, &mut metrics);
+                    body_lines.push(sanitized.trim().to_string());
                 }
                 Element::Image { url, .. } => body_lines.push(url.to_string()),
                 Element::FactSet { facts } => {
                     for fact in facts {
-                        body_lines.push(format!("• {}: {}", fact.label, fact.value));
+                        let label = sanitize_text_for_tier(&fact.label, ir.tier, &mut metrics);
+                        let value = sanitize_text_for_tier(&fact.value, ir.tier, &mut metrics);
+                        body_lines.push(format!("• {}: {}", label, value));
                     }
                 }
                 Element::Input {
@@ -67,7 +76,11 @@ impl PlatformRenderer for WhatsAppRenderer {
                         target = "gsm.mcard.whatsapp",
                         "downgrading inputs to prompt text"
                     );
-                    let field = label.as_deref().unwrap_or("Input");
+                    let field = label
+                        .as_deref()
+                        .map(|value| sanitize_text_for_tier(value, ir.tier, &mut metrics))
+                        .unwrap_or_else(|| "Input".into());
+                    let field = field.trim().to_string();
                     let prompt = match kind {
                         InputKind::Text => format!("{}: reply with your answer.", field),
                         InputKind::Choice => {
@@ -76,7 +89,11 @@ impl PlatformRenderer for WhatsAppRenderer {
                             } else {
                                 choices
                                     .iter()
-                                    .map(|c| c.title.trim())
+                                    .map(|c| {
+                                        sanitize_text_for_tier(&c.title, ir.tier, &mut metrics)
+                                            .trim()
+                                            .to_string()
+                                    })
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             };
@@ -89,13 +106,21 @@ impl PlatformRenderer for WhatsAppRenderer {
         }
 
         if let Some(footer) = &ir.head.footer {
-            body_lines.push(footer.trim().to_string());
+            let sanitized = sanitize_text_for_tier(footer, ir.tier, &mut metrics);
+            body_lines.push(sanitized.trim().to_string());
         }
 
         let mut components = Vec::new();
         let formatted_text = body_lines.join("\n");
+        let text = enforce_text_limit(
+            &formatted_text,
+            WHATSAPP_TEXT_LIMIT,
+            "whatsapp.body_truncated",
+            &mut metrics,
+            &mut warnings,
+        );
 
-        let buttons = build_buttons(ir, &mut warnings);
+        let buttons = build_buttons(ir, &mut warnings, &mut metrics);
         if !buttons.is_empty() {
             components.push(json!({
             "type": "BUTTONS",
@@ -105,18 +130,25 @@ impl PlatformRenderer for WhatsAppRenderer {
 
         let mut payload = Map::new();
         payload.insert("type".into(), Value::String("WhatsAppTemplate".into()));
-        payload.insert("body".into(), Value::String(formatted_text));
+        payload.insert("body".into(), Value::String(text));
         if !components.is_empty() {
             payload.insert("components".into(), Value::Array(components));
         }
 
         let mut render_output = RenderOutput::new(Value::Object(payload));
         render_output.warnings = warnings;
+        render_output.limit_exceeded = metrics.limit_exceeded;
+        render_output.sanitized_count = metrics.sanitized_count;
+        render_output.url_blocked_count = metrics.url_blocked_count;
         render_output
     }
 }
 
-fn build_buttons(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Vec<Value> {
+fn build_buttons(
+    ir: &MessageCardIr,
+    warnings: &mut Vec<String>,
+    metrics: &mut RenderMetrics,
+) -> Vec<Value> {
     let mut buttons = Vec::new();
     for action in &ir.actions {
         if buttons.len() == MAX_BUTTONS {
@@ -130,17 +162,21 @@ fn build_buttons(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Vec<Value> {
 
         match action {
             IrAction::OpenUrl { title, url } => {
-                buttons.push(json!({
-                    "type": "URL",
-                    "text": title,
-                    "url": resolve_open_url(&ir.meta, url),
-                }));
+                if let Some(resolved) = resolve_url_with_policy(&ir.meta, url, metrics, warnings) {
+                    let button_text = sanitize_text_for_tier(title, ir.tier, metrics);
+                    buttons.push(json!({
+                        "type": "URL",
+                        "text": button_text,
+                        "url": resolved,
+                    }));
+                }
             }
             IrAction::Postback { title, data } => {
                 let payload = serde_json::to_string(data).unwrap_or_else(|_| "{}".into());
+                let button_text = sanitize_text_for_tier(title, ir.tier, metrics);
                 buttons.push(json!({
                     "type": "QUICK_REPLY",
-                    "text": title,
+                    "text": button_text,
                     "payload": payload,
                 }));
             }

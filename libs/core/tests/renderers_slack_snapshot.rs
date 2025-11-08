@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 #[test]
 fn slack_basic_blocks_snapshot() {
-    let renderer = SlackRenderer::default();
+    let renderer = SlackRenderer;
     let ir = sample_ir(false);
     let rendered = renderer.render(&ir);
     assert!(!rendered.used_modal);
@@ -17,7 +17,7 @@ fn slack_basic_blocks_snapshot() {
 
 #[test]
 fn slack_modal_snapshot() {
-    let renderer = SlackRenderer::default();
+    let renderer = SlackRenderer;
     let ir = sample_ir(true);
     let rendered = renderer.render(&ir);
     assert!(rendered.used_modal);
@@ -62,6 +62,8 @@ fn sample_ir(include_input: bool) -> MessageCardIr {
         secret: Some("secret-token".into()),
         tenant: None,
         scope: None,
+        state: None,
+        jwt: None,
     });
     ir
 }

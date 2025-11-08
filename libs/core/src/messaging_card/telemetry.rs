@@ -7,6 +7,9 @@ pub enum TelemetryEvent {
         tier: Tier,
         warnings: usize,
         used_modal: bool,
+        limit_exceeded: bool,
+        sanitized_count: usize,
+        url_blocked_count: usize,
     },
     Downgraded {
         from: Tier,
@@ -38,12 +41,25 @@ impl<'a> CardTelemetry<'a> {
         self.hook.emit(TelemetryEvent::Downgraded { from, to });
     }
 
-    pub fn rendered(&self, platform: &str, tier: Tier, warnings: usize, used_modal: bool) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn rendered(
+        &self,
+        platform: &str,
+        tier: Tier,
+        warnings: usize,
+        used_modal: bool,
+        limit_exceeded: bool,
+        sanitized_count: usize,
+        url_blocked_count: usize,
+    ) {
         self.hook.emit(TelemetryEvent::Rendered {
             platform: platform.to_string(),
             tier,
             warnings,
             used_modal,
+            limit_exceeded,
+            sanitized_count,
+            url_blocked_count,
         });
     }
 }
@@ -75,7 +91,7 @@ mod tests {
         let hook = TestTelemetry::new();
         let telemetry = CardTelemetry::new(&hook);
         telemetry.downgrading(Tier::Premium, Tier::Basic);
-        telemetry.rendered("teams", Tier::Basic, 1, true);
+        telemetry.rendered("teams", Tier::Basic, 1, true, false, 0, 0);
         let events = hook.events.lock().unwrap();
         assert_eq!(events.len(), 2);
     }

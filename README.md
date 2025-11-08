@@ -52,6 +52,32 @@ Set the following environment variables to emit spans and OTLP traces when runni
 - `RUST_LOG=info`
 - `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=dev`
 
+### MessageCard Telemetry & Limits
+
+- Every renderer emits a `TelemetryEvent::Rendered` record with `render_tier`, `warning_count`, `limit_exceeded`, `sanitized_count`, `url_blocked_count`, and whether a modal was required. Attach a custom `TelemetryHook` through `MessageCardEngine::with_telemetry` to capture those metrics.
+- Basic and Advanced tiers automatically run the Markdown sanitizer; HTML tags and unsafe Unicode line breaks are stripped before rendering. The `sanitized_count` field increments for every field that required cleanup.
+- Action URLs can be restricted by exporting `CARD_URL_ALLOW_LIST=https://example.com/,https://docs.example.com/`. Links outside the prefixes are removed from the payload, logged as warnings, and surfaced through `url_blocked_count`.
+- Platform payload caps (25KB Adaptive cards, 3KB Slack/Webex text, 4KB Telegram/WhatsApp messages, and per-platform button limits) are enforced automatically. When truncation happens, the rendered payload stays valid, a warning is added, and `limit_exceeded=true` is reported through telemetry.
+
+### Golden Fixtures & Previewing
+
+- Source fixtures for Adaptive Cards live under `libs/core/tests/fixtures/cards/`; the renderer-specific snapshots sit in `libs/core/tests/fixtures/renderers/`. Each new card variant (columns, show cards, premium execute actions, etc.) should have an entry in both folders.
+- Run the snapshot suites locally to regenerate or verify expected payloads: `cargo test -p gsm-core --features "adaptive-cards directline_standalone" --test renderers_snapshot`.
+- The lightweight Playwright renderer under `tools/renderers/` can turn any fixture into a PNG. Example:
+  ```bash
+  cd tools/renderers
+  npm ci
+  node render.js --in ../../libs/core/tests/fixtures/cards/inputs_showcard.json --out output/inputs_showcard.png
+  ```
+  This is handy for designers reviewing the golden set before we wire it into the dev-viewer in PR-12.
+- Need a live preview? Launch the new dev-viewer and open the browser UI:
+  ```bash
+  cargo run -p dev-viewer -- --listen 127.0.0.1:7878 --fixtures libs/core/tests/fixtures/cards
+  # Visit http://127.0.0.1:7878 and use “Preview All Platforms” to inspect Slack/Teams/Webex/etc.
+  ```
+  Paste a `MessageCard` JSON payload or load one of the shipped fixtures—the viewer normalizes it through `gsm-core`, downgrades per platform, and shows warnings, tier downgrades, and renderer payloads side-by-side.
+  For automation, hit `GET /healthz` once the process starts to know when the viewer is ready.
+
 ## Sending Messages
 
 All egress adapters now share a common interface: pass a `TenantCtx` alongside an
@@ -161,6 +187,33 @@ curl -s \
   -H "${INGRESS_HMAC_HEADER:-x-signature}: $sig" \
   http://localhost:8080/admin/telegram/acme/status | jq
 ```
+
+## Premium Deeplinks & JWT State
+
+- `MessageCardIr.meta.app_link` can now carry a structured `state` payload plus an optional `jwt` section. When present, renderers append a `state_jwt=<token>` query param alongside the `target` URL.
+- `state` must be a JSON object/array and stays under 2KB; other shapes are dropped with a renderer warning so downstream services stay consistent.
+- JWT claims include `target`, `tenant`, `scope`, and the provided `state` blob. Tokens are signed with HS256/384/512 (default HS256) and expire after `ttl_seconds` (default 900).
+- Example IR snippet:
+  ```rust
+  use serde_json::json;
+  use gsm_core::messaging_card::ir::{AppLink, AppLinkJwt};
+
+  ir.meta.app_link = Some(AppLink {
+      base_url: "https://premium.example/deeplink".into(),
+      secret: None,
+      tenant: Some("acme".into()),
+      scope: Some("beta".into()),
+      state: Some(json!({"flow": "demo", "step": 2 })),
+      jwt: Some(AppLinkJwt {
+          secret: std::env::var("APP_LINK_JWT_SECRET")?,
+          algorithm: "HS256".into(),
+          audience: Some("preview".into()),
+          issuer: Some("greentic".into()),
+          ttl_seconds: 600,
+      }),
+  });
+  ```
+- Rotate secrets per tenant/app and keep the TTL short so deeplinks remain ephemeral; receivers should verify the JWT before honoring the action.
 
 
 ## Telegram Integration

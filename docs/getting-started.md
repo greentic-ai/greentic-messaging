@@ -29,6 +29,7 @@ export NATS_URL=nats://127.0.0.1:4222
 | WebChat | README section “WebChat Integration” | `examples/flows/weather_slack.yaml` | Minimal HTTP+SSE demo |
 | WhatsApp | README section “WhatsApp Integration” | — | Requires Meta Business setup |
 | **Webex** | [`docs/platform-setup/webex.md`](platform-setup/webex.md) | `examples/flows/weather_webex.yaml` | New Webex ingress/egress pipeline |
+| **Dev Viewer** | README section “Golden Fixtures & Previewing” | `libs/core/tests/fixtures/cards/*.json` | Run `cargo run -p dev-viewer -- --listen 127.0.0.1:7878` and open the UI to preview all platforms without touching a bot |
 
 ## Running a Demo Flow
 

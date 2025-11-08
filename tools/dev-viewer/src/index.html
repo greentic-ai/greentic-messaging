@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Greentic Dev Viewer</title>
+    <style>
+      :root {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #101828;
+        background: #f5f5f5;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        min-height: 100vh;
+      }
+
+      aside {
+        width: 320px;
+        background: #ffffff;
+        border-right: 1px solid #eee;
+        padding: 24px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      main {
+        flex: 1;
+        padding: 24px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      label {
+        font-size: 12px;
+        text-transform: uppercase;
+        color: #475467;
+        letter-spacing: 0.08em;
+      }
+
+      select,
+      textarea,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 14px;
+      }
+
+      select,
+      textarea {
+        border: 1px solid #d0d5dd;
+        border-radius: 6px;
+        padding: 8px;
+      }
+
+      textarea {
+        min-height: 200px;
+        font-family: ui-monospace, "SFMono-Regular", SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      button {
+        background: #0f62fe;
+        color: white;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: #e4e7ec;
+        color: #101828;
+      }
+
+      .status {
+        font-size: 12px;
+        color: #475467;
+        min-height: 20px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 16px;
+      }
+
+      .card {
+        background: #ffffff;
+        border-radius: 8px;
+        border: 1px solid #eaecf0;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .card h3 {
+        margin: 0;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .badge {
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+        text-transform: uppercase;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 12px;
+        color: #475467;
+      }
+
+      pre {
+        background: #f8fafc;
+        border-radius: 6px;
+        padding: 12px;
+        overflow-x: auto;
+        font-size: 12px;
+        max-height: 320px;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 20px;
+        font-size: 12px;
+        color: #b54708;
+      }
+
+      #irOutput {
+        max-height: 240px;
+      }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <h1>Dev Viewer</h1>
+      <div>
+        <label for="fixtureSelect">Fixture</label>
+        <select id="fixtureSelect"></select>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="loadFixture">Load Fixture</button>
+        <button id="renderCard" class="secondary">Render</button>
+      </div>
+      <div>
+        <label for="cardInput">MessageCard JSON</label>
+        <textarea id="cardInput" spellcheck="false"></textarea>
+      </div>
+      <div class="status" id="status"></div>
+    </aside>
+    <main>
+      <section>
+        <h2>Normalized IR</h2>
+        <pre id="irOutput"></pre>
+      </section>
+      <section>
+        <h2>Platform Previews</h2>
+        <div class="grid" id="platformGrid"></div>
+      </section>
+    </main>
+    <script>
+      const fixtureSelect = document.getElementById('fixtureSelect');
+      const loadFixtureBtn = document.getElementById('loadFixture');
+      const renderBtn = document.getElementById('renderCard');
+      const cardInput = document.getElementById('cardInput');
+      const statusEl = document.getElementById('status');
+      const irOutput = document.getElementById('irOutput');
+      const platformGrid = document.getElementById('platformGrid');
+
+      let debounceHandle = null;
+      let fixtures = [];
+
+      async function bootstrap() {
+        try {
+          fixtures = await fetchJSON('/fixtures');
+          fixtureSelect.innerHTML = fixtures
+            .map((name) => `<option value="${name}">${name}</option>`)
+            .join('');
+          if (fixtures.length) {
+            await loadFixture(fixtures[0]);
+          }
+        } catch (err) {
+          statusEl.textContent = err.message || err;
+        }
+      }
+
+      async function loadFixture(name) {
+        try {
+          const data = await fetchJSON(`/fixtures/${name}`);
+          cardInput.value = JSON.stringify(data, null, 2);
+          triggerRender();
+        } catch (err) {
+          statusEl.textContent = err.message || err;
+        }
+      }
+
+      function triggerRender() {
+        clearTimeout(debounceHandle);
+        debounceHandle = setTimeout(renderCard, 350);
+      }
+
+      async function renderCard() {
+        try {
+          const payload = JSON.parse(cardInput.value);
+          statusEl.textContent = 'Rendering…';
+          const data = await fetchJSON('/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ card: payload }),
+          });
+          irOutput.textContent = JSON.stringify(data.ir, null, 2);
+          renderPlatforms(data.platforms);
+          statusEl.textContent = 'Rendered';
+        } catch (err) {
+          statusEl.textContent = err.message || err;
+        }
+      }
+
+      function renderPlatforms(map) {
+        platformGrid.innerHTML = '';
+        Object.entries(map).forEach(([name, details]) => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          const warnings = (details.warnings || []).map((w) => `<li>${w}</li>`).join('');
+          card.innerHTML = `
+            <h3>${name}
+              <span class="badge">${details.tier}</span>
+              ${details.downgraded ? '<span class="badge" style="background:#fef3c7;color:#92400e;">DOWNGRADED</span>' : ''}
+            </h3>
+            <div class="meta">
+              <span>target: ${details.target_tier}</span>
+              <span>modal: ${details.used_modal}</span>
+              <span>warnings: ${details.warnings.length}</span>
+              <span>limit: ${details.limit_exceeded}</span>
+              <span>sanitized: ${details.sanitized_count}</span>
+              <span>urls blocked: ${details.url_blocked_count}</span>
+            </div>
+            ${warnings ? `<ul>${warnings}</ul>` : ''}
+            <pre>${escapeHtml(JSON.stringify(details.payload, null, 2))}</pre>
+          `;
+          platformGrid.appendChild(card);
+        });
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      async function fetchJSON(url, init) {
+        const res = await fetch(url, init);
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || res.statusText);
+        }
+        return res.json();
+      }
+
+      loadFixtureBtn.addEventListener('click', () => {
+        const name = fixtureSelect.value;
+        if (name) {
+          loadFixture(name);
+        }
+      });
+
+      renderBtn.addEventListener('click', () => renderCard());
+      cardInput.addEventListener('input', () => triggerRender());
+
+      bootstrap();
+    </script>
+  </body>
+</html>

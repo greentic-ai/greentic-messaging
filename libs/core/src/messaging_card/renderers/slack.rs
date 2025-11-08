@@ -3,7 +3,10 @@ use serde_json::{Value, json};
 use crate::messaging_card::ir::{Element, InputChoice, InputKind, IrAction, MessageCardIr};
 use crate::messaging_card::tier::Tier;
 
-use super::{PlatformRenderer, RenderOutput, resolve_open_url};
+use super::{
+    PlatformRenderer, RenderMetrics, RenderOutput, SLACK_TEXT_LIMIT, enforce_text_limit,
+    resolve_url_with_policy, sanitize_text_for_tier,
+};
 
 const HEADER_LIMIT: usize = 150;
 const MODAL_TITLE_LIMIT: usize = 24;
@@ -23,34 +26,40 @@ impl PlatformRenderer for SlackRenderer {
 
     fn render(&self, ir: &MessageCardIr) -> RenderOutput {
         let mut warnings = Vec::new();
+        let mut metrics = RenderMetrics::default();
         let has_inputs = ir
             .elements
             .iter()
             .any(|el| matches!(el, Element::Input { .. }));
 
         let payload = if has_inputs {
-            render_modal(ir, &mut warnings)
+            render_modal(ir, &mut warnings, &mut metrics)
         } else {
-            json!({ "blocks": render_blocks(ir, &mut warnings, false) })
+            json!({ "blocks": render_blocks(ir, &mut warnings, false, &mut metrics) })
         };
-
-        RenderOutput {
-            payload,
-            used_modal: has_inputs,
-            warnings,
-        }
+        let mut output = RenderOutput::new(payload);
+        output.used_modal = has_inputs;
+        output.warnings = warnings;
+        output.limit_exceeded = metrics.limit_exceeded;
+        output.sanitized_count = metrics.sanitized_count;
+        output.url_blocked_count = metrics.url_blocked_count;
+        output
     }
 }
 
-fn render_modal(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Value {
-    let title = truncate(
-        ir.head
-            .title
-            .as_deref()
-            .or_else(|| ir.head.text.as_deref())
-            .unwrap_or("Card"),
-        MODAL_TITLE_LIMIT,
-    );
+fn render_modal(
+    ir: &MessageCardIr,
+    warnings: &mut Vec<String>,
+    metrics: &mut RenderMetrics,
+) -> Value {
+    let title_raw = ir
+        .head
+        .title
+        .as_deref()
+        .or(ir.head.text.as_deref())
+        .unwrap_or("Card");
+    let sanitized = sanitize_text_for_tier(title_raw, ir.tier, metrics);
+    let title = truncate(&sanitized, MODAL_TITLE_LIMIT);
 
     json!({
         "type": "modal",
@@ -58,7 +67,7 @@ fn render_modal(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Value {
         "submit": plain_text("Submit"),
         "close": plain_text("Close"),
         "callback_id": "gsm_card_modal",
-        "blocks": render_blocks(ir, warnings, true),
+        "blocks": render_blocks(ir, warnings, true, metrics),
     })
 }
 
@@ -66,16 +75,23 @@ fn render_blocks(
     ir: &MessageCardIr,
     warnings: &mut Vec<String>,
     include_inputs: bool,
+    metrics: &mut RenderMetrics,
 ) -> Vec<Value> {
     let mut blocks = Vec::new();
 
-    if !include_inputs {
-        if let Some(title) = &ir.head.title {
-            blocks.push(json!({
-                "type": "header",
-                "text": plain_text(&truncate(title, HEADER_LIMIT)),
-            }));
-        }
+    if !include_inputs && let Some(title) = &ir.head.title {
+        let sanitized = sanitize_text_for_tier(title, ir.tier, metrics);
+        let limited = enforce_text_limit(
+            &sanitized,
+            SLACK_TEXT_LIMIT,
+            "slack.text_truncated",
+            metrics,
+            warnings,
+        );
+        blocks.push(json!({
+            "type": "header",
+            "text": plain_text(&truncate(&limited, HEADER_LIMIT)),
+        }));
     }
 
     let mut saw_text_element = false;
@@ -84,13 +100,25 @@ fn render_blocks(
         match element {
             Element::Text { text, markdown } => {
                 saw_text_element = true;
-                blocks.push(section_block(text, *markdown));
+                let sanitized = sanitize_text_for_tier(text, ir.tier, metrics);
+                let limited = enforce_text_limit(
+                    &sanitized,
+                    SLACK_TEXT_LIMIT,
+                    "slack.text_truncated",
+                    metrics,
+                    warnings,
+                );
+                blocks.push(section_block(&limited, *markdown));
             }
             Element::Image { url, alt } => {
+                let alt_text = alt
+                    .as_deref()
+                    .map(|value| sanitize_text_for_tier(value, ir.tier, metrics))
+                    .unwrap_or_else(|| "image".to_string());
                 blocks.push(json!({
                     "type": "image",
                     "image_url": url,
-                    "alt_text": alt.as_deref().unwrap_or("image"),
+                    "alt_text": alt_text,
                 }));
             }
             Element::FactSet { facts } => {
@@ -103,9 +131,18 @@ fn render_blocks(
                         warnings.push("slack.factset_truncated".into());
                         break;
                     }
+                    let label = sanitize_text_for_tier(&fact.label, ir.tier, metrics);
+                    let value = sanitize_text_for_tier(&fact.value, ir.tier, metrics);
+                    let text = format!("*{}*\n{}", label, value);
                     fields.push(json!({
                         "type": "mrkdwn",
-                        "text": format!("*{}*\n{}", fact.label, fact.value)
+                        "text": enforce_text_limit(
+                            &text,
+                            SLACK_TEXT_LIMIT,
+                            "slack.text_truncated",
+                            metrics,
+                            warnings,
+                        )
                     }));
                 }
                 if !fields.is_empty() {
@@ -130,6 +167,8 @@ fn render_blocks(
                         *required,
                         choices,
                         warnings,
+                        metrics,
+                        ir.tier,
                     ) {
                         blocks.push(block);
                     }
@@ -140,10 +179,16 @@ fn render_blocks(
         }
     }
 
-    if !saw_text_element {
-        if let Some(text) = &ir.head.text {
-            blocks.push(section_block(text, true));
-        }
+    if !saw_text_element && let Some(text) = &ir.head.text {
+        let sanitized = sanitize_text_for_tier(text, ir.tier, metrics);
+        let limited = enforce_text_limit(
+            &sanitized,
+            SLACK_TEXT_LIMIT,
+            "slack.text_truncated",
+            metrics,
+            warnings,
+        );
+        blocks.push(section_block(&limited, true));
     }
 
     if let Some(footer) = &ir.head.footer {
@@ -152,19 +197,26 @@ fn render_blocks(
             "elements": [
                 json!({
                     "type": "mrkdwn",
-                    "text": footer,
+                    "text": enforce_text_limit(
+                        &sanitize_text_for_tier(footer, ir.tier, metrics),
+                        SLACK_TEXT_LIMIT,
+                        "slack.text_truncated",
+                        metrics,
+                        warnings,
+                    ),
                 })
             ],
         }));
     }
 
-    if let Some(actions) = actions_block(ir, warnings) {
+    if let Some(actions) = actions_block(ir, warnings, metrics) {
         blocks.push(actions);
     }
 
     blocks
 }
 
+#[allow(clippy::too_many_arguments)]
 fn input_block(
     label: Option<&str>,
     kind: &InputKind,
@@ -172,13 +224,15 @@ fn input_block(
     required: bool,
     choices: &[InputChoice],
     warnings: &mut Vec<String>,
+    metrics: &mut RenderMetrics,
+    tier: Tier,
 ) -> Option<Value> {
     let block_id = id.unwrap_or("input").to_string();
     match kind {
         InputKind::Text => Some(json!({
             "type": "input",
             "block_id": block_id,
-            "label": plain_text(label.unwrap_or("Input")),
+            "label": plain_text(&sanitize_text_for_tier(label.unwrap_or("Input"), tier, metrics)),
             "optional": !required,
             "element": {
                 "type": "plain_text_input",
@@ -194,7 +248,7 @@ fn input_block(
                 .iter()
                 .map(|choice| {
                     json!({
-                        "text": plain_text(&choice.title),
+                        "text": plain_text(&sanitize_text_for_tier(&choice.title, tier, metrics)),
                         "value": choice.value,
                     })
                 })
@@ -202,7 +256,11 @@ fn input_block(
             Some(json!({
                 "type": "input",
                 "block_id": block_id,
-                "label": plain_text(label.unwrap_or("Select an option")),
+                "label": plain_text(&sanitize_text_for_tier(
+                    label.unwrap_or("Select an option"),
+                    tier,
+                    metrics,
+                )),
                 "optional": !required,
                 "element": {
                     "type": "static_select",
@@ -214,7 +272,11 @@ fn input_block(
     }
 }
 
-fn actions_block(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Option<Value> {
+fn actions_block(
+    ir: &MessageCardIr,
+    warnings: &mut Vec<String>,
+    metrics: &mut RenderMetrics,
+) -> Option<Value> {
     if ir.actions.is_empty() {
         return None;
     }
@@ -228,17 +290,21 @@ fn actions_block(ir: &MessageCardIr, warnings: &mut Vec<String>) -> Option<Value
 
         match action {
             IrAction::OpenUrl { title, url } => {
-                elements.push(json!({
-                    "type": "button",
-                    "text": plain_text(title),
-                    "url": resolve_open_url(&ir.meta, url),
-                }));
+                if let Some(resolved) = resolve_url_with_policy(&ir.meta, url, metrics, warnings) {
+                    let button_text = sanitize_text_for_tier(title, ir.tier, metrics);
+                    elements.push(json!({
+                        "type": "button",
+                        "text": plain_text(&button_text),
+                        "url": resolved,
+                    }));
+                }
             }
             IrAction::Postback { title, data } => match serde_json::to_string(data) {
                 Ok(value) => {
+                    let button_text = sanitize_text_for_tier(title, ir.tier, metrics);
                     elements.push(json!({
                         "type": "button",
-                        "text": plain_text(title),
+                        "text": plain_text(&button_text),
                         "value": value,
                         "action_id": format!("postback_{}", elements.len()),
                     }));

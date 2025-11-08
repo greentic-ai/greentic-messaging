@@ -10,7 +10,7 @@ mod adaptive_snapshots {
 
     #[test]
     fn teams_renders_ir_snapshot() {
-        let renderer = TeamsRenderer::default();
+        let renderer = TeamsRenderer;
         let mut ir = sample_ir();
         ir.meta.adaptive_payload = None;
         let rendered = renderer.render(&ir);
@@ -19,7 +19,7 @@ mod adaptive_snapshots {
 
     #[test]
     fn webchat_renders_ir_snapshot() {
-        let renderer = WebChatRenderer::default();
+        let renderer = WebChatRenderer;
         let mut ir = sample_ir();
         ir.meta.adaptive_payload = None;
         let rendered = renderer.render(&ir);
@@ -28,7 +28,7 @@ mod adaptive_snapshots {
 
     #[test]
     fn teams_prefers_adaptive_payload() {
-        let renderer = TeamsRenderer::default();
+        let renderer = TeamsRenderer;
         let mut ir = sample_ir();
         let adaptive = json!({
             "type": "AdaptiveCard",
@@ -85,6 +85,8 @@ mod adaptive_snapshots {
             secret: Some("secret-token".into()),
             tenant: None,
             scope: None,
+            state: None,
+            jwt: None,
         });
         ir
     }

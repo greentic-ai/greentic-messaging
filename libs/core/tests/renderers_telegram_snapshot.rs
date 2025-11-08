@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 #[test]
 fn telegram_basic_snapshot() {
-    let renderer = TelegramRenderer::default();
+    let renderer = TelegramRenderer;
     let ir = sample_ir(false);
     let rendered = renderer.render(&ir);
     assert_eq!(rendered.payload, load_fixture("telegram/basic.json"));
@@ -17,7 +17,7 @@ fn telegram_basic_snapshot() {
 
 #[test]
 fn telegram_inputs_emit_warnings_and_prompts() {
-    let renderer = TelegramRenderer::default();
+    let renderer = TelegramRenderer;
     let ir = sample_ir(true);
     let rendered = renderer.render(&ir);
     assert_eq!(rendered.payload, load_fixture("telegram/interactive.json"));
@@ -67,6 +67,8 @@ fn sample_ir(include_input: bool) -> MessageCardIr {
         secret: Some("secret-token".into()),
         tenant: None,
         scope: None,
+        state: None,
+        jwt: None,
     });
     ir
 }

@@ -7,17 +7,12 @@ pub mod validator;
 pub use validator::{ValidateError, validate_ac_json};
 
 /// Supported Adaptive Card schema versions for the bootstrap phase.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum AdaptiveCardVersion {
+    #[default]
     V1_6,
     Custom(String),
-}
-
-impl Default for AdaptiveCardVersion {
-    fn default() -> Self {
-        Self::V1_6
-    }
 }
 
 /// Lightweight wrapper that keeps the original Adaptive Card JSON around the pipeline.

@@ -1,0 +1,17 @@
+{
+  "title": "<script>alert('x')</script>Greeter",
+  "text": "Welcome <b>friend</b>!",
+  "footer": "Footer with <i>italics</i>",
+  "actions": [
+    {
+      "type": "open_url",
+      "title": "Docs",
+      "url": "https://allowed.example/docs"
+    },
+    {
+      "type": "open_url",
+      "title": "Blocked",
+      "url": "https://blocked.example/phish"
+    }
+  ]
+}
