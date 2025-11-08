@@ -8,6 +8,7 @@ on:
 
 jobs:
   coverage:
+    if: ${{ false }} # temporarily disabled (see issue: disk pressure on tarpaulin)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
