@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use jsonschema::JSONSchema;
+use jsonschema::{Validator, validator_for};
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde_json::Value;
@@ -198,8 +198,10 @@ where
 {
     let compiled = load_compiled_schema(schema_path.as_ref())?;
 
-    if let Err(errors) = compiled.validate(value) {
+    let mut errors = compiled.iter_errors(value);
+    if let Some(first) = errors.next() {
         let mut messages: Vec<String> = Vec::new();
+        messages.push(first.to_string());
         for err in errors {
             messages.push(err.to_string());
         }
@@ -217,8 +219,8 @@ fn load_schema(path: &Path) -> Result<Value> {
         .with_context(|| format!("failed to parse json {}", absolute.display()))
 }
 
-fn load_compiled_schema(path: &Path) -> Result<Arc<JSONSchema>> {
-    static CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<JSONSchema>>>> =
+fn load_compiled_schema(path: &Path) -> Result<Arc<Validator>> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Validator>>>> =
         Lazy::new(|| Mutex::new(HashMap::new()));
 
     let absolute = absolute_path(path)?;
@@ -231,8 +233,7 @@ fn load_compiled_schema(path: &Path) -> Result<Arc<JSONSchema>> {
     }
 
     let schema_value = load_schema(&absolute)?;
-    let leaked: &'static Value = Box::leak(Box::new(schema_value));
-    let compiled = JSONSchema::compile(leaked)
+    let compiled = validator_for(&schema_value)
         .map_err(|err| anyhow!("failed to compile json schema: {err}"))?;
     let compiled = Arc::new(compiled);
 

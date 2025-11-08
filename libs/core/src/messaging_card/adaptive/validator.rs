@@ -1,14 +1,14 @@
-use jsonschema::JSONSchema;
+use jsonschema::{Validator, validator_for};
 use once_cell::sync::Lazy;
 use serde_json::Value;
 use thiserror::Error;
 
 pub static AC_16_SCHEMA: &str = include_str!("schema/ac-1.6.schema.json");
 
-static COMPILED_SCHEMA: Lazy<JSONSchema> = Lazy::new(|| {
+static COMPILED_SCHEMA: Lazy<Validator> = Lazy::new(|| {
     let schema: Value =
         serde_json::from_str(AC_16_SCHEMA).expect("adaptive card schema must be valid JSON");
-    JSONSchema::compile(&schema).expect("adaptive card schema must compile")
+    validator_for(&schema).expect("adaptive card schema must compile")
 });
 
 #[derive(Debug, Error)]
@@ -24,16 +24,17 @@ pub fn validate_ac_json(value: &Value) -> Result<(), ValidateError> {
         return Err(ValidateError::NotObject);
     }
 
-    COMPILED_SCHEMA
-        .validate(value)
-        .map(|_| ())
-        .map_err(|errors| {
-            let message = errors
-                .map(|err| err.to_string())
-                .collect::<Vec<_>>()
-                .join("; ");
-            ValidateError::Schema(message)
-        })
+    let mut iter = COMPILED_SCHEMA.iter_errors(value);
+    if let Some(first) = iter.next() {
+        let mut messages: Vec<String> = Vec::new();
+        messages.push(first.to_string());
+        for err in iter {
+            messages.push(err.to_string());
+        }
+        Err(ValidateError::Schema(messages.join("; ")))
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
