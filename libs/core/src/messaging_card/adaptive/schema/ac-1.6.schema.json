@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Adaptive Card 1.6",
+  "type": "object",
+  "required": ["type", "version", "body"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "type": { "const": "AdaptiveCard" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "body": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/bodyElement" }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/action" }
+    }
+  },
+  "definitions": {
+    "bodyElement": {
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/definitions/textBlock" },
+        { "$ref": "#/definitions/image" },
+        { "$ref": "#/definitions/factSet" },
+        { "$ref": "#/definitions/input" }
+      ]
+    },
+    "textBlock": {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "TextBlock" },
+        "text": { "type": "string" },
+        "wrap": { "type": "boolean" },
+        "isSubtle": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "image": {
+      "type": "object",
+      "required": ["type", "url"],
+      "properties": {
+        "type": { "const": "Image" },
+        "url": { "type": "string", "format": "uri" },
+        "altText": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "factSet": {
+      "type": "object",
+      "required": ["type", "facts"],
+      "properties": {
+        "type": { "const": "FactSet" },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title", "value"],
+            "properties": {
+              "title": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "input": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "enum": ["Input.Text", "Input.ChoiceSet"]
+        },
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "isRequired": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "action": {
+      "type": "object",
+      "required": ["type", "title"],
+      "properties": {
+        "type": {
+          "enum": [
+            "Action.OpenUrl",
+            "Action.Submit",
+            "Action.ShowCard",
+            "Action.Execute"
+          ]
+        },
+        "title": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "data": {},
+        "card": { "$ref": "#" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

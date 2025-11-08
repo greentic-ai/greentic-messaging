@@ -1,0 +1,66 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Slack Snapshot",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "Body text"
+      }
+    },
+    {
+      "type": "image",
+      "image_url": "https://example.com/banner.png",
+      "alt_text": "Banner"
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Status*\nGreen"
+        }
+      ]
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Footer"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Docs",
+            "emoji": true
+          },
+          "url": "https://premium.example/deeplink?target=https%3A%2F%2Fexample.com%2Fdocs&sig=InCYXo0u720v41YciTMhr-OzsbMR2b_5Lw0ApYZ9vzw"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Ack",
+            "emoji": true
+          },
+          "value": "{\"ok\":true}",
+          "action_id": "postback_1"
+        }
+      ]
+    }
+  ]
+}

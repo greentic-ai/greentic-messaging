@@ -1,0 +1,72 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.6",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Snapshot Title",
+      "wrap": true,
+      "weight": "Bolder"
+    },
+    {
+      "type": "TextBlock",
+      "text": "Body text",
+      "wrap": true,
+      "isSubtle": false
+    },
+    {
+      "type": "Image",
+      "url": "https://example.com/banner.png",
+      "altText": "Banner"
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        {
+          "title": "Status",
+          "value": "Green"
+        }
+      ]
+    },
+    {
+      "type": "Input.ChoiceSet",
+      "id": "choice",
+      "label": "Choose",
+      "choices": [
+        {
+          "title": "Yes",
+          "value": "yes"
+        },
+        {
+          "title": "No",
+          "value": "no"
+        }
+      ],
+      "style": "compact",
+      "isRequired": false
+    },
+    {
+      "type": "TextBlock",
+      "text": "Footer",
+      "wrap": true,
+      "spacing": "Small",
+      "isSubtle": true,
+      "size": "Small"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Submit",
+      "title": "Ack",
+      "data": {
+        "ok": true
+      }
+    },
+    {
+      "type": "Action.OpenUrl",
+      "title": "Docs",
+      "url": "https://premium.example/deeplink?target=https%3A%2F%2Fexample.com%2Fdocs&sig=InCYXo0u720v41YciTMhr-OzsbMR2b_5Lw0ApYZ9vzw"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "method": "sendMessage",
+  "parse_mode": "HTML",
+  "text": "<b>Telegram Snapshot</b>\nBody text\nhttps://example.com/banner.png\n• <b>Status</b>: Green\nFooter",
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "Docs",
+          "url": "https://premium.example/deeplink?target=https%3A%2F%2Fexample.com%2Fdocs&sig=InCYXo0u720v41YciTMhr-OzsbMR2b_5Lw0ApYZ9vzw"
+        },
+        {
+          "text": "Ack",
+          "callback_data": "{\"ok\":true}"
+        }
+      ]
+    ]
+  }
+}

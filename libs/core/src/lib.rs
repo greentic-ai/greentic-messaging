@@ -9,6 +9,8 @@ pub mod egress;
 pub mod http;
 pub mod idempotency;
 pub mod ingress;
+#[cfg(feature = "adaptive-cards")]
+pub mod messaging_card;
 pub mod platforms;
 pub mod prelude;
 pub mod provider;
@@ -24,6 +26,23 @@ pub use context::*;
 pub use http::*;
 pub use idempotency::*;
 pub use ingress::*;
+#[cfg(feature = "adaptive-cards")]
+pub use messaging_card::types::{
+    Action as AdaptiveAction, ImageRef as AdaptiveImageRef, MessageCard as AdaptiveMessageCard,
+};
+#[cfg(feature = "adaptive-cards")]
+pub use messaging_card::{
+    MessageCardEngine,
+    adaptive::{AdaptiveCardPayload, AdaptiveCardVersion, ValidateError, normalizer},
+    downgrade::{CapabilityProfile, DowngradeContext, DowngradeEngine, PolicyDowngradeEngine},
+    ir::{AppLink, Element, InputChoice, MessageCardIr, MessageCardIrBuilder},
+    renderers::{
+        NullRenderer, PlatformRenderer, RendererRegistry, SlackRenderer, TeamsRenderer,
+        TelegramRenderer, WebChatRenderer, WebexRenderer,
+    },
+    telemetry::{CardTelemetry, NullTelemetry, TelemetryEvent, TelemetryHook},
+    tier::{Tier, TierPolicy},
+};
 pub use platforms::*;
 pub use prelude::*;
 pub use provider::*;

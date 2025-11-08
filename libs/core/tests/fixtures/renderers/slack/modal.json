@@ -1,0 +1,107 @@
+{
+  "type": "modal",
+  "title": {
+    "type": "plain_text",
+    "text": "Slack Snapshot",
+    "emoji": true
+  },
+  "submit": {
+    "type": "plain_text",
+    "text": "Submit",
+    "emoji": true
+  },
+  "close": {
+    "type": "plain_text",
+    "text": "Close",
+    "emoji": true
+  },
+  "callback_id": "gsm_card_modal",
+  "blocks": [
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "Body text"
+      }
+    },
+    {
+      "type": "image",
+      "image_url": "https://example.com/banner.png",
+      "alt_text": "Banner"
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Status*\nGreen"
+        }
+      ]
+    },
+    {
+      "type": "input",
+      "block_id": "choice",
+      "label": {
+        "type": "plain_text",
+        "text": "Choose",
+        "emoji": true
+      },
+      "optional": true,
+      "element": {
+        "type": "static_select",
+        "action_id": "choice_select",
+        "options": [
+          {
+            "text": {
+              "type": "plain_text",
+              "text": "Yes",
+              "emoji": true
+            },
+            "value": "yes"
+          },
+          {
+            "text": {
+              "type": "plain_text",
+              "text": "No",
+              "emoji": true
+            },
+            "value": "no"
+          }
+        ]
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Footer"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Docs",
+            "emoji": true
+          },
+          "url": "https://premium.example/deeplink?target=https%3A%2F%2Fexample.com%2Fdocs&sig=InCYXo0u720v41YciTMhr-OzsbMR2b_5Lw0ApYZ9vzw"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Ack",
+            "emoji": true
+          },
+          "value": "{\"ok\":true}",
+          "action_id": "postback_1"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Webex Snapshot",
+      "wrap": true,
+      "weight": "Bolder",
+      "size": "Medium"
+    },
+    {
+      "type": "TextBlock",
+      "text": "Subtitle text",
+      "wrap": true,
+      "isSubtle": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Body text",
+      "wrap": true
+    },
+    {
+      "type": "Image",
+      "url": "https://example.com/banner.png",
+      "altText": "Banner"
+    },
+    {
+      "type": "TextBlock",
+      "text": "*Status*: Green",
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Footer",
+      "wrap": true,
+      "spacing": "Small",
+      "isSubtle": true,
+      "size": "Small"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.OpenUrl",
+      "title": "Docs",
+      "url": "https://premium.example/deeplink?target=https%3A%2F%2Fexample.com%2Fdocs&sig=InCYXo0u720v41YciTMhr-OzsbMR2b_5Lw0ApYZ9vzw"
+    },
+    {
+      "type": "Action.Submit",
+      "title": "Ack",
+      "data": {
+        "ok": true
+      }
+    }
+  ]
+}

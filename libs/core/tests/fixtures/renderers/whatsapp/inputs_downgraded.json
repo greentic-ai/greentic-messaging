@@ -1,0 +1,21 @@
+{
+  "type": "WhatsAppTemplate",
+  "body": "WhatsApp Snapshot\nBody text\nhttps://example.com/banner.png\n• Status: Green\nChoose: reply with [Yes, No].\nFooter",
+  "components": [
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Docs",
+          "url": "https://premium.example/deeplink?target=https%3A%2F%2Fexample.com%2Fdocs&sig=InCYXo0u720v41YciTMhr-OzsbMR2b_5Lw0ApYZ9vzw"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Ack",
+          "payload": "{\"ok\":true}"
+        }
+      ]
+    }
+  ]
+}

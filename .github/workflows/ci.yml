@@ -4,14 +4,23 @@ on:
   pull_request:
 jobs:
   build:
+    name: build (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            cargo_args: ""
+          - name: adaptive-cards
+            cargo_args: "--features adaptive-cards"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --workspace --all-targets
+        run: cargo build --workspace --all-targets ${{ matrix.cargo_args }}
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings || true
+        run: cargo clippy --workspace --all-targets ${{ matrix.cargo_args }} -- -D warnings || true
       - name: Test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets ${{ matrix.cargo_args }}
