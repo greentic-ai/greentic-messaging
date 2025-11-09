@@ -10,7 +10,10 @@ use async_nats::Client as Nats;
 use futures::StreamExt;
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher, replay_subject};
-use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
+use gsm_telemetry::{
+    AuthRenderMode, MessageContext, TelemetryLabels, install as init_telemetry,
+    record_auth_card_render, set_current_tenant_ctx,
+};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -120,8 +123,10 @@ async fn run_one(
                 kind: OutKind::Text,
                 text: Some(out),
                 message_card: None,
+                adaptive_card: None,
                 meta: Default::default(),
             };
+            emit_pending_auth_telemetry(&outmsg);
             let subject = out_subject(&env.tenant, env.platform.as_str(), &env.chat_id);
             nats.publish(subject, serde_json::to_vec(&outmsg)?.into())
                 .await?;
@@ -138,8 +143,10 @@ async fn run_one(
                 kind: OutKind::Card,
                 text: None,
                 message_card: Some(card),
+                adaptive_card: None,
                 meta: Default::default(),
             };
+            emit_pending_auth_telemetry(&outmsg);
             let subject = out_subject(&env.tenant, env.platform.as_str(), &env.chat_id);
             nats.publish(subject, serde_json::to_vec(&outmsg)?.into())
                 .await?;
@@ -203,5 +210,30 @@ async fn handle_env(ctx: Arc<ProcessContext>, invocation: InvocationEnvelope) {
         {
             tracing::error!("failed to publish dlq entry: {err}");
         }
+    }
+}
+
+fn emit_pending_auth_telemetry(out: &OutMessage) {
+    if let Some(card) = out.adaptive_card.as_ref()
+        && matches!(card.kind, gsm_core::messaging_card::MessageCardKind::Oauth)
+        && let Some(oauth) = card.oauth.as_ref()
+    {
+        let labels = TelemetryLabels {
+            tenant: out.tenant.clone(),
+            platform: Some(out.platform.as_str().to_string()),
+            chat_id: Some(out.chat_id.clone()),
+            msg_id: Some(out.message_id()),
+            extra: Vec::new(),
+        };
+        let ctx = MessageContext::new(labels);
+        let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+        record_auth_card_render(
+            &ctx,
+            oauth.provider.as_str(),
+            AuthRenderMode::Pending,
+            oauth.connection_name.as_deref(),
+            oauth.start_url.as_deref(),
+            team,
+        );
     }
 }

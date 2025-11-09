@@ -1,6 +1,7 @@
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
+use crate::render_via_engine;
 use crate::{secure_action_url, translate_with_span};
 use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage};
 
@@ -12,6 +13,20 @@ pub fn to_webex_payload(out: &OutMessage) -> Result<Value> {
 fn build_payload(out: &OutMessage) -> Result<Value> {
     let mut map = serde_json::Map::new();
     map.insert("roomId".into(), Value::String(out.chat_id.clone()));
+
+    if let Some(content) = render_via_engine(out, "webex") {
+        if let Some(text) = out.text.clone() {
+            if !text.is_empty() {
+                map.insert("markdown".into(), Value::String(text));
+            }
+        }
+        let attachment = json!({
+            "contentType": "application/vnd.microsoft.card.adaptive",
+            "content": content,
+        });
+        map.insert("attachments".into(), Value::Array(vec![attachment]));
+        return Ok(Value::Object(map));
+    }
 
     match out.kind {
         OutKind::Text => {
@@ -125,6 +140,8 @@ mod tests {
             kind,
             text: Some("Hello".into()),
             message_card: card,
+
+            adaptive_card: None,
             meta: Default::default(),
         }
     }

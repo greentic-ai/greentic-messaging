@@ -1,0 +1,16 @@
+{
+  "type": "WhatsAppTemplate",
+  "body": "Sign in with Microsoft\nSign in with Microsoft to continue.",
+  "components": [
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Sign in with Microsoft",
+          "url": "https://oauth.example/start"
+        }
+      ]
+    }
+  ]
+}

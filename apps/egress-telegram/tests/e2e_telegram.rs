@@ -132,6 +132,7 @@ async fn run_telegram_e2e(token: String, chat: ChatSpecifier) -> Result<()> {
         kind: OutKind::Card,
         text: None,
         message_card: Some(card),
+        adaptive_card: None,
         meta: Default::default(),
     };
 

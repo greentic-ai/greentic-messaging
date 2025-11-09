@@ -11,9 +11,14 @@ use once_cell::sync::OnceCell;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod auth;
 mod context;
 mod metrics;
 
+pub use auth::{
+    AuthRenderMode, record_auth_card_clicked, record_auth_card_render,
+    record_auth_card_render_with_labels,
+};
 pub use context::{MessageContext, TelemetryLabels};
 pub use metrics::{
     record_counter, record_gauge, record_histogram, telemetry_enabled, with_common_fields,

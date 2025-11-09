@@ -10,6 +10,10 @@ const MAX_ACTIONS_PER_BLOCK: usize = 5;
 
 pub fn to_slack_payloads(out: &OutMessage) -> Result<Vec<Value>> {
     translate_with_span(out, "slack", || {
+        if let Some(payload) = crate::render_via_engine(out, "slack") {
+            return Ok(vec![payload]);
+        }
+
         let thread_ts = out.thread_id.as_deref();
         match out.kind {
             OutKind::Text => {
@@ -152,6 +156,8 @@ mod tests {
             kind,
             text: None,
             message_card: None,
+
+            adaptive_card: None,
             meta: Default::default(),
         }
     }

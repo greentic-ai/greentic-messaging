@@ -15,6 +15,8 @@ fn telegram_text_snapshot() {
         kind: OutKind::Text,
         text: Some("Hello <Greentic>".into()),
         message_card: None,
+
+        adaptive_card: None,
         meta: Default::default(),
     };
     let payloads = t.to_platform(&out).unwrap();
@@ -56,6 +58,7 @@ fn telegram_card_snapshot() {
                 },
             ],
         }),
+        adaptive_card: None,
         meta: Default::default(),
     };
     let payloads = t.to_platform(&out).unwrap();
@@ -81,6 +84,7 @@ fn webchat_card_snapshot() {
             }],
             actions: vec![],
         }),
+        adaptive_card: None,
         meta: Default::default(),
     };
     let payloads = t.to_platform(&out).unwrap();

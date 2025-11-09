@@ -1,4 +1,6 @@
 use crate::context::make_tenant_ctx;
+#[cfg(feature = "adaptive-cards")]
+use crate::messaging_card::MessageCard as AdaptiveMessageCard;
 use crate::prelude::TenantCtx;
 use greentic_types::{InvocationEnvelope, NodeError, NodeResult};
 use serde::{Deserialize, Serialize};
@@ -177,6 +179,9 @@ pub struct OutMessage {
     pub kind: OutKind,
     pub text: Option<String>,
     pub message_card: Option<MessageCard>,
+    #[cfg(feature = "adaptive-cards")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_card: Option<AdaptiveMessageCard>,
     #[serde(default)]
     pub meta: BTreeMap<String, Value>,
 }

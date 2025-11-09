@@ -17,6 +17,8 @@ fn outbound_text_payload() {
         kind: OutKind::Text,
         text: Some("Hello".into()),
         message_card: None,
+
+        adaptive_card: None,
         meta: Default::default(),
     };
     let payload = to_webex_payload(&out).expect("payload");
@@ -47,6 +49,8 @@ fn outbound_card_payload() {
         kind: OutKind::Card,
         text: Some("Intro".into()),
         message_card: Some(card),
+
+        adaptive_card: None,
         meta: Default::default(),
     };
     let payload = to_webex_payload(&out).expect("payload");
@@ -70,6 +74,8 @@ fn outbound_via_translator_struct() {
         kind: OutKind::Text,
         text: Some("Hi".into()),
         message_card: None,
+
+        adaptive_card: None,
         meta: Default::default(),
     };
     let payloads = translator.to_platform(&out).expect("payloads");

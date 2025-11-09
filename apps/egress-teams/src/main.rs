@@ -1,26 +1,32 @@
 //! Microsoft Teams egress adapter. Listens on NATS, renders payloads, and posts
 //! them via the Graph API using per-tenant credentials resolved from secrets.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use async_nats::jetstream::{self, AckKind};
 use async_trait::async_trait;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
 use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
+use gsm_core::messaging_card::ensure_oauth_start_url;
+use gsm_core::messaging_card::{MessageCardEngine, MessageCardKind, RenderSpec};
+use gsm_core::oauth::{OauthClient, ReqwestTransport};
 use gsm_core::platforms::teams::TeamsSender;
 use gsm_core::prelude::DefaultResolver;
-use gsm_core::{NodeError, OutKind, OutMessage, Platform, TenantCtx};
+use gsm_core::{AdaptiveMessageCard, NodeError, OutKind, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
-    telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
+    telemetry::{
+        AuthRenderMode, context_from_out, record_auth_card_render, record_egress_success,
+        start_acquire_span, start_send_span,
+    },
 };
-use gsm_telemetry::install as init_telemetry;
+use gsm_telemetry::{MessageContext, install as init_telemetry};
 use gsm_translator::teams::to_teams_adaptive;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
-use tracing::{Instrument, Level, event};
+use tracing::{Instrument, Level, event, warn};
 
 const MAX_ATTEMPTS: usize = 3;
 
@@ -57,6 +63,21 @@ async fn main() -> Result<()> {
         api_base,
     ));
 
+    let card_engine = Arc::new(MessageCardEngine::bootstrap());
+    let oauth_client = match std::env::var("OAUTH_BASE_URL") {
+        Ok(_) => match OauthClient::from_env(reqwest::Client::new()) {
+            Ok(client) => {
+                tracing::info!("OAUTH_BASE_URL detected; Teams OAuth builder enabled");
+                Some(Arc::new(client))
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to initialize OAuth client");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
     let mut messages = queue.messages;
 
     while let Some(next) = messages.next().await {
@@ -68,8 +89,15 @@ async fn main() -> Result<()> {
             }
         };
 
-        if let Err(err) =
-            handle_message(limiter.as_ref(), sender.as_ref(), dlq.as_ref(), &msg).await
+        if let Err(err) = handle_message(
+            limiter.as_ref(),
+            sender.as_ref(),
+            dlq.as_ref(),
+            card_engine.as_ref(),
+            oauth_client.as_deref(),
+            &msg,
+        )
+        .await
         {
             tracing::error!(error = %err, "failed to process teams message");
             if let Err(nak_err) = msg.ack_with(AckKind::Nak(None)).await {
@@ -85,6 +113,8 @@ async fn handle_message<S, D, M>(
     limiter: &dyn BackpressureLimiter,
     sender: &S,
     dlq: &D,
+    card_engine: &MessageCardEngine,
+    oauth_client: Option<&OauthClient<ReqwestTransport>>,
     msg: &M,
 ) -> Result<()>
 where
@@ -130,7 +160,7 @@ where
     let send_span = start_send_span(&ctx);
     let start_time = Instant::now();
 
-    let outbound = match build_outbound(&out) {
+    let outbound = match build_outbound(&out, &ctx, card_engine, oauth_client).await {
         Ok(msg) => msg,
         Err(err) => {
             tracing::warn!(error = %err, "teams translation failed");
@@ -179,8 +209,29 @@ where
     Ok(())
 }
 
-fn build_outbound(out: &OutMessage) -> Result<OutboundMessage, anyhow::Error> {
+async fn build_outbound(
+    out: &OutMessage,
+    ctx: &MessageContext,
+    engine: &MessageCardEngine,
+    oauth_client: Option<&OauthClient<ReqwestTransport>>,
+) -> Result<OutboundMessage, anyhow::Error> {
     let channel = out.chat_id.clone();
+
+    if let Some(card) = &out.adaptive_card {
+        match render_adaptive_card(out, ctx, card, engine, oauth_client).await {
+            Ok(payload) => {
+                return Ok(OutboundMessage {
+                    channel: Some(channel),
+                    text: out.text.clone(),
+                    payload: Some(payload),
+                });
+            }
+            Err(err) => {
+                warn!(error = %err, "failed to render adaptive MessageCard; falling back to legacy payload");
+            }
+        }
+    }
+
     match out.kind {
         OutKind::Text => Ok(OutboundMessage {
             channel: Some(channel),
@@ -191,7 +242,7 @@ fn build_outbound(out: &OutMessage) -> Result<OutboundMessage, anyhow::Error> {
             let card = out
                 .message_card
                 .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("missing card"))?;
+                .ok_or_else(|| anyhow!("missing card"))?;
             let adaptive = to_teams_adaptive(card, out)?;
             Ok(OutboundMessage {
                 channel: Some(channel),
@@ -200,6 +251,59 @@ fn build_outbound(out: &OutMessage) -> Result<OutboundMessage, anyhow::Error> {
             })
         }
     }
+}
+
+async fn render_adaptive_card(
+    out: &OutMessage,
+    ctx: &MessageContext,
+    card: &AdaptiveMessageCard,
+    engine: &MessageCardEngine,
+    oauth_client: Option<&OauthClient<ReqwestTransport>>,
+) -> Result<serde_json::Value> {
+    let mut working = card.clone();
+    if matches!(working.kind, MessageCardKind::Oauth) {
+        let has_url = working
+            .oauth
+            .as_ref()
+            .and_then(|oauth| oauth.start_url.as_ref())
+            .is_some();
+        if let Some(client) = oauth_client {
+            ensure_oauth_start_url(&mut working, &out.ctx, client, None).await?;
+        } else if !has_url {
+            return Err(anyhow!(
+                "oauth card missing start_url and OAuth builder not configured"
+            ));
+        }
+    }
+
+    let spec = engine
+        .render_spec(&working)
+        .map_err(|err| anyhow!("message card normalization failed: {err}"))?;
+    let snapshot = engine
+        .render_snapshot_tracked("teams", &spec)
+        .ok_or_else(|| anyhow!("teams renderer unavailable"))?;
+
+    if matches!(spec, RenderSpec::Auth(_)) {
+        if let Some(oauth) = working.oauth.as_ref() {
+            let mode = if snapshot.ir.is_none() {
+                AuthRenderMode::Native
+            } else {
+                AuthRenderMode::Downgrade
+            };
+            let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+            record_auth_card_render(
+                ctx,
+                oauth.provider.as_str(),
+                mode,
+                oauth.connection_name.as_deref(),
+                oauth.start_url.as_deref(),
+                team,
+            );
+        }
+    }
+
+    let payload = snapshot.output.payload;
+    Ok(payload)
 }
 
 async fn send_with_retries<S>(
@@ -289,18 +393,20 @@ impl DeliveryMessage for jetstream::Message {
 mod tests {
     use super::*;
 
-    #[test]
-    fn build_outbound_text_uses_message_text() {
+    #[tokio::test]
+    async fn build_outbound_text_uses_message_text() {
         let mut out = sample_out(OutKind::Text);
         out.text = Some("hello".into());
-        let outbound = build_outbound(&out).unwrap();
+        let engine = MessageCardEngine::bootstrap();
+        let ctx = context_from_out(&out);
+        let outbound = build_outbound(&out, &ctx, &engine, None).await.unwrap();
         assert_eq!(outbound.channel.as_deref(), Some("chat-1"));
         assert_eq!(outbound.text.as_deref(), Some("hello"));
         assert!(outbound.payload.is_none());
     }
 
-    #[test]
-    fn build_outbound_card_wraps_payload() {
+    #[tokio::test]
+    async fn build_outbound_card_wraps_payload() {
         let mut out = sample_out(OutKind::Card);
         out.message_card = Some(gsm_core::MessageCard {
             title: Some("Title".into()),
@@ -310,7 +416,9 @@ mod tests {
             }],
             actions: vec![],
         });
-        let outbound = build_outbound(&out).unwrap();
+        let engine = MessageCardEngine::bootstrap();
+        let ctx = context_from_out(&out);
+        let outbound = build_outbound(&out, &ctx, &engine, None).await.unwrap();
         assert!(outbound.payload.is_some());
     }
 
@@ -324,6 +432,7 @@ mod tests {
             kind,
             text: None,
             message_card: None,
+            adaptive_card: None,
             meta: Default::default(),
         }
     }

@@ -147,6 +147,7 @@ async fn run_teams_e2e(
             kind: OutKind::Card,
             text: None,
             message_card: None,
+            adaptive_card: None,
             meta: Default::default(),
         },
     )

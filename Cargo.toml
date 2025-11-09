@@ -41,7 +41,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
@@ -58,7 +58,7 @@ dashmap = "6"
 futures = "0.3"
 greentic-types = "0.3"
 greentic-secrets = "0.3"
-greentic-interfaces = "=0.4.20"
+greentic-interfaces = "0.4"
 handlebars = "6.3"
 hex = "0.4"
 hmac = "0.12"
@@ -102,3 +102,4 @@ uuid = { version = "1", features = ["v4","serde"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
+url = "2.5"

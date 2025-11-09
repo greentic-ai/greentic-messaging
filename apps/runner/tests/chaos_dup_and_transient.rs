@@ -287,6 +287,7 @@ fn envelope_to_out(env: &MessageEnvelope) -> OutMessage {
         kind: OutKind::Text,
         text: env.text.clone(),
         message_card: None,
+        adaptive_card: None,
         meta: Default::default(),
     }
 }

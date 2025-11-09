@@ -1,0 +1,15 @@
+{
+  "method": "sendMessage",
+  "parse_mode": "HTML",
+  "text": "<b>Sign in with Microsoft</b>\nSign in with Microsoft to continue.",
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "Sign in with Microsoft",
+          "url": "https://oauth.example/start"
+        }
+      ]
+    ]
+  }
+}

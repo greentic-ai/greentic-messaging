@@ -1,0 +1,33 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Sign in with Microsoft",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "plain_text",
+        "text": "Sign in with Microsoft to continue."
+      }
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Sign in with Microsoft",
+            "emoji": true
+          },
+          "url": "https://oauth.example/start"
+        }
+      ]
+    }
+  ]
+}

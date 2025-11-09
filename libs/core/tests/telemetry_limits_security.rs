@@ -40,10 +40,14 @@ fn url_allow_list_blocks_disallowed_links() {
         TelemetryEvent::Rendered {
             platform,
             url_blocked_count,
+            downgrade_count,
+            native_count,
             ..
         } => {
             assert_eq!(platform, "slack");
             assert_eq!(url_blocked_count, 1);
+            assert_eq!(downgrade_count, 0);
+            assert_eq!(native_count, 1);
         }
         other => panic!("expected rendered telemetry, got {other:?}"),
     }
@@ -86,11 +90,18 @@ fn sanitizer_strips_tags_and_records_metrics() {
     let event = last_event(&events);
     match event {
         TelemetryEvent::Rendered {
-            sanitized_count, ..
-        } => assert!(
-            sanitized_count >= 1,
-            "sanitizer increments telemetry counter"
-        ),
+            sanitized_count,
+            downgrade_count,
+            native_count,
+            ..
+        } => {
+            assert!(
+                sanitized_count >= 1,
+                "sanitizer increments telemetry counter"
+            );
+            assert_eq!(downgrade_count, 0);
+            assert_eq!(native_count, 1);
+        }
         other => panic!("expected rendered telemetry, got {other:?}"),
     }
 }
@@ -120,6 +131,8 @@ fn payload_limit_sets_flag_and_warning() {
         TelemetryEvent::Rendered {
             limit_exceeded,
             warnings,
+            downgrade_count,
+            native_count,
             ..
         } => {
             assert!(limit_exceeded, "Telemetry marks limit overflow");
@@ -127,6 +140,8 @@ fn payload_limit_sets_flag_and_warning() {
                 warnings > 0,
                 "Telemetry captures warning count for truncation"
             );
+            assert_eq!(downgrade_count, 0);
+            assert_eq!(native_count, 1);
         }
         other => panic!("expected rendered telemetry, got {other:?}"),
     }

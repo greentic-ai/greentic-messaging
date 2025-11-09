@@ -14,10 +14,13 @@ use async_nats::jetstream::{
 use futures::StreamExt;
 use gsm_backpressure::{BackpressureLimiter, HybridLimiter};
 use gsm_core::egress::{EgressSender, OutboundMessage};
+use gsm_core::messaging_card::{MessageCardKind, ensure_oauth_start_url};
+use gsm_core::oauth::{OauthClient, ReqwestTransport};
 use gsm_core::prelude::{DefaultResolver, SecretsResolver};
 use gsm_core::{OutMessage, Platform};
 use gsm_egress_common::telemetry::{
-    context_from_out, record_egress_success, start_acquire_span, start_send_span,
+    AuthRenderMode, context_from_out, record_auth_card_render, record_egress_success,
+    start_acquire_span, start_send_span,
 };
 use gsm_telemetry::install as init_telemetry;
 use gsm_translator::{TelegramTranslator, Translator};
@@ -45,6 +48,20 @@ async fn main() -> Result<()> {
         api_base.clone(),
     ));
 
+    let oauth_client = match std::env::var("OAUTH_BASE_URL") {
+        Ok(_) => match OauthClient::from_env(reqwest::Client::new()) {
+            Ok(client) => {
+                tracing::info!("OAUTH_BASE_URL detected; Telegram OAuth builder enabled");
+                Some(Arc::new(client))
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to initialize Telegram OAuth client");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
     let nats = async_nats::connect(nats_url).await?;
     let js = async_nats::jetstream::new(nats.clone());
     let limiter = HybridLimiter::new(Some(&js)).await?;
@@ -64,7 +81,15 @@ async fn main() -> Result<()> {
                 continue;
             }
         };
-        match process_message(&msg, &translator, sender.as_ref(), &limiter).await {
+        match process_message(
+            &msg,
+            &translator,
+            sender.as_ref(),
+            &limiter,
+            oauth_client.as_deref(),
+        )
+        .await
+        {
             Ok(()) => {
                 if let Err(err) = msg.ack().await {
                     tracing::error!("ack failed: {err}");
@@ -131,17 +156,42 @@ async fn process_message<R>(
     translator: &TelegramTranslator,
     sender: &TelegramSender<R>,
     limiter: &Arc<HybridLimiter>,
+    oauth_client: Option<&OauthClient<ReqwestTransport>>,
 ) -> Result<()>
 where
     R: SecretsResolver + Send + Sync,
 {
-    let out: OutMessage = serde_json::from_slice(msg.payload.as_ref())
+    let mut out: OutMessage = serde_json::from_slice(msg.payload.as_ref())
         .context("decode OutMessage from JetStream payload")?;
     if out.platform != Platform::Telegram {
         tracing::debug!("skip non-telegram payload");
         return Ok(());
     }
+    if let (Some(card), Some(client)) = (out.adaptive_card.as_mut(), oauth_client) {
+        if matches!(card.kind, MessageCardKind::Oauth) {
+            if let Err(err) = ensure_oauth_start_url(card, &out.ctx, client, None).await {
+                tracing::warn!(error = %err, "failed to hydrate OAuth start_url; downgrading");
+                out.adaptive_card = None;
+            }
+        }
+    }
+
     let ctx = context_from_out(&out);
+    if let Some(card) = out.adaptive_card.as_ref() {
+        if matches!(card.kind, MessageCardKind::Oauth) {
+            if let Some(oauth) = card.oauth.as_ref() {
+                let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+                record_auth_card_render(
+                    &ctx,
+                    oauth.provider.as_str(),
+                    AuthRenderMode::Downgrade,
+                    oauth.connection_name.as_deref(),
+                    oauth.start_url.as_deref(),
+                    team,
+                );
+            }
+        }
+    }
     let _permit = limiter
         .acquire(&out.tenant)
         .instrument(start_acquire_span(&ctx))
@@ -216,6 +266,7 @@ mod tests {
             kind: OutKind::Text,
             text: Some("hello".into()),
             message_card: None,
+            adaptive_card: None,
             meta: Default::default(),
         }
     }

@@ -120,6 +120,7 @@ async fn run_webex_e2e(token: String, room_id: String) -> Result<()> {
         kind: OutKind::Card,
         text: None,
         message_card: Some(card),
+        adaptive_card: None,
         meta: Default::default(),
     };
 

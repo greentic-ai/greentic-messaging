@@ -1,6 +1,8 @@
 use anyhow::Result;
 use gsm_core::OutMessage;
-use gsm_telemetry::{MessageContext, record_counter, telemetry_enabled, with_common_fields};
+use gsm_telemetry::{
+    MessageContext, TelemetryLabels, record_counter, telemetry_enabled, with_common_fields,
+};
 
 const TRANSLATE_SPAN_NAME: &str = "translate.run";
 const TRANSLATE_COUNTER: &str = "messages_translated";
@@ -9,9 +11,15 @@ pub fn translate_with_span<T, F>(out: &OutMessage, to_platform: &str, f: F) -> R
 where
     F: FnOnce() -> Result<T>,
 {
-    let ctx = MessageContext::from_out(out);
-    let from_platform = ctx
-        .labels
+    let labels = TelemetryLabels {
+        tenant: out.tenant.clone(),
+        platform: Some(out.platform.as_str().to_string()),
+        chat_id: Some(out.chat_id.clone()),
+        msg_id: Some(out.message_id()),
+        extra: Vec::new(),
+    };
+    let ctx = MessageContext::new(labels.clone());
+    let from_platform = labels
         .platform
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
@@ -32,7 +40,7 @@ where
     let _guard = span.enter();
     let result = f();
     if result.is_ok() && telemetry_enabled() {
-        let mut labels = ctx.labels.clone();
+        let mut labels = labels;
         labels.platform = None;
         labels.chat_id = None;
         labels.msg_id = None;

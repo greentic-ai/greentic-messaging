@@ -11,6 +11,7 @@ pub mod idempotency;
 pub mod ingress;
 #[cfg(feature = "adaptive-cards")]
 pub mod messaging_card;
+pub mod oauth;
 pub mod platforms;
 pub mod prelude;
 pub mod provider;
@@ -29,6 +30,8 @@ pub use ingress::*;
 #[cfg(feature = "adaptive-cards")]
 pub use messaging_card::types::{
     Action as AdaptiveAction, ImageRef as AdaptiveImageRef, MessageCard as AdaptiveMessageCard,
+    MessageCardKind as AdaptiveMessageCardKind, OauthCard as AdaptiveOauthCard,
+    OauthPrompt as AdaptiveOauthPrompt, OauthProvider as AdaptiveOauthProvider,
 };
 #[cfg(feature = "adaptive-cards")]
 pub use messaging_card::{
@@ -40,6 +43,7 @@ pub use messaging_card::{
         NullRenderer, PlatformRenderer, RendererRegistry, SlackRenderer, TeamsRenderer,
         TelegramRenderer, WebChatRenderer, WebexRenderer,
     },
+    spec::{AuthRenderSpec, FallbackButton, RenderIntent, RenderSpec},
     telemetry::{CardTelemetry, NullTelemetry, TelemetryEvent, TelemetryHook},
     tier::{Tier, TierPolicy},
 };

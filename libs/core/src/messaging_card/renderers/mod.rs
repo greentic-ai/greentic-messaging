@@ -18,6 +18,7 @@ use urlencoding::encode;
 use crate::messaging_card::ir::{
     AppLink, AppLinkJwt, Element, InputChoice, InputKind, IrAction, MessageCardIr, Meta,
 };
+use crate::messaging_card::spec::AuthRenderSpec;
 use crate::messaging_card::tier::Tier;
 
 mod slack;
@@ -46,6 +47,10 @@ pub trait PlatformRenderer: Send + Sync {
     fn platform(&self) -> &'static str;
     fn target_tier(&self) -> Tier;
     fn render(&self, ir: &MessageCardIr) -> RenderOutput;
+
+    fn render_auth(&self, _auth: &AuthRenderSpec) -> Option<RenderOutput> {
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +103,11 @@ impl RendererRegistry {
 
     pub fn render(&self, platform: &str, ir: &MessageCardIr) -> Option<RenderOutput> {
         self.get(platform).map(|renderer| renderer.render(ir))
+    }
+
+    pub fn render_auth(&self, platform: &str, auth: &AuthRenderSpec) -> Option<RenderOutput> {
+        self.get(platform)
+            .and_then(|renderer| renderer.render_auth(auth))
     }
 
     pub fn platforms(&self) -> Vec<String> {

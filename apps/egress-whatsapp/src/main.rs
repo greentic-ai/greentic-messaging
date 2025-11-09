@@ -6,13 +6,18 @@ use async_nats::jetstream::AckKind;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
 use gsm_core::egress::{EgressSender, OutboundMessage};
+use gsm_core::messaging_card::{MessageCardKind, ensure_oauth_start_url};
+use gsm_core::oauth::OauthClient;
 use gsm_core::platforms::whatsapp::{WhatsAppCreds, WhatsAppSender};
 use gsm_core::prelude::{DefaultResolver, SecretsResolver};
 use gsm_core::{OutKind, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
-    telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
+    telemetry::{
+        AuthRenderMode, context_from_out, record_auth_card_render, record_egress_success,
+        start_acquire_span, start_send_span,
+    },
 };
 use gsm_telemetry::install as init_telemetry;
 use gsm_translator::secure_action_url;
@@ -70,6 +75,19 @@ async fn main() -> Result<()> {
     let resolver = Arc::new(DefaultResolver::new().await?);
     let http = reqwest::Client::new();
     let sender = Arc::new(WhatsAppSender::new(http.clone(), resolver, Some(api_base)));
+    let oauth_client = match std::env::var("OAUTH_BASE_URL") {
+        Ok(_) => match OauthClient::from_env(http.clone()) {
+            Ok(client) => {
+                tracing::info!("OAUTH_BASE_URL detected; WhatsApp OAuth builder enabled");
+                Some(Arc::new(client))
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to initialize WhatsApp OAuth client");
+                None
+            }
+        },
+        Err(_) => None,
+    };
 
     while let Some(next) = messages.next().await {
         let msg = match next {
@@ -80,7 +98,7 @@ async fn main() -> Result<()> {
             }
         };
 
-        let out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
+        let mut out: OutMessage = match serde_json::from_slice(msg.payload.as_ref()) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("bad out msg: {e}");
@@ -96,7 +114,33 @@ async fn main() -> Result<()> {
             continue;
         }
 
+        if let (Some(card), Some(client)) = (out.adaptive_card.as_mut(), oauth_client.as_deref()) {
+            if let Err(err) = ensure_oauth_start_url(card, &out.ctx, client, None).await {
+                tracing::warn!(
+                    error = %err,
+                    platform = "whatsapp",
+                    "failed to build oauth start_url; downgrading"
+                );
+                out.adaptive_card = None;
+            }
+        }
+
         let ctx = context_from_out(&out);
+        if let Some(card) = out.adaptive_card.as_ref() {
+            if matches!(card.kind, MessageCardKind::Oauth) {
+                if let Some(oauth) = card.oauth.as_ref() {
+                    let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+                    record_auth_card_render(
+                        &ctx,
+                        oauth.provider.as_str(),
+                        AuthRenderMode::Downgrade,
+                        oauth.connection_name.as_deref(),
+                        oauth.start_url.as_deref(),
+                        team,
+                    );
+                }
+            }
+        }
         let msg_id = ctx
             .labels
             .msg_id
@@ -230,6 +274,46 @@ fn within_session_window(out: &OutMessage) -> bool {
     OffsetDateTime::now_utc() - last_interacted <= Duration::hours(SESSION_WINDOW_HOURS)
 }
 
+struct FallbackLink {
+    title: String,
+    url: String,
+    is_oauth: bool,
+}
+
+fn determine_fallback_link(cfg: &AppConfig, out: &OutMessage, text: &str) -> FallbackLink {
+    if let Some(card) = &out.adaptive_card
+        && matches!(card.kind, MessageCardKind::Oauth)
+    {
+        if let Some(oauth) = &card.oauth {
+            if let Some(start_url) = &oauth.start_url {
+                let title = card
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| format!("Sign in with {}", oauth.provider.display_name()));
+                return FallbackLink {
+                    title,
+                    url: start_url.clone(),
+                    is_oauth: true,
+                };
+            }
+        }
+    }
+
+    let title = out
+        .message_card
+        .as_ref()
+        .and_then(|c| c.title.clone())
+        .or_else(|| out.adaptive_card.as_ref().and_then(|c| c.title.clone()))
+        .unwrap_or_else(|| text.to_string());
+
+    let url = secure_action_url(out, "fallback", &cfg.fallback_url);
+    FallbackLink {
+        title,
+        url,
+        is_oauth: false,
+    }
+}
+
 async fn send_card_fallback<R>(
     http: &reqwest::Client,
     sender: &WhatsAppSender<R>,
@@ -242,17 +326,12 @@ async fn send_card_fallback<R>(
 where
     R: SecretsResolver + Send + Sync,
 {
-    let title = out
-        .message_card
-        .as_ref()
-        .and_then(|c| c.title.clone())
-        .unwrap_or_else(|| text.to_string());
+    let fallback = determine_fallback_link(cfg, out, text);
     let mut vars = Vec::new();
-    if !title.is_empty() {
-        vars.push(title.as_str());
+    if !fallback.title.is_empty() {
+        vars.push(fallback.title.as_str());
     }
-    let fallback_url = secure_action_url(out, "fallback", &cfg.fallback_url);
-    vars.push(fallback_url.as_str());
+    vars.push(fallback.url.as_str());
 
     let creds = sender
         .credentials(ctx)
@@ -263,10 +342,16 @@ where
         Ok(()) => Ok(()),
         Err(e) => {
             tracing::warn!("template send failed, falling back to text: {e}");
-            let fallback_text = if text.is_empty() {
-                format!("View details: {}", fallback_url)
+            let fallback_text = if fallback.is_oauth {
+                if fallback.title.is_empty() {
+                    format!("Sign in: {}", fallback.url)
+                } else {
+                    format!("{} — {}", fallback.title, fallback.url)
+                }
+            } else if text.is_empty() {
+                format!("View details: {}", fallback.url)
             } else {
-                format!("{} — {}", text, fallback_url)
+                format!("{} — {}", text, fallback.url)
             };
             send_text(sender, ctx, chat_id, &fallback_text).await
         }
@@ -352,6 +437,9 @@ async fn send_template(
 mod tests {
     use super::*;
     use gsm_core::make_tenant_ctx;
+    use gsm_core::messaging_card::{
+        MessageCard as AdaptiveCard, MessageCardKind, OauthCard, OauthProvider,
+    };
 
     fn sample_message(timestamp_offset_hours: i64) -> OutMessage {
         let last = OffsetDateTime::now_utc() - Duration::hours(timestamp_offset_hours);
@@ -372,6 +460,7 @@ mod tests {
             kind: OutKind::Text,
             text: Some("Hello".into()),
             message_card: None,
+            adaptive_card: None,
             meta: meta.into_iter().collect(),
         }
     }
@@ -406,5 +495,39 @@ mod tests {
             creds.phone_id
         );
         assert_eq!(url, "https://graph.facebook.com/v19.0/123/messages");
+    }
+
+    fn oauth_message(start_url: &str) -> OutMessage {
+        let mut out = sample_message(48);
+        out.kind = OutKind::Card;
+        let mut card = AdaptiveCard::default();
+        card.kind = MessageCardKind::Oauth;
+        card.title = Some("Sign in with Microsoft".into());
+        card.oauth = Some(OauthCard {
+            provider: OauthProvider::Microsoft,
+            scopes: Vec::new(),
+            resource: None,
+            prompt: None,
+            start_url: Some(start_url.into()),
+            connection_name: None,
+            metadata: None,
+        });
+        out.adaptive_card = Some(card);
+        out
+    }
+
+    #[test]
+    fn fallback_prefers_oauth_start_url() {
+        let cfg = AppConfig {
+            template_name: "weather".into(),
+            template_lang: "en".into(),
+            api_base: "https://graph.facebook.com/v19.0/".into(),
+            fallback_url: "https://app.greentic.ai".into(),
+        };
+        let out = oauth_message("https://oauth.example/start");
+        let link = determine_fallback_link(&cfg, &out, "");
+        assert_eq!(link.url, "https://oauth.example/start");
+        assert!(link.is_oauth);
+        assert!(link.title.contains("Microsoft"));
     }
 }

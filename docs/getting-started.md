@@ -14,6 +14,7 @@ The Greentic runtime ships several ready-to-run examples showing how to ingest m
 ```bash
 export TENANT=acme
 export NATS_URL=nats://127.0.0.1:4222
+export OAUTH_BASE_URL=https://oauth.greentic.dev
 # Enable telemetry when a collector is available
 # export ENABLE_OTEL=true
 # export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317

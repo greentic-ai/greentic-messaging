@@ -6,13 +6,18 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use gsm_backpressure::BackpressureLimiter;
 use gsm_core::egress::{EgressSender, OutboundMessage, SendResult};
+use gsm_core::messaging_card::{MessageCardKind, ensure_oauth_start_url};
+use gsm_core::oauth::{OauthClient, ReqwestTransport};
 use gsm_core::platforms::slack::sender::SlackSender;
 use gsm_core::prelude::DefaultResolver;
 use gsm_core::{NodeError, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
     egress::bootstrap,
-    telemetry::{context_from_out, record_egress_success, start_acquire_span, start_send_span},
+    telemetry::{
+        AuthRenderMode, context_from_out, record_auth_card_render, record_egress_success,
+        start_acquire_span, start_send_span,
+    },
 };
 use gsm_telemetry::install as init_telemetry;
 use gsm_translator::slack::to_slack_payloads;
@@ -49,6 +54,20 @@ async fn main() -> Result<()> {
     let api_base = std::env::var("SLACK_API_BASE").ok();
     let sender = Arc::new(SlackSender::new(reqwest::Client::new(), resolver, api_base));
 
+    let oauth_client = match std::env::var("OAUTH_BASE_URL") {
+        Ok(_) => match OauthClient::from_env(reqwest::Client::new()) {
+            Ok(client) => {
+                tracing::info!("OAUTH_BASE_URL detected; Slack OAuth builder enabled");
+                Some(Arc::new(client))
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to initialize Slack OAuth client");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
     let mut messages = queue.messages;
 
     while let Some(next) = messages.next().await {
@@ -60,8 +79,14 @@ async fn main() -> Result<()> {
             }
         };
 
-        if let Err(err) =
-            handle_message(limiter.as_ref(), sender.as_ref(), dlq.as_ref(), &msg).await
+        if let Err(err) = handle_message(
+            limiter.as_ref(),
+            sender.as_ref(),
+            dlq.as_ref(),
+            oauth_client.as_deref(),
+            &msg,
+        )
+        .await
         {
             tracing::error!(error = %err, "failed to process slack message");
             if let Err(nak) = msg.ack_with(AckKind::Nak(None)).await {
@@ -77,6 +102,7 @@ async fn handle_message<S, D, M>(
     limiter: &dyn BackpressureLimiter,
     sender: &S,
     dlq: &D,
+    oauth_client: Option<&OauthClient<ReqwestTransport>>,
     msg: &M,
 ) -> Result<()>
 where
@@ -114,7 +140,34 @@ where
     let send_span = start_send_span(&ctx);
     let start_time = Instant::now();
 
-    let payloads = match to_slack_payloads(&out) {
+    let mut translated_out = out.clone();
+    if let (Some(card), Some(client)) = (translated_out.adaptive_card.as_mut(), oauth_client) {
+        if matches!(card.kind, MessageCardKind::Oauth) {
+            if let Err(err) = ensure_oauth_start_url(card, &translated_out.ctx, client, None).await
+            {
+                tracing::warn!(error = %err, "failed to build oauth start_url; downgrading");
+                translated_out.adaptive_card = None;
+            }
+        }
+    }
+
+    if let Some(card) = translated_out.adaptive_card.as_ref() {
+        if matches!(card.kind, MessageCardKind::Oauth) {
+            if let Some(oauth) = card.oauth.as_ref() {
+                let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+                record_auth_card_render(
+                    &ctx,
+                    oauth.provider.as_str(),
+                    AuthRenderMode::Downgrade,
+                    oauth.connection_name.as_deref(),
+                    oauth.start_url.as_deref(),
+                    team,
+                );
+            }
+        }
+    }
+
+    let payloads = match to_slack_payloads(&translated_out) {
         Ok(payloads) => payloads,
         Err(err) => {
             tracing::warn!(error = %err, "slack translation failed");
@@ -392,6 +445,7 @@ mod tests {
             kind: OutKind::Text,
             text: Some("hi".into()),
             message_card: None,
+            adaptive_card: None,
             meta,
         }
     }
@@ -425,7 +479,7 @@ mod tests {
         let out = sample_out();
         let message = MockMessage::new(&out);
 
-        handle_message(lim.as_ref(), &sender, &dlq, &message)
+        handle_message(lim.as_ref(), &sender, &dlq, None, &message)
             .await
             .unwrap();
 
@@ -442,7 +496,7 @@ mod tests {
         let out = sample_out();
         let message = MockMessage::new(&out);
 
-        handle_message(lim.as_ref(), &sender, &dlq, &message)
+        handle_message(lim.as_ref(), &sender, &dlq, None, &message)
             .await
             .unwrap();
 

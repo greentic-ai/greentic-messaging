@@ -35,6 +35,7 @@ use serde_json::{Value, json};
 ///     kind: gsm_core::OutKind::Card,
 ///     text: None,
 ///     message_card: None,
+///     adaptive_card: None,
 ///     meta: Default::default(),
 /// };
 /// let card_payload = to_teams_adaptive(&card, &out).unwrap();

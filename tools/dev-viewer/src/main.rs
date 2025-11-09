@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,15 +10,19 @@ use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Parser;
-use gsm_core::Tier;
 use gsm_core::messaging_card::adaptive::validator::validate_ac_json;
 use gsm_core::messaging_card::ir::{MessageCardIr, Meta};
 use gsm_core::messaging_card::renderers::RenderOutput;
-use gsm_core::messaging_card::{MessageCard, MessageCardEngine};
+use gsm_core::messaging_card::{
+    AuthRenderSpec, MessageCard, MessageCardEngine, MessageCardKind, RenderIntent, RenderSnapshot,
+    RenderSpec, ensure_oauth_start_url,
+};
+use gsm_core::oauth::{OauthClient, ReqwestTransport};
+use gsm_core::{TenantCtx, Tier, make_tenant_ctx};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::signal;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -37,6 +42,8 @@ struct AppState {
     engine: Arc<MessageCardEngine>,
     fixtures_dir: Arc<PathBuf>,
     platforms: Vec<String>,
+    tenant_ctx: Arc<TenantCtx>,
+    oauth_client: Option<Arc<OauthClient<ReqwestTransport>>>,
 }
 
 #[tokio::main]
@@ -56,10 +63,24 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = MessageCardEngine::bootstrap();
     let platforms = engine.registry().platforms();
+    let tenant_ctx = Arc::new(make_tenant_ctx(
+        "dev-viewer".into(),
+        Some("demo".into()),
+        Some("viewer".into()),
+    ));
+    let oauth_client = env::var("OAUTH_BASE_URL")
+        .ok()
+        .and_then(|_| OauthClient::from_env(reqwest::Client::new()).ok())
+        .map(Arc::new);
+    if oauth_client.is_none() {
+        info!("OAUTH_BASE_URL not set or invalid; OAuth preview disabled");
+    }
     let state = AppState {
         engine: Arc::new(engine),
         fixtures_dir: Arc::new(fixtures_dir),
         platforms,
+        tenant_ctx,
+        oauth_client,
     };
 
     let app = Router::new()
@@ -159,59 +180,69 @@ async fn render_card(
         ));
     }
 
-    let card: MessageCard = serde_json::from_value(request.card).map_err(|err| {
+    let mut card: MessageCard = serde_json::from_value(request.card).map_err(|err| {
         (
             StatusCode::BAD_REQUEST,
             format!("invalid MessageCard: {err}"),
         )
     })?;
 
-    let base_ir = engine
-        .normalize(&card)
-        .map_err(|err| (StatusCode::BAD_REQUEST, format!("normalize error: {err}")))?;
+    if matches!(card.kind, MessageCardKind::Oauth) {
+        if let Some(client) = state.oauth_client.as_ref() {
+            if let Err(err) =
+                ensure_oauth_start_url(&mut card, &state.tenant_ctx, client, None).await
+            {
+                warn!(error = %err, "failed to build OAuth start URL");
+            }
+        }
+    }
+
+    let spec = engine
+        .render_spec(&card)
+        .map_err(|err| (StatusCode::BAD_REQUEST, format!("render_spec error: {err}")))?;
+
+    let (ir_spec, auth_spec) = match &spec {
+        RenderSpec::Card(ir) => (Some(ir.clone()), None),
+        RenderSpec::Auth(auth) => (None, Some(auth.clone())),
+    };
 
     let mut platforms = BTreeMap::new();
     for platform in &state.platforms {
-        if let Some(renderer) = engine.registry().get(platform) {
-            let target = renderer.target_tier();
-            let downgraded = base_ir.tier > target;
-            let working_ir = if downgraded {
-                engine.downgrade_for_platform(&base_ir, platform, target)
+        if let Some(snapshot) = engine.render_snapshot(platform, &spec) {
+            let RenderSnapshot {
+                output,
+                ir,
+                tier,
+                target_tier,
+                downgraded,
+            } = snapshot;
+            let (warnings, meta) = if let Some(ir) = ir {
+                (ir.meta.warnings.clone(), ir.meta)
             } else {
-                base_ir.clone()
+                (output.warnings.clone(), Meta::default())
             };
-            let RenderOutput {
-                payload,
-                used_modal,
-                warnings: render_warnings,
-                limit_exceeded,
-                sanitized_count,
-                url_blocked_count,
-            } = renderer.render(&working_ir);
-            let mut warnings = working_ir.meta.warnings.clone();
-            warnings.extend(render_warnings.into_iter());
-            warnings.sort();
-            warnings.dedup();
             platforms.insert(
                 platform.clone(),
                 PlatformPreview {
-                    payload,
+                    payload: output.payload,
                     warnings,
-                    tier: working_ir.tier,
-                    target_tier: target,
+                    tier,
+                    target_tier,
                     downgraded,
-                    used_modal,
-                    limit_exceeded,
-                    sanitized_count,
-                    url_blocked_count,
-                    meta: working_ir.meta.clone(),
+                    used_modal: output.used_modal,
+                    limit_exceeded: output.limit_exceeded,
+                    sanitized_count: output.sanitized_count,
+                    url_blocked_count: output.url_blocked_count,
+                    meta,
                 },
             );
         }
     }
 
     Ok(Json(RenderResponse {
-        ir: base_ir,
+        intent: spec.intent(),
+        ir: ir_spec,
+        auth: auth_spec,
         platforms,
     }))
 }
@@ -234,7 +265,9 @@ struct RenderRequest {
 
 #[derive(Serialize)]
 struct RenderResponse {
-    ir: MessageCardIr,
+    intent: RenderIntent,
+    ir: Option<MessageCardIr>,
+    auth: Option<AuthRenderSpec>,
     platforms: BTreeMap<String, PlatformPreview>,
 }
 

@@ -117,6 +117,7 @@ async fn run_slack_e2e(token: String, channel: String) -> Result<()> {
         kind: OutKind::Card,
         text: None,
         message_card: Some(card),
+        adaptive_card: None,
         meta: Default::default(),
     };
 

@@ -12,6 +12,8 @@ fn base_out_message() -> OutMessage {
         kind: OutKind::Card,
         text: None,
         message_card: None,
+
+        adaptive_card: None,
         meta: Default::default(),
     }
 }

@@ -109,6 +109,12 @@ OAuthCard support and the proactive admin API continue to live under the
 payload details. The provider resolves OAuth configuration from the tenant
 scope using the `webchat_oauth/*` secrets listed above.
 
+When WebChat egress receives an Adaptive `kind="oauth"` card it contacts the
+shared greentic-oauth service (export `OAUTH_BASE_URL`) to mint a signed
+`start_url` and to look up the Bot Framework `connectionName`. Missing presets
+trigger the downgrade heuristics described in the repository README, so the
+conversation still receives a clickable fallback.
+
 ## Demo application
 
 `examples/webchat-demo/` uses the standalone Direct Line endpoints. Run the

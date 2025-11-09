@@ -1,0 +1,31 @@
+{
+  "type": "AdaptiveCard",
+  "version": "1.4",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Sign in with Microsoft",
+      "wrap": true,
+      "weight": "Bolder",
+      "size": "Medium"
+    },
+    {
+      "type": "TextBlock",
+      "text": "Sign in with Microsoft to continue.",
+      "wrap": true,
+      "isSubtle": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Sign in with Microsoft to continue.",
+      "wrap": true
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.OpenUrl",
+      "title": "Sign in with Microsoft",
+      "url": "https://oauth.example/start"
+    }
+  ]
+}

@@ -14,7 +14,7 @@ axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 include_dir = { workspace = true }
-gsm-core = { path = "../../libs/core" }
+gsm-core = { path = "../../libs/core", features = ["adaptive-cards"] }
 gsm-translator = { path = "../../libs/translator" }
 gsm-egress-common = { path = "../egress-common" }
 gsm-backpressure = { path = "../../libs/backpressure" }
@@ -24,6 +24,7 @@ futures = { workspace = true }
 metrics = { workspace = true }
 gsm-telemetry = { workspace = true }
 dashmap = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 hyper = { workspace = true }

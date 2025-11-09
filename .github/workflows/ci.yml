@@ -24,3 +24,15 @@ jobs:
         run: cargo clippy --workspace --all-targets ${{ matrix.cargo_args }} -- -D warnings || true
       - name: Test
         run: cargo test --workspace --all-targets ${{ matrix.cargo_args }}
+
+  oauth:
+    name: oauth suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: OAuth renderer snapshots
+        run: cargo test -p gsm-core --features "adaptive-cards directline_standalone" --test renderers_oauth -- --nocapture
+      - name: OAuth builder helpers
+        run: cargo test -p gsm-core --features "adaptive-cards directline_standalone" ensure_oauth_start_url -- --nocapture

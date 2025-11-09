@@ -26,7 +26,7 @@ const INGRESS_SPAN_NAME: &str = "ingress.handle";
 /// record_ingress(&env);
 /// ```
 pub fn record_ingress(envelope: &MessageEnvelope) {
-    let ctx = MessageContext::from_envelope(envelope);
+    let ctx = MessageContext::new(labels_from_envelope(envelope));
     record_counter(INGRESS_COUNTER, 1, &ctx.labels);
 }
 
@@ -42,7 +42,7 @@ pub fn record_idempotency_hit(tenant: &str) {
 }
 
 pub fn start_ingress_span(envelope: &MessageEnvelope) -> Span {
-    let ctx = MessageContext::from_envelope(envelope);
+    let ctx = MessageContext::new(labels_from_envelope(envelope));
     let span = tracing::info_span!(
         INGRESS_SPAN_NAME,
         tenant = %ctx.labels.tenant,
@@ -57,4 +57,14 @@ pub fn start_ingress_span(envelope: &MessageEnvelope) -> Span {
         ctx.labels.msg_id.as_deref(),
     );
     span
+}
+
+fn labels_from_envelope(env: &MessageEnvelope) -> TelemetryLabels {
+    TelemetryLabels {
+        tenant: env.tenant.clone(),
+        platform: Some(env.platform.as_str().to_string()),
+        chat_id: Some(env.chat_id.clone()),
+        msg_id: Some(env.msg_id.clone()),
+        extra: Vec::new(),
+    }
 }

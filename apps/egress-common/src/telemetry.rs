@@ -1,7 +1,10 @@
 use gsm_core::OutMessage;
 use gsm_telemetry::{
-    MessageContext, record_counter, record_histogram, set_current_tenant_ctx, with_common_fields,
+    MessageContext, TelemetryLabels, record_counter, record_histogram, set_current_tenant_ctx,
+    with_common_fields,
 };
+
+pub use gsm_telemetry::{AuthRenderMode, record_auth_card_render};
 use tracing::Span;
 
 const EGRESS_ACQUIRE_SPAN: &str = "egress.acquire_permit";
@@ -11,7 +14,14 @@ const EGRESS_LATENCY_HISTOGRAM: &str = "histogram.egress_latency_ms";
 
 pub fn context_from_out(out: &OutMessage) -> MessageContext {
     set_current_tenant_ctx(out.ctx.clone());
-    MessageContext::from_out(out)
+    let labels = TelemetryLabels {
+        tenant: out.tenant.clone(),
+        platform: Some(out.platform.as_str().to_string()),
+        chat_id: Some(out.chat_id.clone()),
+        msg_id: Some(out.message_id()),
+        extra: Vec::new(),
+    };
+    MessageContext::new(labels)
 }
 
 pub fn start_acquire_span(ctx: &MessageContext) -> Span {

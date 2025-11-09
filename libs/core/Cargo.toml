@@ -6,7 +6,7 @@ description = "Core types and platform abstractions for the Greentic messaging r
 license.workspace = true
 
 [features]
-default = []
+default = ["adaptive-cards"]
 nats = ["dep:async-nats"]
 directline_standalone = []
 store_redis = ["dep:redis"]
@@ -43,6 +43,7 @@ base64 = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 urlencoding = { workspace = true }
+gsm-telemetry = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

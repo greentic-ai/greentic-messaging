@@ -5,8 +5,9 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
 };
 use greentic_types::TenantCtx;
+use gsm_telemetry::{MessageContext, TelemetryLabels, record_auth_card_clicked};
 use metrics::counter;
-use reqwest::Client;
+use reqwest::{Client, Url};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::warn;
@@ -72,6 +73,21 @@ pub async fn start(
         .await
         .map_err(|err| OAuthRouteError::Resolve(WebChatError::Internal(err)))?
         .ok_or(OAuthRouteError::NotConfigured)?;
+
+    let provider_label = Url::parse(oauth_config.issuer.as_str())
+        .ok()
+        .and_then(|url| url.host_str().map(|host| host.to_string()))
+        .unwrap_or_else(|| oauth_config.issuer.clone());
+    let labels = TelemetryLabels {
+        tenant: session.tenant_ctx.tenant.as_ref().to_string(),
+        platform: Some("bf_webchat".into()),
+        chat_id: Some(query.conversation_id.clone()),
+        msg_id: None,
+        extra: Vec::new(),
+    };
+    let ctx = MessageContext::new(labels);
+    let team = session.tenant_ctx.team.as_ref().map(|team| team.as_ref());
+    record_auth_card_clicked(&ctx, provider_label.as_str(), "bf_webchat", None, team);
 
     let redirect_uri = build_redirect_uri(&oauth_config, &query.conversation_id)?;
     let authorize_url = build_authorize_url(&oauth_config, &redirect_uri, query.state.as_deref())?;

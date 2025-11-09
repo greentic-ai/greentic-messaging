@@ -10,6 +10,8 @@ pub enum TelemetryEvent {
         limit_exceeded: bool,
         sanitized_count: usize,
         url_blocked_count: usize,
+        downgrade_count: usize,
+        native_count: usize,
     },
     Downgraded {
         from: Tier,
@@ -51,7 +53,10 @@ impl<'a> CardTelemetry<'a> {
         limit_exceeded: bool,
         sanitized_count: usize,
         url_blocked_count: usize,
+        downgraded: bool,
     ) {
+        let downgrade_count = if downgraded { 1 } else { 0 };
+        let native_count = if downgraded { 0 } else { 1 };
         self.hook.emit(TelemetryEvent::Rendered {
             platform: platform.to_string(),
             tier,
@@ -60,6 +65,8 @@ impl<'a> CardTelemetry<'a> {
             limit_exceeded,
             sanitized_count,
             url_blocked_count,
+            downgrade_count,
+            native_count,
         });
     }
 }
@@ -91,7 +98,7 @@ mod tests {
         let hook = TestTelemetry::new();
         let telemetry = CardTelemetry::new(&hook);
         telemetry.downgrading(Tier::Premium, Tier::Basic);
-        telemetry.rendered("teams", Tier::Basic, 1, true, false, 0, 0);
+        telemetry.rendered("teams", Tier::Basic, 1, true, false, 0, 0, false);
         let events = hook.events.lock().unwrap();
         assert_eq!(events.len(), 2);
     }

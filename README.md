@@ -54,7 +54,7 @@ Set the following environment variables to emit spans and OTLP traces when runni
 
 ### MessageCard Telemetry & Limits
 
-- Every renderer emits a `TelemetryEvent::Rendered` record with `render_tier`, `warning_count`, `limit_exceeded`, `sanitized_count`, `url_blocked_count`, and whether a modal was required. Attach a custom `TelemetryHook` through `MessageCardEngine::with_telemetry` to capture those metrics.
+- Every renderer emits a `TelemetryEvent::Rendered` record with `render_tier`, `warning_count`, `limit_exceeded`, `sanitized_count`, `url_blocked_count`, modal usage, plus one-hot `native_count`/`downgrade_count` flags so you can differentiate fully supported payloads from downgraded ones. Attach a custom `TelemetryHook` through `MessageCardEngine::with_telemetry` to capture those metrics.
 - Basic and Advanced tiers automatically run the Markdown sanitizer; HTML tags and unsafe Unicode line breaks are stripped before rendering. The `sanitized_count` field increments for every field that required cleanup.
 - Action URLs can be restricted by exporting `CARD_URL_ALLOW_LIST=https://example.com/,https://docs.example.com/`. Links outside the prefixes are removed from the payload, logged as warnings, and surfaced through `url_blocked_count`.
 - Platform payload caps (25KB Adaptive cards, 3KB Slack/Webex text, 4KB Telegram/WhatsApp messages, and per-platform button limits) are enforced automatically. When truncation happens, the rendered payload stays valid, a warning is added, and `limit_exceeded=true` is reported through telemetry.
@@ -187,6 +187,74 @@ curl -s \
   -H "${INGRESS_HMAC_HEADER:-x-signature}: $sig" \
   http://localhost:8080/admin/telegram/acme/status | jq
 ```
+
+## MessageCard Schema
+
+- The canonical schema for MessageCard payloads lives at `libs/core/schema/message_card.schema.json` (version 1.2.0). It now models the `kind` discriminator plus the optional OAuth descriptor (`oauth` block).
+- See `docs/changelog.md` for schema history and notable contract updates.
+- Downstream tooling (dev-viewer, fixture generators, etc.) can load the schema directly to validate authoring experiences and to surface errors earlier in CI.
+- The schema continues to accept plain text/image cards and Adaptive payloads while marking OAuth cards as premium so the renderer can tier them correctly.
+
+## OAuth Cards
+
+- Set `kind: "oauth"` on Adaptive MessageCards when you need Teams or Bot Framework sign-in cards. The `oauth` block carries the provider (`microsoft`, `google`, `github`, or `custom`), scopes, optional resource/audience, and metadata your flows may need later.
+- Point every egress adapter (and the dev-viewer) at your greentic-oauth deployment by exporting `OAUTH_BASE_URL=https://oauth.greentic.dev/`. When the card omits `start_url`, egress calls `POST $OAUTH_BASE_URL/oauth/start` with the tenant/team/user context and backfills the signed URL automatically. The same response also includes the Bot Framework `connectionName`; Teams/WebChat need it for native OAuth cards, and the presets live inside greentic-oauth so you don’t have to hard-code anything.
+- The runner emits `auth.card.rendered` telemetry as soon as a card makes it onto the out subject (`mode=pending`). Every egress adapter follows up with another `auth.card.rendered` tagged `mode=native` or `mode=downgrade` plus the resolved `connection_name`, provider, and start-url domain. Bot Framework clicks bubble back through `auth.card.clicked` events so the pipeline can correlate completions.
+
+### Downgrade Matrix
+
+| Platform | Mode | Notes |
+| --- | --- | --- |
+| Teams | **Native** | Renders `application/vnd.microsoft.card.oauth` with preset `connectionName`. Missing presets cause an automatic downgrade with a warning. |
+| WebChat / Bot Framework Direct Line | **Native** | Same OAuthCard schema as Teams. Connection names come from greentic-oauth presets or explicit `oauth.connection_name`. |
+| Slack | Downgraded | The renderer produces a basic blocks card with a single `openUrl` button pointing at the OAuth start URL plus a short disclaimer. |
+| Telegram | Downgraded | Sends a chat message plus one inline button opening the start URL. |
+| Webex | Downgraded | Emits a slim Adaptive Card with a single `Action.OpenUrl`. |
+| WhatsApp | Downgraded | Uses the template transport with a single URL button; the title mirrors the provider (“Sign in with {Provider}”). |
+
+### How It Works
+
+```
+Author -> Runner -> NATS -> Egress Adapter -> greentic-oauth -> Platform
+             |               |                    |
+             |               |-- auth.card.rendered (mode=native|downgrade)
+             |-- auth.card.rendered (mode=pending)
+
+1. Runner publishes an `OutMessage` carrying the Adaptive OAuth card.
+2. The egress worker acquires a permit, calls `/oauth/start` when `start_url` is missing, and resolves `connection_name` presets when the card left it empty.
+3. Teams/WebChat receive a native OAuthCard; everyone else gets an “open URL” fallback built by `MessageCardEngine::oauth_fallback_ir`.
+4. Click telemetry (when available) fans back through the same tenant/team labels so you can correlate completions.
+```
+
+```mermaid
+sequenceDiagram
+    participant Author
+    participant Runner
+    participant Egress
+    participant OAuth as greentic-oauth
+    participant Platform
+    Author->>Runner: Emit MessageCard(kind="oauth")
+    Runner->>Egress: Publish OutMessage (auth.card.rendered mode=pending)
+    alt Missing start_url or connection
+        Egress->>OAuth: POST /oauth/start (tenant/team/user context)
+        OAuth-->>Egress: start_url + connection_name
+    end
+    alt Teams/WebChat
+        Egress->>Platform: Native OAuthCard (mode=native)
+    else Other platforms
+        Egress->>Platform: Downgraded openUrl fallback (mode=downgrade)
+    end
+    Platform-->>Egress: User clicks sign-in (optional)
+    Egress-->>Runner: auth.card.clicked (if available)
+```
+
+### Troubleshooting
+
+- **`OAUTH_BASE_URL` unset:** egress logs a warning, emits `mode=downgrade`, and the user receives the open URL fallback. Set the variable on every adapter and on the dev-viewer when you need end-to-end OAuth testing.
+- **Preset missing for Teams/WebChat:** the greentic-oauth service returns a start URL but no `connection_name`. Egress will downgrade, log `missing connection name`, and your metrics will show `mode=downgrade` plus `downgrade_count=1`.
+- **Start builder errors:** transient HTTP failures keep the message in-flight (we `Nak` the JetStream delivery). Hard failures (4xx) produce a downgraded fallback so the conversation keeps moving.
+- **Payload issues:** snapshot the platform payloads with `cargo test -p gsm-core --features "adaptive-cards directline_standalone" --test renderers_oauth -- --nocapture` and compare against `libs/core/tests/fixtures/renderers/**/oauth_*`. The dev-viewer is also aware of OAuth intents and will show you when the renderer fell back.
+
 
 ## Premium Deeplinks & JWT State
 

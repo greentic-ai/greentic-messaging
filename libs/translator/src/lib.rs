@@ -5,6 +5,7 @@
 //! payloads ready to be dispatched.
 
 use anyhow::{Result, anyhow};
+use gsm_core::messaging_card::MessageCardEngine;
 use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage};
 use security::{
     hash::state_hash_out,
@@ -17,6 +18,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
 use crate::telemetry::translate_with_span;
+use once_cell::sync::Lazy;
 
 /// Converts a platform-agnostic [`OutMessage`](gsm_core::OutMessage) into a list of platform specific payloads.
 ///
@@ -42,6 +44,14 @@ pub fn secure_action_url(out: &OutMessage, title: &str, url: &str) -> String {
         }
     }
     url.to_string()
+}
+
+static CARD_ENGINE: Lazy<MessageCardEngine> = Lazy::new(MessageCardEngine::bootstrap);
+
+pub(crate) fn render_via_engine(out: &OutMessage, platform: &str) -> Option<Value> {
+    let card = out.adaptive_card.as_ref()?;
+    let spec = CARD_ENGINE.render_spec(card).ok()?;
+    CARD_ENGINE.render_spec_payload(platform, &spec)
 }
 
 struct ActionLinkConfig {
@@ -98,6 +108,7 @@ pub mod webex;
 ///     kind: OutKind::Text,
 ///     text: Some("Hello".into()),
 ///     message_card: None,
+///     adaptive_card: None,
 ///     meta: Default::default(),
 /// };
 /// let translator = TelegramTranslator::new();
@@ -181,17 +192,23 @@ impl Default for TelegramTranslator {
 
 impl Translator for TelegramTranslator {
     fn to_platform(&self, out: &OutMessage) -> Result<Vec<Value>> {
-        translate_with_span(out, "telegram", || match out.kind {
-            OutKind::Text => {
-                let text = out.text.as_deref().ok_or_else(|| anyhow!("missing text"))?;
-                Ok(vec![Self::render_text(text)])
+        translate_with_span(out, "telegram", || {
+            if let Some(payload) = crate::render_via_engine(out, "telegram") {
+                return Ok(vec![payload]);
             }
-            OutKind::Card => {
-                let card = out
-                    .message_card
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("missing card"))?;
-                Ok(Self::render_card(out, card))
+
+            match out.kind {
+                OutKind::Text => {
+                    let text = out.text.as_deref().ok_or_else(|| anyhow!("missing text"))?;
+                    Ok(vec![Self::render_text(text)])
+                }
+                OutKind::Card => {
+                    let card = out
+                        .message_card
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("missing card"))?;
+                    Ok(Self::render_card(out, card))
+                }
             }
         })
     }
@@ -241,6 +258,7 @@ impl Default for WebChatTranslator {
 ///     kind: OutKind::Text,
 ///     text: Some("Hello WebChat".into()),
 ///     message_card: None,
+///     adaptive_card: None,
 ///     meta: Default::default(),
 /// };
 ///
@@ -254,6 +272,10 @@ impl Default for WebChatTranslator {
 impl Translator for WebChatTranslator {
     fn to_platform(&self, out: &OutMessage) -> Result<Vec<Value>> {
         translate_with_span(out, "webchat", || {
+            if let Some(payload) = crate::render_via_engine(out, "bf_webchat") {
+                return Ok(vec![payload]);
+            }
+
             let payload = match out.kind {
                 OutKind::Text => json!({
                   "kind": "text",
@@ -328,6 +350,8 @@ mod tests {
             kind,
             text: None,
             message_card: None,
+
+            adaptive_card: None,
             meta: Default::default(),
         }
     }

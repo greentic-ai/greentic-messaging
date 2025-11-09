@@ -66,6 +66,8 @@ fn out_text_and_card_validate() {
         kind: OutKind::Text,
         text: Some("hello".into()),
         message_card: None,
+        #[cfg(feature = "adaptive-cards")]
+        adaptive_card: None,
         meta: Default::default(),
     };
     assert!(validate_out(&out).is_ok());

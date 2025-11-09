@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.greentic.io/message_card.schema.json",
+  "$comment": "version: 1.2.0",
+  "title": "Greentic MessageCard",
+  "description": "Canonical MessageCard contract used by the adaptive renderer pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "type": "string",
+      "description": "Card flavor. Defaults to standard for legacy payloads.",
+      "enum": ["standard", "oauth"],
+      "default": "standard"
+    },
+    "title": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "footer": {
+      "type": "string"
+    },
+    "images": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/imageRef" },
+      "default": []
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/action" },
+      "default": []
+    },
+    "allow_markdown": {
+      "type": "boolean",
+      "default": true
+    },
+    "adaptive": {
+      "type": ["object", "null"],
+      "description": "Raw Adaptive Card JSON payload when provided."
+    },
+    "oauth": {
+      "$ref": "#/definitions/oauthCard"
+    }
+  },
+  "definitions": {
+    "imageRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "alt": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["type", "title"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["open_url", "post_back"]
+        },
+        "title": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "data": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "open_url" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["url"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "post_back" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["data"]
+          }
+        }
+      ]
+    },
+    "oauthCard": {
+      "type": "object",
+      "required": ["provider"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "$ref": "#/definitions/oauthProvider" },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "resource": { "type": "string" },
+        "prompt": { "$ref": "#/definitions/oauthPrompt" },
+        "start_url": { "type": "string", "format": "uri" },
+        "connection_name": { "type": "string" },
+        "metadata": {}
+      }
+    },
+    "oauthProvider": {
+      "type": "string",
+      "enum": ["microsoft", "google", "github", "custom"]
+    },
+    "oauthPrompt": {
+      "type": "string",
+      "enum": ["none", "consent", "login"]
+    }
+  }
+}

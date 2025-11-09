@@ -228,7 +228,11 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ card: payload }),
           });
-          irOutput.textContent = JSON.stringify(data.ir, null, 2);
+          const specPayload =
+            data.intent === 'auth' ? data.auth : data.ir;
+          irOutput.textContent = specPayload
+            ? JSON.stringify(specPayload, null, 2)
+            : '// spec unavailable';
           renderPlatforms(data.platforms);
           statusEl.textContent = 'Rendered';
         } catch (err) {

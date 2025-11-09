@@ -1,5 +1,3 @@
-use gsm_core::{MessageEnvelope, OutMessage};
-
 #[derive(Debug, Clone)]
 pub struct TelemetryLabels {
     pub tenant: String,
@@ -10,22 +8,12 @@ pub struct TelemetryLabels {
 }
 
 impl TelemetryLabels {
-    pub fn from_out(out: &OutMessage) -> Self {
+    pub fn new(tenant: impl Into<String>) -> Self {
         Self {
-            tenant: out.tenant.clone(),
-            platform: Some(out.platform.as_str().to_string()),
-            chat_id: Some(out.chat_id.clone()),
-            msg_id: Some(out.message_id()),
-            extra: Vec::new(),
-        }
-    }
-
-    pub fn from_envelope(env: &MessageEnvelope) -> Self {
-        Self {
-            tenant: env.tenant.clone(),
-            platform: Some(env.platform.as_str().to_string()),
-            chat_id: Some(env.chat_id.clone()),
-            msg_id: Some(env.msg_id.clone()),
+            tenant: tenant.into(),
+            platform: None,
+            chat_id: None,
+            msg_id: None,
             extra: Vec::new(),
         }
     }
@@ -55,15 +43,7 @@ pub struct MessageContext {
 }
 
 impl MessageContext {
-    pub fn from_out(out: &OutMessage) -> Self {
-        Self {
-            labels: TelemetryLabels::from_out(out),
-        }
-    }
-
-    pub fn from_envelope(env: &MessageEnvelope) -> Self {
-        Self {
-            labels: TelemetryLabels::from_envelope(env),
-        }
+    pub fn new(labels: TelemetryLabels) -> Self {
+        Self { labels }
     }
 }
