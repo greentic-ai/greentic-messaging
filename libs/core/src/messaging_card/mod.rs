@@ -138,7 +138,7 @@ impl MessageCardEngine {
         platform: &str,
         spec: &RenderSpec,
     ) -> Option<RenderSnapshot> {
-        self.render_snapshot(platform, spec).map(|snapshot| {
+        if let Some(snapshot) = self.render_snapshot(platform, spec) {
             self.record_render_event(
                 platform,
                 snapshot.tier,
@@ -146,8 +146,10 @@ impl MessageCardEngine {
                 &snapshot.output,
                 snapshot.downgraded,
             );
-            snapshot
-        })
+            Some(snapshot)
+        } else {
+            None
+        }
     }
 
     pub fn render_snapshot(&self, platform: &str, spec: &RenderSpec) -> Option<RenderSnapshot> {
