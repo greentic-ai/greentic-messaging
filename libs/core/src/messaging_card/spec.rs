@@ -13,7 +13,7 @@ pub enum RenderIntent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RenderSpec {
-    Card(MessageCardIr),
+    Card(Box<MessageCardIr>),
     Auth(AuthRenderSpec),
 }
 
@@ -27,7 +27,7 @@ impl RenderSpec {
 
     pub fn as_card(&self) -> Option<&MessageCardIr> {
         match self {
-            RenderSpec::Card(ir) => Some(ir),
+            RenderSpec::Card(ir) => Some(ir.as_ref()),
             _ => None,
         }
     }

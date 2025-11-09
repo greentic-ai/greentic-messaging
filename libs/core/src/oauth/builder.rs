@@ -1,12 +1,9 @@
-use anyhow::Result;
 use greentic_types::TenantCtx;
 use serde_json::Value;
 
 use crate::messaging_card::types::{OauthPrompt, OauthProvider};
 
-use super::oauth_client::{
-    OauthClient, OauthRelayContext, OauthStartRequest, StartLink, StartTransport,
-};
+use super::oauth_client::{OauthRelayContext, OauthStartRequest};
 
 pub fn make_start_request(
     provider: &OauthProvider,
@@ -28,20 +25,6 @@ pub fn make_start_request(
         relay,
         metadata: metadata.cloned(),
     }
-}
-
-pub async fn build_start_url<T: StartTransport>(
-    client: &OauthClient<T>,
-    ctx: &TenantCtx,
-    provider: &OauthProvider,
-    scopes: &[String],
-    resource: Option<&str>,
-    prompt: Option<&OauthPrompt>,
-    metadata: Option<&Value>,
-    relay: Option<OauthRelayContext>,
-) -> Result<StartLink> {
-    let request = make_start_request(provider, scopes, resource, prompt, ctx, relay, metadata);
-    client.build_start_url(&request).await
 }
 
 #[cfg(test)]

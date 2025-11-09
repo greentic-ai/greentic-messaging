@@ -2,7 +2,9 @@ use anyhow::{Result, anyhow};
 use greentic_types::TenantCtx;
 
 use crate::messaging_card::types::{MessageCard, MessageCardKind};
-use crate::oauth::{OauthClient, OauthRelayContext, StartLink, StartTransport, build_start_url};
+use crate::oauth::{
+    OauthClient, OauthRelayContext, StartLink, StartTransport, make_start_request,
+};
 
 pub async fn ensure_oauth_start_url<T: StartTransport>(
     card: &mut MessageCard,
@@ -23,27 +25,26 @@ pub async fn ensure_oauth_start_url<T: StartTransport>(
         return Ok(());
     }
 
-    let start = build_start_url(
-        client,
-        ctx,
+    let request = make_start_request(
         &oauth.provider,
         &oauth.scopes,
         oauth.resource.as_deref(),
         oauth.prompt.as_ref(),
-        oauth.metadata.as_ref(),
+        ctx,
         relay,
-    )
-    .await?;
+        oauth.metadata.as_ref(),
+    );
+    let start = client.build_start_url(&request).await?;
 
     let StartLink {
         url,
         connection_name,
     } = start;
     oauth.start_url = Some(url.to_string());
-    if oauth.connection_name.is_none() {
-        if let Some(connection) = connection_name {
-            oauth.connection_name = Some(connection);
-        }
+    if oauth.connection_name.is_none()
+        && let Some(connection) = connection_name
+    {
+        oauth.connection_name = Some(connection);
     }
     Ok(())
 }
@@ -119,7 +120,7 @@ mod tests {
     }
 
     fn oauth_card(connection: Option<&str>) -> MessageCard {
-        let card = MessageCard {
+        MessageCard {
             kind: MessageCardKind::Oauth,
             oauth: Some(OauthCard {
                 provider: OauthProvider::Microsoft,
@@ -131,8 +132,7 @@ mod tests {
                 metadata: Some(json!({"tenant": "acme"})),
             }),
             ..Default::default()
-        };
-        card
+        }
     }
 
     #[derive(Clone)]

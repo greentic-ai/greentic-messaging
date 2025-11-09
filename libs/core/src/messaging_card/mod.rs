@@ -104,7 +104,7 @@ impl MessageCardEngine {
         match card.kind {
             MessageCardKind::Standard => {
                 let ir = self.normalize_ir(card)?;
-                Ok(RenderSpec::Card(ir))
+                Ok(RenderSpec::Card(Box::new(ir)))
             }
             MessageCardKind::Oauth => {
                 let oauth = card
@@ -152,7 +152,7 @@ impl MessageCardEngine {
 
     pub fn render_snapshot(&self, platform: &str, spec: &RenderSpec) -> Option<RenderSnapshot> {
         match spec {
-            RenderSpec::Card(ir) => self.render_card_snapshot(platform, ir),
+            RenderSpec::Card(ir) => self.render_card_snapshot(platform, ir.as_ref()),
             RenderSpec::Auth(auth) => self.render_auth_snapshot(platform, auth),
         }
     }

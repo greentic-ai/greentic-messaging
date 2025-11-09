@@ -59,17 +59,12 @@ pub enum Action {
     PostBack { title: String, data: Value },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageCardKind {
+    #[default]
     Standard,
     Oauth,
-}
-
-impl Default for MessageCardKind {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

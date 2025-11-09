@@ -49,7 +49,7 @@ impl PlatformRenderer for TeamsRenderer {
         if let Some(url) = auth
             .start_url
             .as_ref()
-            .or_else(|| auth.fallback_button.url.as_ref())
+            .or(auth.fallback_button.url.as_ref())
         {
             payload["attachments"][0]["content"]["buttons"][0]["value"] = json!(url);
         }
