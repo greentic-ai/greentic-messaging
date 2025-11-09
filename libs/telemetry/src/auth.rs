@@ -65,10 +65,10 @@ pub fn record_auth_card_render_with_labels(
             .extra
             .push(("connection_name".into(), connection.to_string()));
     }
-    if let Some(url) = start_url {
-        if let Some(domain) = start_url_domain(url) {
-            enriched.extra.push(("start_url_domain".into(), domain));
-        }
+    if let Some(url) = start_url
+        && let Some(domain) = start_url_domain(url)
+    {
+        enriched.extra.push(("start_url_domain".into(), domain));
     }
     record_counter(AUTH_CARD_RENDERED_COUNTER, 1, &enriched);
 }
