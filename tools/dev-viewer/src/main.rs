@@ -202,7 +202,7 @@ async fn render_card(
         .map_err(|err| (StatusCode::BAD_REQUEST, format!("render_spec error: {err}")))?;
 
     let (ir_spec, auth_spec) = match &spec {
-        RenderSpec::Card(ir) => (Some(ir.clone()), None),
+        RenderSpec::Card(ir) => (Some((**ir).clone()), None),
         RenderSpec::Auth(auth) => (None, Some(auth.clone())),
     };
 
