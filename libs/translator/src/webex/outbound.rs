@@ -15,10 +15,10 @@ fn build_payload(out: &OutMessage) -> Result<Value> {
     map.insert("roomId".into(), Value::String(out.chat_id.clone()));
 
     if let Some(content) = render_via_engine(out, "webex") {
-        if let Some(text) = out.text.clone() {
-            if !text.is_empty() {
-                map.insert("markdown".into(), Value::String(text));
-            }
+        if let Some(text) = out.text.clone()
+            && !text.is_empty()
+        {
+            map.insert("markdown".into(), Value::String(text));
         }
         let attachment = json!({
             "contentType": "application/vnd.microsoft.card.adaptive",

@@ -114,32 +114,35 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        if let (Some(card), Some(client)) = (out.adaptive_card.as_mut(), oauth_client.as_deref()) {
-            if let Err(err) = ensure_oauth_start_url(card, &out.ctx, client, None).await {
-                tracing::warn!(
-                    error = %err,
-                    platform = "whatsapp",
-                    "failed to build oauth start_url; downgrading"
-                );
-                out.adaptive_card = None;
-            }
+        let mut drop_adaptive = false;
+        if let (Some(card), Some(client)) = (out.adaptive_card.as_mut(), oauth_client.as_deref())
+            && let Err(err) = ensure_oauth_start_url(card, &out.ctx, client, None).await
+        {
+            tracing::warn!(
+                error = %err,
+                platform = "whatsapp",
+                "failed to build oauth start_url; downgrading"
+            );
+            drop_adaptive = true;
+        }
+        if drop_adaptive {
+            out.adaptive_card = None;
         }
 
         let ctx = context_from_out(&out);
-        if let Some(card) = out.adaptive_card.as_ref() {
-            if matches!(card.kind, MessageCardKind::Oauth) {
-                if let Some(oauth) = card.oauth.as_ref() {
-                    let team = out.ctx.team.as_ref().map(|team| team.as_ref());
-                    record_auth_card_render(
-                        &ctx,
-                        oauth.provider.as_str(),
-                        AuthRenderMode::Downgrade,
-                        oauth.connection_name.as_deref(),
-                        oauth.start_url.as_deref(),
-                        team,
-                    );
-                }
-            }
+        if let Some(card) = out.adaptive_card.as_ref()
+            && matches!(card.kind, MessageCardKind::Oauth)
+            && let Some(oauth) = card.oauth.as_ref()
+        {
+            let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+            record_auth_card_render(
+                &ctx,
+                oauth.provider.as_str(),
+                AuthRenderMode::Downgrade,
+                oauth.connection_name.as_deref(),
+                oauth.start_url.as_deref(),
+                team,
+            );
         }
         let msg_id = ctx
             .labels
@@ -283,20 +286,18 @@ struct FallbackLink {
 fn determine_fallback_link(cfg: &AppConfig, out: &OutMessage, text: &str) -> FallbackLink {
     if let Some(card) = &out.adaptive_card
         && matches!(card.kind, MessageCardKind::Oauth)
+        && let Some(oauth) = &card.oauth
+        && let Some(start_url) = &oauth.start_url
     {
-        if let Some(oauth) = &card.oauth {
-            if let Some(start_url) = &oauth.start_url {
-                let title = card
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| format!("Sign in with {}", oauth.provider.display_name()));
-                return FallbackLink {
-                    title,
-                    url: start_url.clone(),
-                    is_oauth: true,
-                };
-            }
-        }
+        let title = card
+            .title
+            .clone()
+            .unwrap_or_else(|| format!("Sign in with {}", oauth.provider.display_name()));
+        return FallbackLink {
+            title,
+            url: start_url.clone(),
+            is_oauth: true,
+        };
     }
 
     let title = out
@@ -500,18 +501,20 @@ mod tests {
     fn oauth_message(start_url: &str) -> OutMessage {
         let mut out = sample_message(48);
         out.kind = OutKind::Card;
-        let mut card = AdaptiveCard::default();
-        card.kind = MessageCardKind::Oauth;
-        card.title = Some("Sign in with Microsoft".into());
-        card.oauth = Some(OauthCard {
-            provider: OauthProvider::Microsoft,
-            scopes: Vec::new(),
-            resource: None,
-            prompt: None,
-            start_url: Some(start_url.into()),
-            connection_name: None,
-            metadata: None,
-        });
+        let card = AdaptiveCard {
+            kind: MessageCardKind::Oauth,
+            title: Some("Sign in with Microsoft".into()),
+            oauth: Some(OauthCard {
+                provider: OauthProvider::Microsoft,
+                scopes: Vec::new(),
+                resource: None,
+                prompt: None,
+                start_url: Some(start_url.into()),
+                connection_name: None,
+                metadata: None,
+            }),
+            ..Default::default()
+        };
         out.adaptive_card = Some(card);
         out
     }

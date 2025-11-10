@@ -379,23 +379,23 @@ async fn render_webchat_card(
         .render_snapshot_tracked("bf_webchat", &spec)
         .ok_or_else(|| anyhow!("webchat renderer unavailable"))?;
 
-    if matches!(spec, RenderSpec::Auth(_)) {
-        if let Some(oauth) = working.oauth.as_ref() {
-            let mode = if snapshot.ir.is_none() {
-                AuthRenderMode::Native
-            } else {
-                AuthRenderMode::Downgrade
-            };
-            let team = out.ctx.team.as_ref().map(|team| team.as_ref());
-            record_auth_card_render(
-                ctx,
-                oauth.provider.as_str(),
-                mode,
-                oauth.connection_name.as_deref(),
-                oauth.start_url.as_deref(),
-                team,
-            );
-        }
+    if matches!(spec, RenderSpec::Auth(_))
+        && let Some(oauth) = working.oauth.as_ref()
+    {
+        let mode = if snapshot.ir.is_none() {
+            AuthRenderMode::Native
+        } else {
+            AuthRenderMode::Downgrade
+        };
+        let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+        record_auth_card_render(
+            ctx,
+            oauth.provider.as_str(),
+            mode,
+            oauth.connection_name.as_deref(),
+            oauth.start_url.as_deref(),
+            team,
+        );
     }
 
     let payload = snapshot.output.payload;

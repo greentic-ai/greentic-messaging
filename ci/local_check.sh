@@ -156,6 +156,15 @@ build_step() {
   cargo "${args[@]}"
 }
 
+build_all_features_step() {
+  ensure_tool cargo
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  cargo build --workspace --all-features
+}
+
 test_step() {
   ensure_tool cargo
   local status=$?
@@ -169,6 +178,15 @@ test_step() {
     return $?
   fi
   cargo "${args[@]}"
+}
+
+test_all_features_step() {
+  ensure_tool cargo
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  cargo test --workspace --all-features -- --nocapture
 }
 
 coverage_step() {
@@ -334,8 +352,14 @@ main() {
   step "cargo build"
   run_or_skip "cargo build" build_step
 
+  step "cargo build (all features)"
+  run_or_skip "cargo build --all-features" build_all_features_step
+
   step "cargo test"
   run_or_skip "cargo test" test_step
+
+  step "cargo test (all features)"
+  run_or_skip "cargo test --all-features" test_all_features_step
 
   step "Coverage (tarpaulin)"
   run_or_skip "cargo tarpaulin" coverage_step

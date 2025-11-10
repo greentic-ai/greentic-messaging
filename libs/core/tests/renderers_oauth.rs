@@ -23,19 +23,20 @@ fn sample_auth_spec() -> AuthRenderSpec {
 }
 
 fn sample_oauth_card(connection_name: Option<&str>) -> MessageCard {
-    let mut card = MessageCard::default();
-    card.kind = MessageCardKind::Oauth;
-    card.title = Some("Sign in with Microsoft".into());
-    card.oauth = Some(OauthCard {
-        provider: OauthProvider::Microsoft,
-        scopes: vec!["User.Read".into()],
-        resource: Some("https://graph.microsoft.com".into()),
-        prompt: Some(OauthPrompt::Consent),
-        metadata: None,
-        start_url: Some("https://oauth.example/start".into()),
-        connection_name: connection_name.map(|value| value.into()),
-    });
-    card
+    MessageCard {
+        kind: MessageCardKind::Oauth,
+        title: Some("Sign in with Microsoft".into()),
+        oauth: Some(OauthCard {
+            provider: OauthProvider::Microsoft,
+            scopes: vec!["User.Read".into()],
+            resource: Some("https://graph.microsoft.com".into()),
+            prompt: Some(OauthPrompt::Consent),
+            metadata: None,
+            start_url: Some("https://oauth.example/start".into()),
+            connection_name: connection_name.map(|value| value.into()),
+        }),
+        ..Default::default()
+    }
 }
 
 fn render_oauth_for(platform: &str) -> Value {

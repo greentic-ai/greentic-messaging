@@ -164,6 +164,8 @@ impl TryFrom<InvocationEnvelope> for MessageEnvelope {
 ///     kind: OutKind::Text,
 ///     text: Some("Hello".into()),
 ///     message_card: None,
+///     #[cfg(feature = "adaptive-cards")]
+///     adaptive_card: None,
 ///     meta: Default::default(),
 /// };
 ///

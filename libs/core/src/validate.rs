@@ -58,6 +58,8 @@ pub fn validate_envelope(env: &MessageEnvelope) -> Result<()> {
 ///     kind: OutKind::Text,
 ///     text: Some("Hello".into()),
 ///     message_card: None,
+///     #[cfg(feature = "adaptive-cards")]
+///     adaptive_card: None,
 ///     meta: Default::default(),
 /// };
 ///

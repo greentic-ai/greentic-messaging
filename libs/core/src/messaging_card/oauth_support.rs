@@ -2,9 +2,7 @@ use anyhow::{Result, anyhow};
 use greentic_types::TenantCtx;
 
 use crate::messaging_card::types::{MessageCard, MessageCardKind};
-use crate::oauth::{
-    OauthClient, OauthRelayContext, StartLink, StartTransport, make_start_request,
-};
+use crate::oauth::{OauthClient, OauthRelayContext, StartLink, StartTransport, make_start_request};
 
 pub async fn ensure_oauth_start_url<T: StartTransport>(
     card: &mut MessageCard,

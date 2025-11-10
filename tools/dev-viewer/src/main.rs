@@ -12,7 +12,6 @@ use axum::{Json, Router};
 use clap::Parser;
 use gsm_core::messaging_card::adaptive::validator::validate_ac_json;
 use gsm_core::messaging_card::ir::{MessageCardIr, Meta};
-use gsm_core::messaging_card::renderers::RenderOutput;
 use gsm_core::messaging_card::{
     AuthRenderSpec, MessageCard, MessageCardEngine, MessageCardKind, RenderIntent, RenderSnapshot,
     RenderSpec, ensure_oauth_start_url,
@@ -187,14 +186,11 @@ async fn render_card(
         )
     })?;
 
-    if matches!(card.kind, MessageCardKind::Oauth) {
-        if let Some(client) = state.oauth_client.as_ref() {
-            if let Err(err) =
-                ensure_oauth_start_url(&mut card, &state.tenant_ctx, client, None).await
-            {
-                warn!(error = %err, "failed to build OAuth start URL");
-            }
-        }
+    if matches!(card.kind, MessageCardKind::Oauth)
+        && let Some(client) = state.oauth_client.as_ref()
+        && let Err(err) = ensure_oauth_start_url(&mut card, &state.tenant_ctx, client, None).await
+    {
+        warn!(error = %err, "failed to build OAuth start URL");
     }
 
     let spec = engine

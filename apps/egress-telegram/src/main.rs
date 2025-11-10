@@ -167,30 +167,32 @@ where
         tracing::debug!("skip non-telegram payload");
         return Ok(());
     }
-    if let (Some(card), Some(client)) = (out.adaptive_card.as_mut(), oauth_client) {
-        if matches!(card.kind, MessageCardKind::Oauth) {
-            if let Err(err) = ensure_oauth_start_url(card, &out.ctx, client, None).await {
-                tracing::warn!(error = %err, "failed to hydrate OAuth start_url; downgrading");
-                out.adaptive_card = None;
-            }
-        }
+    let mut drop_adaptive = false;
+    if let (Some(card), Some(client)) = (out.adaptive_card.as_mut(), oauth_client)
+        && matches!(card.kind, MessageCardKind::Oauth)
+        && let Err(err) = ensure_oauth_start_url(card, &out.ctx, client, None).await
+    {
+        tracing::warn!(error = %err, "failed to hydrate OAuth start_url; downgrading");
+        drop_adaptive = true;
+    }
+    if drop_adaptive {
+        out.adaptive_card = None;
     }
 
     let ctx = context_from_out(&out);
-    if let Some(card) = out.adaptive_card.as_ref() {
-        if matches!(card.kind, MessageCardKind::Oauth) {
-            if let Some(oauth) = card.oauth.as_ref() {
-                let team = out.ctx.team.as_ref().map(|team| team.as_ref());
-                record_auth_card_render(
-                    &ctx,
-                    oauth.provider.as_str(),
-                    AuthRenderMode::Downgrade,
-                    oauth.connection_name.as_deref(),
-                    oauth.start_url.as_deref(),
-                    team,
-                );
-            }
-        }
+    if let Some(card) = out.adaptive_card.as_ref()
+        && matches!(card.kind, MessageCardKind::Oauth)
+        && let Some(oauth) = card.oauth.as_ref()
+    {
+        let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+        record_auth_card_render(
+            &ctx,
+            oauth.provider.as_str(),
+            AuthRenderMode::Downgrade,
+            oauth.connection_name.as_deref(),
+            oauth.start_url.as_deref(),
+            team,
+        );
     }
     let _permit = limiter
         .acquire(&out.tenant)

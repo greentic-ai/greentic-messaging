@@ -178,30 +178,31 @@ async fn handle_message(
     let start_time = std::time::Instant::now();
 
     let mut translated_out = out.clone();
-    if let (Some(card), Some(client)) = (translated_out.adaptive_card.as_mut(), oauth_client) {
-        if matches!(card.kind, MessageCardKind::Oauth) {
-            if let Err(err) = ensure_oauth_start_url(card, &translated_out.ctx, client, None).await
-            {
-                warn!(error = %err, "failed to build oauth start_url; downgrading for webex");
-                translated_out.adaptive_card = None;
-            }
-        }
+    let mut drop_adaptive = false;
+    if let (Some(card), Some(client)) = (translated_out.adaptive_card.as_mut(), oauth_client)
+        && matches!(card.kind, MessageCardKind::Oauth)
+        && let Err(err) = ensure_oauth_start_url(card, &translated_out.ctx, client, None).await
+    {
+        warn!(error = %err, "failed to build oauth start_url; downgrading for webex");
+        drop_adaptive = true;
+    }
+    if drop_adaptive {
+        translated_out.adaptive_card = None;
     }
 
-    if let Some(card) = translated_out.adaptive_card.as_ref() {
-        if matches!(card.kind, MessageCardKind::Oauth) {
-            if let Some(oauth) = card.oauth.as_ref() {
-                let team = out.ctx.team.as_ref().map(|team| team.as_ref());
-                record_auth_card_render(
-                    &ctx,
-                    oauth.provider.as_str(),
-                    AuthRenderMode::Downgrade,
-                    oauth.connection_name.as_deref(),
-                    oauth.start_url.as_deref(),
-                    team,
-                );
-            }
-        }
+    if let Some(card) = translated_out.adaptive_card.as_ref()
+        && matches!(card.kind, MessageCardKind::Oauth)
+        && let Some(oauth) = card.oauth.as_ref()
+    {
+        let team = out.ctx.team.as_ref().map(|team| team.as_ref());
+        record_auth_card_render(
+            &ctx,
+            oauth.provider.as_str(),
+            AuthRenderMode::Downgrade,
+            oauth.connection_name.as_deref(),
+            oauth.start_url.as_deref(),
+            team,
+        );
     }
 
     let payload = match to_webex_payload(&translated_out) {

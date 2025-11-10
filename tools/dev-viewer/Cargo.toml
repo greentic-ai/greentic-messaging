@@ -15,3 +15,4 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tower = { workspace = true, features = ["util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
