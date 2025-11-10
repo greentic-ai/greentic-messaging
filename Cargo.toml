@@ -21,6 +21,7 @@ members = [
   "apps/egress-common",
   "libs/gsm-provider-registry",
   "libs/core",
+  "libs/session",
   "libs/translator",
   "libs/security",
   "libs/telemetry",
@@ -41,7 +42,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
@@ -95,6 +96,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "std"] 
 tracing-test = "0.2"
 gsm-core = { version = "0.3.0", path = "libs/core" }
 gsm-telemetry = { version = "0.3.0", path = "libs/telemetry" }
+gsm-session = { version = "0.3.0", path = "libs/session" }
 security = { package = "greentic-messaging-security", version = "0.3.0", path = "libs/security" }
 unicode-segmentation = "1"
 urlencoding = "2"

@@ -32,7 +32,7 @@ impl PlatformRenderer for TelegramRenderer {
         if let Some(title) = &ir.head.title {
             let escaped = sanitized_html(title, ir.tier, &mut metrics);
             if !escaped.is_empty() {
-                lines.push(format!("<b>{}</b>", escaped));
+                lines.push(format!("<b>{escaped}</b>"));
             }
         }
         if let Some(text) = &ir.head.text {
@@ -62,7 +62,7 @@ impl PlatformRenderer for TelegramRenderer {
                     for fact in facts {
                         let label = sanitized_html(&fact.label, ir.tier, &mut metrics);
                         let value = sanitized_html(&fact.value, ir.tier, &mut metrics);
-                        lines.push(format!("• <b>{}</b>: {}", label, value));
+                        lines.push(format!("• <b>{label}</b>: {value}"));
                     }
                 }
                 Element::Input {
@@ -83,7 +83,7 @@ impl PlatformRenderer for TelegramRenderer {
                     let prompt_escaped = html_escape(prompt.trim());
                     let prompt_text = match kind {
                         InputKind::Text => {
-                            format!("<i>{}</i>: reply with your answer.", prompt_escaped)
+                            format!("<i>{prompt_escaped}</i>: reply with your answer.")
                         }
                         InputKind::Choice => {
                             let opts = if choices.is_empty() {
@@ -99,7 +99,7 @@ impl PlatformRenderer for TelegramRenderer {
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             };
-                            format!("<i>{}</i>: reply with one of [{}].", prompt_escaped, opts)
+                            format!("<i>{prompt_escaped}</i>: reply with one of [{opts}].")
                         }
                     };
                     lines.push(prompt_text);

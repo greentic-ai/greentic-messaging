@@ -62,7 +62,7 @@ impl PlatformRenderer for WhatsAppRenderer {
                     for fact in facts {
                         let label = sanitize_text_for_tier(&fact.label, ir.tier, &mut metrics);
                         let value = sanitize_text_for_tier(&fact.value, ir.tier, &mut metrics);
-                        body_lines.push(format!("• {}: {}", label, value));
+                        body_lines.push(format!("• {label}: {value}"));
                     }
                 }
                 Element::Input {
@@ -82,7 +82,7 @@ impl PlatformRenderer for WhatsAppRenderer {
                         .unwrap_or_else(|| "Input".into());
                     let field = field.trim().to_string();
                     let prompt = match kind {
-                        InputKind::Text => format!("{}: reply with your answer.", field),
+                        InputKind::Text => format!("{field}: reply with your answer."),
                         InputKind::Choice => {
                             let opts = if choices.is_empty() {
                                 "(choose any option)".to_string()
@@ -97,7 +97,7 @@ impl PlatformRenderer for WhatsAppRenderer {
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             };
-                            format!("{}: reply with [{}].", field, opts)
+                            format!("{field}: reply with [{opts}].")
                         }
                     };
                     body_lines.push(prompt);

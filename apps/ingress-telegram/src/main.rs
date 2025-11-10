@@ -31,8 +31,9 @@ use gsm_core::{
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::IdKey as IdemKey;
 use gsm_ingress_common::{
-    init_guard, rate_limit_layer, record_idempotency_hit, record_ingress, start_ingress_span,
-    verify_bearer, verify_hmac, with_request_id,
+    SharedSessionStore, attach_session_id, init_guard, init_session_store, rate_limit_layer,
+    record_idempotency_hit, record_ingress, start_ingress_span, verify_bearer, verify_hmac,
+    with_request_id,
 };
 use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use reconciler::{
@@ -68,6 +69,7 @@ struct AppState {
     http_client: Arc<reqwest::Client>,
     base_url: String,
     api_base: String,
+    sessions: SharedSessionStore,
 }
 
 #[derive(Serialize)]
@@ -293,6 +295,7 @@ async fn main() -> Result<()> {
             .map_err(|err| anyhow::anyhow!("failed to initialise secrets resolver: {err}"))?,
     );
     let registry = Arc::new(ProviderRegistry::new());
+    let sessions = init_session_store().await?;
 
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
@@ -309,6 +312,7 @@ async fn main() -> Result<()> {
         http_client: provisioning_client,
         base_url: public_base,
         api_base,
+        sessions,
     };
 
     let mut app = Router::new()
@@ -531,13 +535,14 @@ async fn process_update(
     };
 
     if let Some(msg) = extract_message(&update).cloned() {
-        let (env, invocation) = match invocation_from_message(&ctx, &msg) {
+        let (env, mut invocation) = match invocation_from_message(&ctx, &msg) {
             Ok(values) => values,
             Err(err) => {
                 tracing::error!(error = %err, "failed to build invocation envelope");
                 return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
         };
+        attach_session_id(&state.sessions, &ctx, &env, &mut invocation).await;
         set_current_tenant_ctx(invocation.ctx.clone());
         let span = start_ingress_span(&env);
         let _guard = span.enter();

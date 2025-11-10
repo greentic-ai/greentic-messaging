@@ -15,7 +15,7 @@ impl SecretPath {
 
     pub fn to_uri(&self) -> String {
         let trimmed = self.0.trim_start_matches('/');
-        format!("secret://{}", trimmed)
+        format!("secret://{trimmed}")
     }
 }
 

@@ -286,7 +286,7 @@ impl BackpressureLimiter for JetStreamBackpressureLimiter {
     async fn acquire(&self, tenant: &str) -> Result<Permit> {
         let tenant_key = tenant.to_string();
         let limit = self.limits.get(tenant);
-        let key = format!("rate/{}", tenant);
+        let key = format!("rate/{tenant}");
         let mut retries = 0usize;
 
         loop {

@@ -33,7 +33,7 @@ fn normalise_api_base(api_base: Option<String>) -> String {
             if trimmed.ends_with("/v1.0") {
                 trimmed.to_string()
             } else {
-                format!("{}/v1.0", trimmed)
+                format!("{trimmed}/v1.0")
             }
         }
         None => "https://graph.microsoft.com/v1.0".into(),

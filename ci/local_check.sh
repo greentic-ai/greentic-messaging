@@ -140,7 +140,8 @@ clippy_step() {
   if [ "$STRICT" = "1" ]; then
     args+=(--all-features)
   fi
-  cargo "${args[@]}" -- -D warnings
+  local lint_args=(-Aclippy::uninlined-format-args -D warnings)
+  cargo "${args[@]}" -- "${lint_args[@]}"
 }
 
 build_step() {

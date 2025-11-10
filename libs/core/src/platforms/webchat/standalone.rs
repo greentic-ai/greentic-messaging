@@ -139,6 +139,7 @@ pub fn router(state: Arc<StandaloneState>) -> Router {
     router_blueprint().layer(axum::Extension(state))
 }
 
+#[allow(dead_code)]
 const fn assert_state_bounds<T: Send + Sync + Clone>() {}
 const _: () = {
     assert_state_bounds::<StandaloneState>();
@@ -709,9 +710,7 @@ fn stream_url_from_headers(
             "ws"
         };
         Some(format!(
-            "{scheme}://{host}/v3/directline/conversations/{id}/stream?t={token}",
-            host = host,
-            id = conversation_id
+            "{scheme}://{host}/v3/directline/conversations/{conversation_id}/stream?t={token}"
         ))
     } else {
         None

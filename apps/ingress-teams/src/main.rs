@@ -10,7 +10,10 @@ use axum::{
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
+use gsm_ingress_common::{
+    SharedSessionStore, attach_session_id, init_guard, init_session_store, record_idempotency_hit,
+    record_ingress, start_ingress_span,
+};
 use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::{Deserialize, Serialize};
@@ -24,6 +27,7 @@ struct AppState {
     tenant: String,
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
+    sessions: SharedSessionStore,
 }
 
 #[tokio::main]
@@ -34,11 +38,13 @@ async fn main() -> Result<()> {
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
+    let sessions = init_session_store().await?;
     let state = AppState {
         nats,
         tenant,
         idem_guard,
         dlq,
+        sessions,
     };
 
     let mut app = Router::new()
@@ -202,7 +208,7 @@ async fn notify(
                 );
             }
         }
-        let invocation = match envelope.clone().into_invocation() {
+        let mut invocation = match envelope.clone().into_invocation() {
             Ok(env) => env,
             Err(err) => {
                 tracing::error!(error = %err, "failed to build invocation envelope");
@@ -210,6 +216,8 @@ async fn notify(
             }
         };
 
+        let tenant_ctx = invocation.ctx.clone();
+        attach_session_id(&state.sessions, &tenant_ctx, &envelope, &mut invocation).await;
         set_current_tenant_ctx(invocation.ctx.clone());
 
         match serde_json::to_vec(&invocation) {

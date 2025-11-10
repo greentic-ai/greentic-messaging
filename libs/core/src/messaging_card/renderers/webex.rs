@@ -83,7 +83,7 @@ impl PlatformRenderer for WebexRenderer {
                         .map(|fact| {
                             let label = sanitize_text_for_tier(&fact.label, ir.tier, &mut metrics);
                             let value = sanitize_text_for_tier(&fact.value, ir.tier, &mut metrics);
-                            format!("*{}*: {}", label, value)
+                            format!("*{label}*: {value}")
                         })
                         .collect();
                     let text = lines.join("\n");

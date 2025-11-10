@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     );
 
     if let Some(number) = recipient.as_ref() {
-        println!("Test recipient configured: {}", number);
+        println!("Test recipient configured: {number}");
     } else {
         println!("No WHATSAPP_RECIPIENT configured.");
     }

@@ -18,7 +18,10 @@ use gsm_core::{
 };
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
+use gsm_ingress_common::{
+    SharedSessionStore, attach_session_id, init_guard, init_session_store, record_idempotency_hit,
+    record_ingress, start_ingress_span,
+};
 use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use hmac::{Hmac, Mac};
 use security::middleware::{ActionContext, SharedActionContext, handle_action};
@@ -35,6 +38,7 @@ struct AppState {
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
     bot_user_id: Option<String>,
+    sessions: SharedSessionStore,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,12 +57,14 @@ async fn main() -> Result<()> {
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
+    let sessions = init_session_store().await?;
     let state = AppState {
         nats,
         signing_secret,
         idem_guard,
         dlq,
         bot_user_id,
+        sessions,
     };
 
     let mut app = Router::new().route("/ingress/slack/:tenant/:team/events", post(handle));
@@ -145,7 +151,8 @@ async fn handle(
     if let Some(event) = envelope.event {
         let ctx = tenant_ctx_from_path(&path);
         match slack_event_invocation(&ctx, state.bot_user_id.as_deref(), event) {
-            Some((subject, message, invocation)) => {
+            Some((subject, message, mut invocation)) => {
+                attach_session_id(&state.sessions, &ctx, &message, &mut invocation).await;
                 set_current_tenant_ctx(invocation.ctx.clone());
                 let span = start_ingress_span(&message);
                 let _guard = span.enter();

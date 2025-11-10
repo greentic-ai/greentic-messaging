@@ -220,9 +220,7 @@ pub fn adaptive_from_ir(
                 required,
                 choices,
             } => {
-                let resolved_id = id
-                    .clone()
-                    .unwrap_or_else(|| format!("input_{}", input_index));
+                let resolved_id = id.clone().unwrap_or_else(|| format!("input_{input_index}"));
                 input_index += 1;
 
                 match kind {

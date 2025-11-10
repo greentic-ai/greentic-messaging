@@ -55,7 +55,7 @@ async fn create_webhook(
 ) -> NodeResult<WebexWebhook> {
     if api_base.starts_with("mock://") {
         return Ok(WebexWebhook {
-            id: format!("mock-{}-{}", resource, event),
+            id: format!("mock-{resource}-{event}"),
             resource: resource.to_string(),
             event: event.to_string(),
         });
@@ -63,7 +63,7 @@ async fn create_webhook(
 
     let url = format!("{}/webhooks", api_base.trim_end_matches('/'));
     let body = json!({
-        "name": format!("greentic-{}-{}", resource, event),
+        "name": format!("greentic-{resource}-{event}"),
         "targetUrl": target_url,
         "resource": resource,
         "event": event,

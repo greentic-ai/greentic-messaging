@@ -131,10 +131,9 @@ mod tests {
     fn install_test_keys() {
         static INSTALL: once_cell::sync::OnceCell<()> = once_cell::sync::OnceCell::new();
         INSTALL.get_or_init(|| {
-            install_keys(SigningKeys {
+            let _ = install_keys(SigningKeys {
                 secret: "test-signing-key".into(),
-            })
-            .expect("install keys")
+            });
         });
     }
 

@@ -11,10 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::warn;
 
+use super::conversation::SharedConversationStore;
 #[cfg(feature = "directline_standalone")]
-use super::conversation::{
-    Activity, ChannelAccount, ConversationAccount, SharedConversationStore, StoreError, noop_store,
-};
+use super::conversation::{Activity, ChannelAccount, ConversationAccount, StoreError, noop_store};
 use super::{
     WebChatProvider, backoff,
     bus::{NoopBus, SharedBus},
@@ -30,9 +29,6 @@ use super::{
     session::{MemorySessionStore, SharedSessionStore, WebchatSession},
     telemetry,
 };
-#[cfg(not(feature = "directline_standalone"))]
-#[allow(dead_code)]
-type SharedConversationStore = ();
 use async_trait::async_trait;
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
 use reqwest::Client;
@@ -135,6 +131,11 @@ impl AppState {
     #[cfg(feature = "directline_standalone")]
     pub fn with_conversations(mut self, conversations: SharedConversationStore) -> Self {
         self.conversations = conversations;
+        self
+    }
+
+    #[cfg(not(feature = "directline_standalone"))]
+    pub fn with_conversations(self, _conversations: SharedConversationStore) -> Self {
         self
     }
 

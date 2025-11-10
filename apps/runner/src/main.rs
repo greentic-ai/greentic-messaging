@@ -8,13 +8,17 @@ mod tool_node;
 use anyhow::Result;
 use async_nats::Client as Nats;
 use futures::StreamExt;
+use greentic_types::session::SessionKey;
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher, replay_subject};
+use gsm_session::{SessionRecord, SessionSnapshot, SharedSessionStore, store_from_env};
 use gsm_telemetry::{
     AuthRenderMode, MessageContext, TelemetryLabels, install as init_telemetry,
     record_auth_card_render, set_current_tenant_ctx,
 };
+use serde_json::json;
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,7 +45,7 @@ async fn main() -> Result<()> {
     tracing::info!("runner subscribed to {replay_subject} for replays");
 
     let hbs = template_node::hb_registry();
-    let sessions = session::Sessions::default();
+    let sessions = store_from_env().await?;
 
     let ctx = Arc::new(ProcessContext {
         nats: nats.clone(),
@@ -84,15 +88,24 @@ async fn run_one(
     nats: Nats,
     flow: model::Flow,
     hbs: handlebars::Handlebars<'static>,
-    sessions: session::Sessions,
+    sessions: SharedSessionStore,
     tenant_ctx: TenantCtx,
     env: MessageEnvelope,
 ) -> Result<()> {
-    let sid = session::SessionId::from_env(&env);
-    let mut state = sessions.get(&sid);
-    if !state.is_object() {
-        state = serde_json::json!({});
-    }
+    let scope = session::scope_from(&tenant_ctx, &env);
+    let existing = sessions.find_by_scope(&scope).await?;
+    let (session_key, mut state) = if let Some(record) = existing {
+        match serde_json::from_str::<serde_json::Value>(&record.snapshot.context_json) {
+            Ok(value) if value.is_object() => (record.key, value),
+            Ok(_) => (record.key, json!({})),
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to parse stored session context");
+                (record.key, json!({}))
+            }
+        }
+    } else {
+        (SessionKey::new(Uuid::new_v4().to_string()), json!({}))
+    };
 
     let mut current = flow.r#in.clone();
     let mut payload: serde_json::Value = serde_json::json!({});
@@ -162,7 +175,14 @@ async fn run_one(
         break;
     }
 
-    sessions.put(&sid, state);
+    let snapshot = SessionSnapshot {
+        tenant_ctx: tenant_ctx.clone(),
+        flow_id: flow.id.clone(),
+        cursor_node: current,
+        context_json: serde_json::to_string(&state)?,
+    };
+    let record = SessionRecord::new(session_key, scope, snapshot);
+    sessions.save(record).await?;
     Ok(())
 }
 
@@ -171,7 +191,7 @@ struct ProcessContext {
     nats: Nats,
     flow: model::Flow,
     hbs: handlebars::Handlebars<'static>,
-    sessions: session::Sessions,
+    sessions: SharedSessionStore,
     dlq: DlqPublisher,
 }
 

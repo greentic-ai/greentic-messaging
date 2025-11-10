@@ -38,9 +38,9 @@ async fn main() -> Result<()> {
 
     let nats = async_nats::connect(nats_url).await?;
 
-    let admin_subject = format!("greentic.subs.admin.{}.teams", tenant);
+    let admin_subject = format!("greentic.subs.admin.{tenant}.teams");
     let mut admin = nats.subscribe(admin_subject.clone()).await?;
-    tracing::info!("subscriptions-teams admin on {}", admin_subject);
+    tracing::info!("subscriptions-teams admin on {admin_subject}");
 
     let renew_cfg = cfg.clone();
     let renew_nats = nats.clone();
@@ -78,8 +78,8 @@ async fn handle_admin(nats: &Nats, cfg: &Cfg, cmd: AdminCmd) -> Result<()> {
 
 async fn token(cfg: &Cfg) -> Result<String> {
     let url = format!(
-        "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
-        cfg.graph_tenant_id
+        "https://login.microsoftonline.com/{graph_tenant}/oauth2/v2.0/token",
+        graph_tenant = cfg.graph_tenant_id
     );
     let form = [
         ("client_id", cfg.client_id.as_str()),
@@ -92,7 +92,7 @@ async fn token(cfg: &Cfg) -> Result<String> {
     let bytes = res.bytes().await?;
     if !status.is_success() {
         let text = String::from_utf8_lossy(&bytes);
-        return Err(anyhow!("token request failed: {} {}", status, text));
+        return Err(anyhow!("token request failed: {status} {text}"));
     }
     let v = parse_json(&bytes, "token")?;
     Ok(v["access_token"].as_str().unwrap_or_default().to_string())
@@ -126,7 +126,7 @@ async fn add_subscription(nats: &Nats, cfg: &Cfg, cmd: AdminCmd) -> Result<()> {
     let bytes = res.bytes().await?;
     if !status.is_success() {
         let text = String::from_utf8_lossy(&bytes);
-        return Err(anyhow::anyhow!("graph add failed: {} {}", status, text));
+        return Err(anyhow::anyhow!("graph add failed: {status} {text}"));
     }
     let val = parse_json(&bytes, "graph add")?;
     publish_event(
@@ -152,7 +152,7 @@ async fn list_subscriptions(nats: &Nats, cfg: &Cfg) -> Result<()> {
     let bytes = res.bytes().await?;
     if !status.is_success() {
         let text = String::from_utf8_lossy(&bytes);
-        return Err(anyhow::anyhow!("graph list failed: {} {}", status, text));
+        return Err(anyhow::anyhow!("graph list failed: {status} {text}"));
     }
     let val = parse_json(&bytes, "graph list")?;
     publish_event(
@@ -178,9 +178,7 @@ async fn renew_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
     if !status.is_success() {
         let text = String::from_utf8_lossy(&bytes);
         return Err(anyhow::anyhow!(
-            "graph list (renew) failed: {} {}",
-            status,
-            text
+            "graph list (renew) failed: {status} {text}"
         ));
     }
     let v = parse_json(&bytes, "graph list (renew)")?;
@@ -202,8 +200,7 @@ async fn renew_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
                 let body = json!({ "expirationDateTime": new_exp });
                 let _ = reqwest::Client::new()
                     .patch(format!(
-                        "https://graph.microsoft.com/v1.0/subscriptions/{}",
-                        id
+                        "https://graph.microsoft.com/v1.0/subscriptions/{id}"
                     ))
                     .bearer_auth(&token)
                     .json(&body)
@@ -219,7 +216,7 @@ async fn renew_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
                     }),
                 )
                 .await?;
-                tracing::info!("renewed subscription {}", id);
+                tracing::info!("renewed subscription {id}");
             }
         }
     }
@@ -247,9 +244,7 @@ async fn delete_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
     if !status.is_success() {
         let text = String::from_utf8_lossy(&bytes);
         return Err(anyhow::anyhow!(
-            "graph list (delete) failed: {} {}",
-            status,
-            text
+            "graph list (delete) failed: {status} {text}"
         ));
     }
     let v = parse_json(&bytes, "graph list (delete)")?;
@@ -262,8 +257,7 @@ async fn delete_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
             }
             let _ = reqwest::Client::new()
                 .delete(format!(
-                    "https://graph.microsoft.com/v1.0/subscriptions/{}",
-                    id
+                    "https://graph.microsoft.com/v1.0/subscriptions/{id}"
                 ))
                 .bearer_auth(&token)
                 .send()
@@ -278,7 +272,7 @@ async fn delete_matching(nats: &Nats, cfg: &Cfg, pattern: &str) -> Result<()> {
                 }),
             )
             .await?;
-            tracing::info!("deleted subscription {}", id);
+            tracing::info!("deleted subscription {id}");
         }
     }
     Ok(())
@@ -293,7 +287,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 }
 
 async fn publish_event(nats: &Nats, tenant: &str, payload: Value) -> Result<()> {
-    let subject = format!("greentic.subs.events.{}.teams", tenant);
+    let subject = format!("greentic.subs.events.{tenant}.teams");
     let bytes = serde_json::to_vec(&payload)?;
     nats.publish(subject, bytes.into()).await?;
     Ok(())
@@ -310,10 +304,8 @@ async fn renew_loop(nats: Nats, cfg: Cfg) -> Result<()> {
 
 fn parse_json(bytes: &[u8], context: &str) -> Result<Value> {
     serde_json::from_slice(bytes).map_err(|e| {
-        anyhow!(
-            "{context} response was not valid JSON: {e}; body={}",
-            String::from_utf8_lossy(bytes)
-        )
+        let body = String::from_utf8_lossy(bytes);
+        anyhow!("{context} response was not valid JSON: {e}; body={body}")
     })
 }
 

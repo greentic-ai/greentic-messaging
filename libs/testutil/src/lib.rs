@@ -70,22 +70,21 @@ impl TestConfig {
 }
 
 fn load_env_credentials(key: &str) -> Result<Option<Value>> {
-    let var = format!("MESSAGING_{}_CREDENTIALS", key);
+    let var = format!("MESSAGING_{key}_CREDENTIALS");
     if let Ok(raw) = std::env::var(&var) {
         if raw.trim().is_empty() {
             return Ok(None);
         }
-        let json =
-            serde_json::from_str(&raw).with_context(|| format!("failed to parse {}", var))?;
+        let json = serde_json::from_str(&raw).with_context(|| format!("failed to parse {var}"))?;
         return Ok(Some(json));
     }
 
-    let path_var = format!("MESSAGING_{}_CREDENTIALS_PATH", key);
+    let path_var = format!("MESSAGING_{key}_CREDENTIALS_PATH");
     if let Ok(path) = std::env::var(&path_var) {
         let content =
-            fs::read_to_string(&path).with_context(|| format!("failed to read {}", path))?;
+            fs::read_to_string(&path).with_context(|| format!("failed to read {path}"))?;
         let json =
-            serde_json::from_str(&content).with_context(|| format!("failed to parse {}", path))?;
+            serde_json::from_str(&content).with_context(|| format!("failed to parse {path}"))?;
         return Ok(Some(json));
     }
 
@@ -165,7 +164,7 @@ pub fn load_card_value(path: &str) -> Result<Value> {
             serde_json::to_value(yaml)
                 .with_context(|| format!("failed to convert yaml {}", absolute.display()))
         }
-        other => Err(anyhow!("unsupported fixture extension: {}", other)),
+        other => Err(anyhow!("unsupported fixture extension: {other}")),
     }
 }
 

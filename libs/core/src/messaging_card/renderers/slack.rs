@@ -133,7 +133,7 @@ fn render_blocks(
                     }
                     let label = sanitize_text_for_tier(&fact.label, ir.tier, metrics);
                     let value = sanitize_text_for_tier(&fact.value, ir.tier, metrics);
-                    let text = format!("*{}*\n{}", label, value);
+                    let text = format!("*{label}*\n{value}");
                     fields.push(json!({
                         "type": "mrkdwn",
                         "text": enforce_text_limit(

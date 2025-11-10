@@ -18,8 +18,8 @@ use gsm_core::{
 };
 use gsm_idempotency::{IdKey, IdempotencyGuard};
 use gsm_ingress_common::{
-    SignatureAlgorithm, init_guard, record_idempotency_hit, record_ingress,
-    signature_header_from_env, start_ingress_span,
+    SharedSessionStore, SignatureAlgorithm, attach_session_id, init_guard, init_session_store,
+    record_idempotency_hit, record_ingress, signature_header_from_env, start_ingress_span,
 };
 use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use serde_json::Value;
@@ -119,6 +119,7 @@ struct AppState {
     signature_algorithm: SignatureAlgorithm,
     guard: IdempotencyGuard,
     publisher: SharedPublisher,
+    sessions: SharedSessionStore,
 }
 
 #[derive(Clone)]
@@ -160,6 +161,7 @@ async fn main() -> Result<()> {
     let nats = async_nats::connect(nats_url).await?;
     let guard = init_guard(&nats).await?;
     let publisher: SharedPublisher = Arc::new(NatsPublisher { client: nats });
+    let sessions = init_session_store().await?;
 
     let state = AppState {
         registry,
@@ -171,6 +173,7 @@ async fn main() -> Result<()> {
         signature_algorithm,
         guard,
         publisher,
+        sessions,
     };
 
     let addr: SocketAddr = std::env::var("BIND")
@@ -325,6 +328,7 @@ async fn process_webhook(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     invocation.ctx = ctx.clone();
+    attach_session_id(&state.sessions, &ctx, &envelope, &mut invocation).await;
 
     let subject = in_subject(
         ctx.tenant.as_str(),
@@ -441,6 +445,7 @@ mod tests {
         let guard = IdempotencyGuard::new(store, 1);
         let mock = Arc::new(MockPublisher::default());
         let publisher: SharedPublisher = mock.clone();
+        let sessions = init_session_store().await.expect("session store");
 
         let resolver = Arc::new(super::Resolver::default());
         let registry = Arc::new(ProviderRegistry::new());
@@ -469,6 +474,7 @@ mod tests {
                 signature_algorithm,
                 guard,
                 publisher,
+                sessions,
             },
             mock,
         )

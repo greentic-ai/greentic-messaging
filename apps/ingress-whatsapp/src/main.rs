@@ -22,7 +22,10 @@ use gsm_core::{
 };
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
-use gsm_ingress_common::{init_guard, record_idempotency_hit, record_ingress, start_ingress_span};
+use gsm_ingress_common::{
+    SharedSessionStore, attach_session_id, init_guard, init_session_store, record_idempotency_hit,
+    record_ingress, start_ingress_span,
+};
 use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use hmac::{Hmac, Mac};
 use security::middleware::{ActionContext, SharedActionContext, handle_action};
@@ -96,6 +99,7 @@ where
     api_base: String,
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
+    sessions: SharedSessionStore,
 }
 
 impl<R> Clone for AppState<R>
@@ -112,6 +116,7 @@ where
             api_base: self.api_base.clone(),
             idem_guard: self.idem_guard.clone(),
             dlq: self.dlq.clone(),
+            sessions: self.sessions.clone(),
         }
     }
 }
@@ -138,6 +143,7 @@ async fn main() -> Result<()> {
     let registry = Arc::new(ProviderRegistry::new());
     let resolver = Arc::new(DefaultResolver::new().await?);
     let http_client = Arc::new(reqwest::Client::new());
+    let sessions = init_session_store().await?;
 
     let state = AppState {
         nats,
@@ -148,6 +154,7 @@ async fn main() -> Result<()> {
         api_base,
         idem_guard,
         dlq,
+        sessions,
     };
 
     let mut app: Router<AppState<DefaultResolver>> = Router::new()
@@ -280,13 +287,15 @@ where
                 );
             }
         }
-        let invocation = match env.clone().into_invocation() {
+        let mut invocation = match env.clone().into_invocation() {
             Ok(envelope) => envelope,
             Err(err) => {
                 tracing::error!(error = %err, "failed to build invocation envelope");
                 return StatusCode::INTERNAL_SERVER_ERROR;
             }
         };
+        let tenant_ctx = invocation.ctx.clone();
+        attach_session_id(&state.sessions, &tenant_ctx, &env, &mut invocation).await;
         set_current_tenant_ctx(invocation.ctx.clone());
 
         let payload = match serde_json::to_vec(&invocation) {

@@ -19,8 +19,8 @@ use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
 use gsm_ingress_common::{
-    ack202, init_guard, record_idempotency_hit, record_ingress, start_ingress_span, verify_bearer,
-    with_request_id,
+    SharedSessionStore, ack202, attach_session_id, init_guard, init_session_store,
+    record_idempotency_hit, record_ingress, start_ingress_span, verify_bearer, with_request_id,
 };
 use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use include_dir::{Dir, include_dir};
@@ -38,6 +38,7 @@ struct AppState {
     nats: Nats,
     idem_guard: IdempotencyGuard,
     dlq: DlqPublisher,
+    sessions: SharedSessionStore,
 }
 
 #[tokio::main]
@@ -47,10 +48,12 @@ async fn main() -> Result<()> {
     let nats = async_nats::connect(nats_url).await?;
     let idem_guard = init_guard(&nats).await?;
     let dlq = DlqPublisher::new("ingress", nats.clone()).await?;
+    let sessions = init_session_store().await?;
     let state = AppState {
         nats,
         idem_guard,
         dlq,
+        sessions,
     };
 
     let mut app = Router::new()
@@ -228,6 +231,8 @@ async fn webhook(
     if let Some(team) = team {
         invocation.ctx.team = Some(TeamId(team));
     }
+    let ctx_snapshot = invocation.ctx.clone();
+    attach_session_id(&state.sessions, &ctx_snapshot, &env, &mut invocation).await;
     set_current_tenant_ctx(invocation.ctx.clone());
 
     let payload = match serde_json::to_vec(&invocation) {

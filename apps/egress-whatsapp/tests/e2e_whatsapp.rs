@@ -6,7 +6,7 @@ use gsm_testutil::load_card;
 use reqwest::header::RETRY_AFTER;
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::error::Error;
 use std::future::Future;
@@ -322,6 +322,7 @@ fn handle_reqwest_error(err: reqwest::Error) -> anyhow::Error {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct WhatsAppSendResponse {
     #[serde(default)]
     messaging_product: Option<String>,

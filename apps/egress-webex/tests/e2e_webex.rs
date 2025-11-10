@@ -264,21 +264,12 @@ fn handle_reqwest_error(err: reqwest::Error) -> anyhow::Error {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 struct WebexMessage {
     #[serde(default)]
     id: Option<String>,
     #[serde(default)]
     attachments: Option<Vec<WebexAttachment>>,
-}
-
-impl Default for WebexMessage {
-    fn default() -> Self {
-        Self {
-            id: None,
-            attachments: None,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
