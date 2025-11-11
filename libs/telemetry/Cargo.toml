@@ -12,3 +12,4 @@ tracing-subscriber = { workspace = true }
 once_cell = { workspace = true }
 greentic-types = { workspace = true }
 url = { workspace = true }
+tracing-appender = { workspace = true }

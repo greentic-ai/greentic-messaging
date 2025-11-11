@@ -52,6 +52,14 @@ Set the following environment variables to emit spans and OTLP traces when runni
 - `RUST_LOG=info`
 - `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=dev`
 
+### Dev-Friendly Logging
+
+During iterative development you can bypass OpenTelemetry exporters entirely by
+setting `GREENTIC_DEV_TELEMETRY=1`. Each binary will then stream structured logs
+to `./<service>.log` (for example `gsm-ingress-slack.log`) at `info` level. To
+write those files elsewhere, also set `GREENTIC_DEV_LOG_DIR=/tmp/greentic-logs`
+and the directory will be created automatically if it does not exist.
+
 ### MessageCard Telemetry & Limits
 
 - Every renderer emits a `TelemetryEvent::Rendered` record with `render_tier`, `warning_count`, `limit_exceeded`, `sanitized_count`, `url_blocked_count`, modal usage, plus one-hot `native_count`/`downgrade_count` flags so you can differentiate fully supported payloads from downgraded ones. Attach a custom `TelemetryHook` through `MessageCardEngine::with_telemetry` to capture those metrics.
