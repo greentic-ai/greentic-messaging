@@ -294,16 +294,15 @@ fn normalize_card_actions(card: &mut Value) {
     if let Some(actions) = card.get_mut("actions").and_then(Value::as_array_mut) {
         let mut idx = 0;
         while idx < actions.len() {
-            if let Some(obj) = actions[idx].as_object_mut() {
-                if let Some(action_type) = obj
+            if let Some(obj) = actions[idx].as_object_mut()
+                && let Some(action_type) = obj
                     .get("type")
                     .and_then(|value| value.as_str())
                     .and_then(normalized_action_type)
-                {
-                    obj.insert("type".into(), Value::String(action_type.to_string()));
-                    idx += 1;
-                    continue;
-                }
+            {
+                obj.insert("type".into(), Value::String(action_type.to_string()));
+                idx += 1;
+                continue;
             }
             actions.remove(idx);
         }
@@ -342,14 +341,14 @@ fn ensure_column_types(card: &mut Value) {
     fn ensure(value: &mut Value) {
         match value {
             Value::Object(map) => {
-                if map.get("type").and_then(|v| v.as_str()) == Some("ColumnSet") {
-                    if let Some(Value::Array(columns)) = map.get_mut("columns") {
-                        for column in columns {
-                            if let Value::Object(column_map) = column {
-                                column_map
-                                    .entry("type")
-                                    .or_insert_with(|| Value::String("Column".into()));
-                            }
+                if map.get("type").and_then(|v| v.as_str()) == Some("ColumnSet")
+                    && let Some(Value::Array(columns)) = map.get_mut("columns")
+                {
+                    for column in columns {
+                        if let Value::Object(column_map) = column {
+                            column_map
+                                .entry("type")
+                                .or_insert_with(|| Value::String("Column".into()));
                         }
                     }
                 }
@@ -389,12 +388,12 @@ fn flatten_column_sets(card: &mut Value) {
 fn flatten_body(body: &mut Vec<Value>) {
     let mut idx = 0;
     while idx < body.len() {
-        if let Some(obj) = body[idx].as_object() {
-            if obj.get("type").and_then(|v| v.as_str()) == Some("ColumnSet") {
-                let replacements = collect_column_items(obj);
-                body.splice(idx..idx + 1, replacements);
-                continue;
-            }
+        if let Some(obj) = body[idx].as_object()
+            && obj.get("type").and_then(|v| v.as_str()) == Some("ColumnSet")
+        {
+            let replacements = collect_column_items(obj);
+            body.splice(idx..idx + 1, replacements);
+            continue;
         }
         flatten_column_sets(&mut body[idx]);
         idx += 1;
