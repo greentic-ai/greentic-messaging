@@ -1,0 +1,46 @@
+name: messaging-test
+
+on:
+  push:
+    paths:
+      - "crates/messaging-test/**"
+      - "README.md"
+  pull_request:
+    paths:
+      - "crates/messaging-test/**"
+      - "README.md"
+
+jobs:
+  dry-run-goldens:
+    runs-on: ubuntu-latest
+    env:
+      MS_GRAPH_TOKEN: token
+      WEBEX_BOT_TOKEN: token
+      SLACK_BOT_TOKEN: token
+      WEBCHAT_SECRET: token
+      TELEGRAM_BOT_TOKEN: token
+      WHATSAPP_TOKEN: token
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup component add rustfmt
+      - name: Run messaging-test artifacts
+        run: cargo run -p messaging-test -- all --dry-run
+      - name: Run messaging-test smoke tests
+        run: cargo test -p messaging-test
+      - name: Compare golden snapshots
+        id: diff
+        run: git diff --exit-code crates/messaging-test/tests/golden
+        continue-on-error: true
+      - name: Upload artifacts
+        if: steps.diff.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: messaging-test-artifacts
+          path: ./.gsm-test/artifacts
+      - name: Fail if goldens diverge
+        if: steps.diff.outcome == 'failure'
+        run: |
+          echo "Artifact output differs from committed goldens."
+          git status
+          exit 1

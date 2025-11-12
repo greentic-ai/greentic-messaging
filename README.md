@@ -86,6 +86,26 @@ and the directory will be created automatically if it does not exist.
   Paste a `MessageCard` JSON payload or load one of the shipped fixtures—the viewer normalizes it through `gsm-core`, downgrades per platform, and shows warnings, tier downgrades, and renderer payloads side-by-side.
   For automation, hit `GET /healthz` once the process starts to know when the viewer is ready.
 
+### Messaging-test CLI
+
+- `cargo run -p messaging-test -- fixtures` lists discovered MessageCard fixtures.
+- `cargo run -p messaging-test -- adapters` prints every adapter along with whether it is enabled and a reason for why it might be disabled.
+- `cargo run -p messaging-test -- run <fixture> --dry-run` launches an interactive keyboard session. Press **Enter** or `r` to re-send, `n/p` to cycle fixtures, `a` to toggle adapters (enter a comma-separated list or `all`), and `q` to quit. Artifacts are written to `./.gsm-test/artifacts/<fixture>/<adapter>`, where `translated.json` is redacted before being recorded.
+- `cargo run -p messaging-test -- all --dry-run` iterates every fixture in a non-interactive way and generates the same artifacts tree. Run `cargo run -p messaging-test -- gen-golden` afterward to copy the translated payloads into `crates/messaging-test/tests/golden/<fixture>/<adapter>/translated.json`.
+
+Real sends require all adapter credentials to be exported (dry-run is the default). The required environment variables are:
+
+| Adapter | Env vars |
+| --- | --- |
+| `teams` | `MS_GRAPH_TOKEN` |
+| `webex` | `WEBEX_BOT_TOKEN` |
+| `slack` | `SLACK_BOT_TOKEN` |
+| `webchat` | `WEBCHAT_SECRET` (optionally `WEBCHAT_ENDPOINT`) |
+| `telegram` | `TELEGRAM_BOT_TOKEN` |
+| `whatsapp` | `WHATSAPP_TOKEN` |
+
+The tool never references an email adapter, and the WebChat adapter is always named `webchat` (never “DirectLine”). Use the artifacts alongside the built-in smoke test (`cargo test -p messaging-test`) or the CI job to keep the translated payloads aligned with the goldens.
+
 ## Sending Messages
 
 All egress adapters now share a common interface: pass a `TenantCtx` alongside an
