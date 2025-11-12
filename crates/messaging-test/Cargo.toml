@@ -1,6 +1,6 @@
 [package]
 name = "greentic-messaging-test"
-version = "0.1.0"
+version.workspace=true
 edition = "2024"
 description = "Interactive tool to run MessageCard fixtures across Teams/Webex/Slack/WebChat/Telegram/WhatsApp translations."
 license = "MIT"
@@ -17,5 +17,5 @@ greentic-interfaces = { workspace = true }
 gsm-core = { workspace = true }
 gsm-telemetry = { workspace = true }
 greentic-secrets = { workspace = true }
-gsm-translator = "0.3.6"
+gsm-translator = { workspace=true }
 tempfile = { workspace = true }
