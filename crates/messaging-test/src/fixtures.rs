@@ -34,13 +34,15 @@ pub fn discover(root: &Path) -> Result<Vec<Fixture>> {
         } else {
             serde_json::from_str(&data)?
         };
-        let card = if is_adaptive_card(&value) {
+        let mut normalized = value.clone();
+        normalize_adaptive(&mut normalized);
+        let card = if is_adaptive_card(&normalized) {
             AdaptiveMessageCard {
-                adaptive: Some(value),
+                adaptive: Some(normalized),
                 ..Default::default()
             }
         } else {
-            serde_json::from_value(value)?
+            serde_json::from_value(normalized)?
         };
         fixtures.push(Fixture { id, path, card });
     }
@@ -54,6 +56,33 @@ fn is_adaptive_card(value: &Value) -> bool {
         .and_then(|v| v.as_str())
         .map(|t| t == "AdaptiveCard")
         .unwrap_or(false)
+}
+
+fn normalize_adaptive(value: &mut Value) {
+    ensure_version(value);
+    match value {
+        Value::Object(map) => {
+            for val in map.values_mut() {
+                normalize_adaptive(val);
+            }
+        }
+        Value::Array(arr) => {
+            for val in arr {
+                normalize_adaptive(val);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn ensure_version(value: &mut Value) {
+    if let Some(map) = value.as_object_mut() {
+        if map.get("type").and_then(|v| v.as_str()) == Some("AdaptiveCard")
+            && !map.contains_key("version")
+        {
+            map.insert("version".into(), Value::String("1.6".into()));
+        }
+    }
 }
 
 #[cfg(test)]

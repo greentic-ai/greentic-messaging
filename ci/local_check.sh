@@ -190,7 +190,7 @@ test_all_features_step() {
   cargo test --workspace --all-features -- --nocapture
 }
 
-messaging_test_step() {
+run_messaging_test_step() {
   ensure_tool cargo
   local status=$?
   if [ "$status" -ne 0 ]; then
