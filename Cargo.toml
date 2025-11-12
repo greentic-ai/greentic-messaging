@@ -43,7 +43,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
@@ -107,3 +107,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 url = "2.5"
+gsm-translator = "0.3.6"
+
+[patch.crates-io]
+gsm-translator = { path = "libs/translator" }

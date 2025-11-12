@@ -25,9 +25,9 @@ jobs:
       - name: Install Rust toolchain
         run: rustup component add rustfmt
       - name: Run messaging-test artifacts
-        run: cargo run -p messaging-test -- all --dry-run
+        run: cargo run -p greentic-messaging-test -- all --dry-run
       - name: Run messaging-test smoke tests
-        run: cargo test -p messaging-test
+        run: cargo test -p greentic-messaging-test
       - name: Compare golden snapshots
         id: diff
         run: git diff --exit-code crates/messaging-test/tests/golden

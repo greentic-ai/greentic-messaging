@@ -1,5 +1,5 @@
 [package]
-name = "messaging-test"
+name = "greentic-messaging-test"
 version = "0.1.0"
 edition = "2024"
 
@@ -15,5 +15,5 @@ greentic-interfaces = { workspace = true }
 gsm-core = { workspace = true }
 gsm-telemetry = { workspace = true }
 greentic-secrets = { workspace = true }
-gsm-translator = { path = "../../libs/translator" }
+gsm-translator = "0.3.6"
 tempfile = { workspace = true }
