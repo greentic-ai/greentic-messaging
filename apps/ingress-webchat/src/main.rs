@@ -84,8 +84,7 @@ async fn main() -> Result<()> {
         Ok(listener) => listener,
         Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
             return Err(anyhow::anyhow!(
-                "port {} already in use; set BIND=0.0.0.0:PORT to override",
-                addr
+                "port {addr} already in use; set BIND=0.0.0.0:PORT to override"
             ));
         }
         Err(err) => return Err(err.into()),

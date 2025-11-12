@@ -19,7 +19,7 @@ use gsm_core::messaging_card::{
 use gsm_core::oauth::{OauthClient, ReqwestTransport};
 use gsm_core::{TenantCtx, Tier, make_tenant_ctx};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tokio::signal;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .canonicalize()
         .unwrap_or_else(|_| opts.fixtures.clone());
     if !fixtures_dir.is_dir() {
-        anyhow::bail!("fixtures directory {:?} does not exist", fixtures_dir);
+        anyhow::bail!("fixtures directory {fixtures_dir:?} does not exist");
     }
 
     let engine = MessageCardEngine::bootstrap();
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(index))
         .route("/healthz", get(healthz))
         .route("/fixtures", get(list_fixtures))
-        .route("/fixtures/:name", get(load_fixture))
+        .route("/fixtures/{name}", get(load_fixture))
         .route("/render", post(render_card))
         .with_state(state);
 
@@ -179,7 +179,13 @@ async fn render_card(
         ));
     }
 
-    let mut card: MessageCard = serde_json::from_value(request.card).map_err(|err| {
+    let mut card_value = wrap_adaptive_payload(request.card.clone());
+    ensure_adaptive_card_versions(&mut card_value);
+    ensure_column_types(&mut card_value);
+    flatten_column_sets(&mut card_value);
+    normalize_card_actions(&mut card_value);
+
+    let mut card: MessageCard = serde_json::from_value(card_value).map_err(|err| {
         (
             StatusCode::BAD_REQUEST,
             format!("invalid MessageCard: {err}"),
@@ -248,6 +254,379 @@ fn sanitize_name(input: &str) -> Option<&str> {
         return None;
     }
     Some(input)
+}
+
+const DEFAULT_ADAPTIVE_CARD_VERSION: &str = "1.6";
+
+fn wrap_adaptive_payload(card: Value) -> Value {
+    match card {
+        Value::Object(map) => wrap_adaptive_map(map),
+        other => other,
+    }
+}
+
+fn wrap_adaptive_map(map: Map<String, Value>) -> Value {
+    if map.contains_key("adaptive") || !is_adaptive_card(&map) {
+        Value::Object(map)
+    } else {
+        let mut wrapper = Map::new();
+        wrapper.insert("adaptive".into(), Value::Object(map));
+        Value::Object(wrapper)
+    }
+}
+
+fn is_adaptive_card(map: &Map<String, Value>) -> bool {
+    matches!(
+        map.get("type").and_then(|value| value.as_str()),
+        Some("AdaptiveCard")
+    ) && (map.contains_key("body") || map.contains_key("$schema"))
+}
+
+fn normalize_card_actions(card: &mut Value) {
+    fn normalized_action_type(action_type: &str) -> Option<&'static str> {
+        match action_type {
+            "open_url" | "Action.OpenUrl" => Some("open_url"),
+            "post_back" | "Action.Submit" | "Action.Execute" => Some("post_back"),
+            _ => None,
+        }
+    }
+
+    if let Some(actions) = card.get_mut("actions").and_then(Value::as_array_mut) {
+        let mut idx = 0;
+        while idx < actions.len() {
+            if let Some(obj) = actions[idx].as_object_mut() {
+                if let Some(action_type) = obj
+                    .get("type")
+                    .and_then(|value| value.as_str())
+                    .and_then(normalized_action_type)
+                {
+                    obj.insert("type".into(), Value::String(action_type.to_string()));
+                    idx += 1;
+                    continue;
+                }
+            }
+            actions.remove(idx);
+        }
+    }
+}
+
+fn ensure_adaptive_card_versions(card: &mut Value) {
+    fn ensure(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                if map.get("type").and_then(|v| v.as_str()) == Some("AdaptiveCard")
+                    && !map.contains_key("version")
+                {
+                    map.insert(
+                        "version".into(),
+                        Value::String(DEFAULT_ADAPTIVE_CARD_VERSION.into()),
+                    );
+                }
+                for entry in map.values_mut() {
+                    ensure(entry);
+                }
+            }
+            Value::Array(elements) => {
+                for element in elements {
+                    ensure(element);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    ensure(card);
+}
+
+fn ensure_column_types(card: &mut Value) {
+    fn ensure(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                if map.get("type").and_then(|v| v.as_str()) == Some("ColumnSet") {
+                    if let Some(Value::Array(columns)) = map.get_mut("columns") {
+                        for column in columns {
+                            if let Value::Object(column_map) = column {
+                                column_map
+                                    .entry("type")
+                                    .or_insert_with(|| Value::String("Column".into()));
+                            }
+                        }
+                    }
+                }
+                for entry in map.values_mut() {
+                    ensure(entry);
+                }
+            }
+            Value::Array(elements) => {
+                for element in elements {
+                    ensure(element);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    ensure(card);
+}
+
+fn flatten_column_sets(card: &mut Value) {
+    match card {
+        Value::Object(map) => {
+            if let Some(body) = map.get_mut("body").and_then(Value::as_array_mut) {
+                flatten_body(body);
+            }
+            for value in map.values_mut() {
+                flatten_column_sets(value);
+            }
+        }
+        Value::Array(array) => {
+            flatten_body(array);
+        }
+        _ => {}
+    }
+}
+
+fn flatten_body(body: &mut Vec<Value>) {
+    let mut idx = 0;
+    while idx < body.len() {
+        if let Some(obj) = body[idx].as_object() {
+            if obj.get("type").and_then(|v| v.as_str()) == Some("ColumnSet") {
+                let replacements = collect_column_items(obj);
+                body.splice(idx..idx + 1, replacements);
+                continue;
+            }
+        }
+        flatten_column_sets(&mut body[idx]);
+        idx += 1;
+    }
+}
+
+fn collect_column_items(column_set: &Map<String, Value>) -> Vec<Value> {
+    let mut result = Vec::new();
+    if let Some(columns) = column_set.get("columns").and_then(|v| v.as_array()) {
+        for column in columns {
+            if let Some(items) = column
+                .as_object()
+                .and_then(|col_map| col_map.get("items"))
+                .and_then(|v| v.as_array())
+            {
+                for item in items {
+                    let mut item_clone = item.clone();
+                    flatten_column_sets(&mut item_clone);
+                    result.push(item_clone);
+                }
+            }
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DEFAULT_ADAPTIVE_CARD_VERSION, ensure_adaptive_card_versions, ensure_column_types,
+        flatten_column_sets, normalize_card_actions, sanitize_name, wrap_adaptive_payload,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn sanitize_name_accepts_plain_filename() {
+        assert_eq!(sanitize_name("card.json"), Some("card.json"));
+    }
+
+    #[test]
+    fn sanitize_name_rejects_paths_with_slashes() {
+        assert!(sanitize_name("foo/bar.json").is_none());
+        assert!(sanitize_name("foo\\bar.json").is_none());
+    }
+
+    #[test]
+    fn sanitize_name_rejects_path_traversal() {
+        assert!(sanitize_name("..").is_none());
+        assert!(sanitize_name("foo..bar").is_none());
+        assert!(sanitize_name("foo/..").is_none());
+    }
+
+    #[test]
+    fn normalize_card_actions_keeps_supported_types() {
+        let mut card = json!({
+            "actions": [
+                { "type": "Action.OpenUrl", "title": "Docs", "url": "https://example.com" },
+                { "type": "Action.Submit", "title": "Submit", "data": {} }
+            ]
+        });
+        normalize_card_actions(&mut card);
+        let actions = card["actions"].as_array().unwrap();
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0]["type"], "open_url");
+        assert_eq!(actions[1]["type"], "post_back");
+    }
+
+    #[test]
+    fn normalize_card_actions_drops_unsupported_types() {
+        let mut card = json!({
+            "actions": [
+                { "type": "Action.ShowCard", "title": "More" },
+                { "type": "open_url", "title": "Docs", "url": "https://example.com" }
+            ]
+        });
+        normalize_card_actions(&mut card);
+        let actions = card["actions"].as_array().unwrap();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0]["type"], "open_url");
+    }
+
+    #[test]
+    fn wrap_adaptive_payload_wraps_root_adaptive_card() {
+        let adaptive = json!({
+            "type": "AdaptiveCard",
+            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+            "version": "1.6",
+            "body": [{ "type": "TextBlock", "text": "Nested" }]
+        });
+        let wrapped = wrap_adaptive_payload(adaptive.clone());
+        let inner = wrapped["adaptive"].clone();
+        assert_eq!(inner, adaptive);
+        assert!(wrapped.get("type").is_none());
+    }
+
+    #[test]
+    fn wrap_adaptive_payload_is_idempotent_for_wrapped_cards() {
+        let card = json!({
+            "adaptive": {
+                "type": "AdaptiveCard",
+                "body": []
+            },
+            "text": "hi"
+        });
+        let wrapped = wrap_adaptive_payload(card.clone());
+        assert_eq!(wrapped, card);
+    }
+
+    #[test]
+    fn wrap_adaptive_payload_leaves_plain_cards_alone() {
+        let card = json!({
+            "text": "hello",
+            "actions": [{ "type": "open_url", "title": "Docs", "url": "https://example.com" }]
+        });
+        let wrapped = wrap_adaptive_payload(card.clone());
+        assert_eq!(wrapped, card);
+    }
+
+    #[test]
+    fn ensure_adaptive_card_versions_inserts_missing_version() {
+        let mut card = json!({
+            "type": "AdaptiveCard",
+            "body": [
+                {
+                    "type": "Action.ShowCard",
+                    "card": {
+                        "type": "AdaptiveCard",
+                        "body": []
+                    }
+                }
+            ]
+        });
+        ensure_adaptive_card_versions(&mut card);
+        assert_eq!(card["version"], DEFAULT_ADAPTIVE_CARD_VERSION);
+        assert_eq!(
+            card["body"][0]["card"]["version"],
+            DEFAULT_ADAPTIVE_CARD_VERSION
+        );
+    }
+
+    #[test]
+    fn ensure_adaptive_card_versions_preserves_existing_version() {
+        let mut card = json!({
+            "type": "AdaptiveCard",
+            "version": "1.5",
+            "actions": [
+                {
+                    "type": "Action.ShowCard",
+                    "card": {
+                        "type": "AdaptiveCard",
+                        "version": "1.2",
+                        "body": []
+                    }
+                }
+            ]
+        });
+        ensure_adaptive_card_versions(&mut card);
+        assert_eq!(card["version"], "1.5");
+        assert_eq!(card["actions"][0]["card"]["version"], "1.2");
+    }
+
+    #[test]
+    fn ensure_column_types_inserts_missing_column_type() {
+        let mut card = json!({
+            "type": "AdaptiveCard",
+            "body": [
+                {
+                    "type": "ColumnSet",
+                    "columns": [
+                        {
+                            "width": "auto",
+                            "items": [{ "type": "TextBlock", "text": "Hello" }]
+                        }
+                    ]
+                }
+            ]
+        });
+        ensure_column_types(&mut card);
+        assert_eq!(card["body"][0]["columns"][0]["type"], "Column");
+    }
+
+    #[test]
+    fn ensure_column_types_preserves_existing_column_type() {
+        let mut card = json!({
+            "type": "AdaptiveCard",
+            "body": [
+                {
+                    "type": "ColumnSet",
+                    "columns": [
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "items": []
+                        }
+                    ]
+                }
+            ]
+        });
+        ensure_column_types(&mut card);
+        assert_eq!(card["body"][0]["columns"][0]["type"], "Column");
+    }
+
+    #[test]
+    fn flatten_column_sets_replaces_columnset_with_items() {
+        let mut card = json!({
+            "type": "AdaptiveCard",
+            "body": [
+                {
+                    "type": "ColumnSet",
+                    "columns": [
+                        {
+                            "type": "Column",
+                            "items": [
+                                { "type": "TextBlock", "text": "A" }
+                            ]
+                        },
+                        {
+                            "type": "Column",
+                            "items": [
+                                { "type": "TextBlock", "text": "B" }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        flatten_column_sets(&mut card);
+        let body = card["body"].as_array().unwrap();
+        assert_eq!(body.len(), 2);
+        assert_eq!(body[0]["text"], "A");
+        assert_eq!(body[1]["text"], "B");
+    }
 }
 
 fn internal_error<E: ToString>(err: E) -> (StatusCode, String) {

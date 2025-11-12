@@ -57,7 +57,7 @@ pub async fn verify_bearer(req: Request<Body>, next: Next) -> Response {
             .headers()
             .get("authorization")
             .and_then(|h| h.to_str().ok())
-            .map(|s| s == format!("Bearer {}", token))
+            .map(|s| s == format!("Bearer {token}"))
             .unwrap_or(false);
         if !ok {
             return StatusCode::UNAUTHORIZED.into_response();

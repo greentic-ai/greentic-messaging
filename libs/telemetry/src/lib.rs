@@ -156,7 +156,7 @@ fn prepare_log_destination(service_name: &str) -> Result<LogPath> {
     let dir = current_log_dir();
     if dir != "." {
         fs::create_dir_all(&dir)
-            .with_context(|| format!("failed to create log directory {}", dir))?;
+            .with_context(|| format!("failed to create log directory {dir}"))?;
     }
     Ok(LogPath {
         directory: dir,

@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     let nats = async_nats::connect(nats_url).await?;
     let dlq = DlqPublisher::new("translate", nats.clone()).await?;
 
-    let subject = format!("greentic.msg.in.{}.{}.{}", tenant, platform, chat_prefix);
+    let subject = format!("greentic.msg.in.{tenant}.{platform}.{chat_prefix}");
     let mut sub = nats.subscribe(subject.clone()).await?;
     tracing::info!("runner subscribed to {subject}");
 
@@ -114,7 +114,7 @@ async fn run_one(
         let node = flow
             .nodes
             .get(&current)
-            .ok_or_else(|| anyhow::anyhow!("node not found: {}", current))?;
+            .ok_or_else(|| anyhow::anyhow!("node not found: {current}"))?;
         tracing::info!("node={}", current);
 
         if let Some(qa) = &node.qa {

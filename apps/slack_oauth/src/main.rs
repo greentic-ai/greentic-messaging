@@ -133,7 +133,7 @@ async fn install(
     let team = query.team.unwrap_or_else(|| "default".into());
     let mut rng = rng();
     let nonce: String = Alphanumeric.sample_string(&mut rng, 12);
-    let payload = format!("{}|{}|{}", tenant, team, nonce);
+    let payload = format!("{tenant}|{team}|{nonce}");
     let encoded_state = URL_SAFE_NO_PAD.encode(payload);
 
     let mut authorize = format!(

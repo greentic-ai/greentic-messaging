@@ -196,7 +196,7 @@ where
     let allowed = allowed_updates(cfg);
     api.set_webhook(bot_token, want_url, secret, &allowed, drop_pending)
         .await
-        .with_context(|| format!("set webhook for {}", want_url))?;
+        .with_context(|| format!("set webhook for {want_url}"))?;
     Ok((ReconcileResult::Applied, drop_pending, Some(current_url)))
 }
 

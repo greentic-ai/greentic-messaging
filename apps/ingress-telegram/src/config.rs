@@ -56,7 +56,7 @@ pub fn load_tenants(config_path: Option<&str>, fallback_tenant: &str) -> Result<
     let base = std::env::var("TELEGRAM_PUBLIC_WEBHOOK_BASE")
         .unwrap_or_else(|_| "http://localhost:8080/telegram/webhook".into());
     let secret_key = std::env::var("TELEGRAM_SECRET_TOKEN_KEY")
-        .unwrap_or_else(|_| format!("tenants/{}/telegram/secret_token", fallback_tenant));
+        .unwrap_or_else(|_| format!("tenants/{fallback_tenant}/telegram/secret_token"));
 
     Ok(vec![Tenant {
         id: fallback_tenant.to_string(),

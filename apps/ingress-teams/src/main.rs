@@ -142,7 +142,7 @@ fn envelope_from_notification(tenant: &str, notif: &ChangeNotification) -> Messa
         chat_id: chat_id.clone(),
         user_id: "unknown".into(),
         thread_id: None,
-        msg_id: format!("teams:{}", msg_id),
+        msg_id: format!("teams:{msg_id}"),
         text: None,
         timestamp: OffsetDateTime::now_utc()
             .format(&time::format_description::well_known::Rfc3339)
@@ -160,7 +160,7 @@ async fn notify(
         let ok = headers
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
-            .map(|value| value == format!("Bearer {}", expected))
+            .map(|value| value == format!("Bearer {expected}"))
             .unwrap_or(false);
         if !ok {
             tracing::warn!("missing or invalid bearer token");

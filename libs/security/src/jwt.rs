@@ -117,7 +117,7 @@ impl JwtSigner {
                     public_key: Some(public_key.into_bytes()),
                 })
             }
-            other => Err(anyhow!("unsupported JWT algorithm {}", other)),
+            other => Err(anyhow!("unsupported JWT algorithm {other}")),
         }
     }
 

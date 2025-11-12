@@ -101,18 +101,18 @@ async fn main() -> Result<()> {
                 };
                 println!("{}", serde_json::to_string_pretty(&payload)?);
             } else {
-                println!("sequence: {}", sequence);
-                println!("tenant  : {}", entry.record.tenant);
-                println!("stage   : {}", entry.record.stage);
-                println!("platform: {}", entry.record.platform);
-                println!("msg_id  : {}", entry.record.msg_id);
-                println!("code    : {}", entry.record.error.code);
-                println!("message : {}", entry.record.error.message);
-                println!("retries : {}", entry.record.retries);
-                println!("timestamp: {}", entry.record.ts);
+                println!("sequence: {sequence}");
+                println!("tenant  : {tenant}", tenant = entry.record.tenant);
+                println!("stage   : {stage}", stage = entry.record.stage);
+                println!("platform: {platform}", platform = entry.record.platform);
+                println!("msg_id  : {msg_id}", msg_id = entry.record.msg_id);
+                println!("code    : {code}", code = entry.record.error.code);
+                println!("message : {message}", message = entry.record.error.message);
+                println!("retries : {retries}", retries = entry.record.retries);
+                println!("timestamp: {timestamp}", timestamp = entry.record.ts);
                 println!(
-                    "envelope: {}",
-                    serde_json::to_string_pretty(&entry.record.envelope)?
+                    "envelope: {envelope}",
+                    envelope = serde_json::to_string_pretty(&entry.record.envelope)?
                 );
             }
         }

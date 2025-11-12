@@ -133,24 +133,23 @@ enum AdminOpError {
 
 fn map_admin_error(err: AdminOpError) -> (StatusCode, Json<ErrorResponse>) {
     match err {
-        AdminOpError::TenantNotFound(tenant) => error_response(
-            StatusCode::NOT_FOUND,
-            format!("tenant {} not found", tenant),
-        ),
+        AdminOpError::TenantNotFound(tenant) => {
+            error_response(StatusCode::NOT_FOUND, format!("tenant {tenant} not found"))
+        }
         AdminOpError::TelegramDisabled(tenant) => error_response(
             StatusCode::BAD_REQUEST,
-            format!("telegram disabled or not configured for {}", tenant),
+            format!("telegram disabled or not configured for {tenant}"),
         ),
         AdminOpError::MissingBotToken(tenant) => error_response(
             StatusCode::BAD_REQUEST,
-            format!("bot token not configured for {}", tenant),
+            format!("bot token not configured for {tenant}"),
         ),
         AdminOpError::Secret(err) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("secret error: {}", err),
+            format!("secret error: {err}"),
         ),
         AdminOpError::Telegram(err) => {
-            error_response(StatusCode::BAD_GATEWAY, format!("telegram error: {}", err))
+            error_response(StatusCode::BAD_GATEWAY, format!("telegram error: {err}"))
         }
     }
 }
@@ -171,7 +170,7 @@ async fn register_tenant_op(
         .clone()
         .filter(|cfg| cfg.enabled)
         .ok_or_else(|| AdminOpError::TelegramDisabled(tenant_id.clone()))?;
-    let bot_token_key = format!("tenants/{}/telegram/bot_token", tenant_id);
+    let bot_token_key = format!("tenants/{tenant_id}/telegram/bot_token");
     let bot_token = secrets
         .get(&bot_token_key)
         .await
@@ -213,7 +212,7 @@ async fn deregister_tenant_op(
     if tenant.telegram.as_ref().filter(|cfg| cfg.enabled).is_none() {
         return Err(AdminOpError::TelegramDisabled(tenant_id));
     }
-    let bot_token_key = format!("tenants/{}/telegram/bot_token", tenant.id);
+    let bot_token_key = format!("tenants/{tenant_id}/telegram/bot_token");
     let bot_token = secrets
         .get(&bot_token_key)
         .await
@@ -245,7 +244,7 @@ async fn status_tenant_op(
         .clone()
         .filter(|cfg| cfg.enabled)
         .ok_or_else(|| AdminOpError::TelegramDisabled(tenant_id.clone()))?;
-    let bot_token_key = format!("tenants/{}/telegram/bot_token", tenant_id);
+    let bot_token_key = format!("tenants/{tenant_id}/telegram/bot_token");
     let bot_token = secrets
         .get(&bot_token_key)
         .await

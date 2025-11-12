@@ -39,8 +39,8 @@ pub async fn bootstrap(nats_url: &str, tenant: &str, platform: &str) -> Result<Q
     let js = async_nats::jetstream::new(client.clone());
     let limiter = HybridLimiter::new(Some(&js)).await?;
 
-    let subject = format!("greentic.msg.out.{}.{}.>", tenant, platform);
-    let stream_name = format!("msg-out-{}-{}", tenant, platform);
+    let subject = format!("greentic.msg.out.{tenant}.{platform}.>");
+    let stream_name = format!("msg-out-{tenant}-{platform}");
     let stream_cfg = StreamConfig {
         name: stream_name.clone(),
         subjects: vec![subject.clone()],

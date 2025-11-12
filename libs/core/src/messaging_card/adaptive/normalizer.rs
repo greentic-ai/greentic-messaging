@@ -20,9 +20,8 @@ pub fn ac_to_ir(card: &Value) -> Result<MessageCardIr> {
 
     if let Some(body) = root.get("body").and_then(|b| b.as_array()) {
         for element in body {
-            if let Some(parsed) = normalize_body_element(element, &mut ir.meta) {
-                ir.elements.push(parsed);
-            }
+            let parsed = normalize_body_element(element, &mut ir.meta);
+            ir.elements.extend(parsed);
         }
     }
 
@@ -37,22 +36,34 @@ pub fn ac_to_ir(card: &Value) -> Result<MessageCardIr> {
     Ok(ir)
 }
 
-fn normalize_body_element(value: &Value, meta: &mut Meta) -> Option<Element> {
-    let obj = value.as_object()?;
-    let element_type = obj.get("type")?.as_str()?;
+fn normalize_body_element(value: &Value, meta: &mut Meta) -> Vec<Element> {
+    let obj = match value.as_object() {
+        Some(obj) => obj,
+        None => return Vec::new(),
+    };
+    let element_type = match obj.get("type").and_then(|v| v.as_str()) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
     match element_type {
         "TextBlock" => {
-            let text = obj.get("text")?.as_str()?.to_string();
+            let text = match obj.get("text").and_then(|v| v.as_str()) {
+                Some(text) => text.to_string(),
+                None => return Vec::new(),
+            };
             let markdown = obj.get("wrap").and_then(|v| v.as_bool()).unwrap_or(true);
-            Some(Element::Text { text, markdown })
+            vec![Element::Text { text, markdown }]
         }
         "Image" => {
-            let url = obj.get("url")?.as_str()?.to_string();
+            let url = match obj.get("url").and_then(|v| v.as_str()) {
+                Some(url) => url.to_string(),
+                None => return Vec::new(),
+            };
             let alt = obj
                 .get("altText")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            Some(Element::Image { url, alt })
+            vec![Element::Image { url, alt }]
         }
         "FactSet" => {
             meta.add_capability("facts");
@@ -69,7 +80,7 @@ fn normalize_body_element(value: &Value, meta: &mut Meta) -> Option<Element> {
                     })
                 })
                 .collect::<Vec<_>>();
-            Some(Element::FactSet { facts })
+            vec![Element::FactSet { facts }]
         }
         t if t.starts_with("Input.") => {
             meta.add_capability("inputs");
@@ -107,15 +118,42 @@ fn normalize_body_element(value: &Value, meta: &mut Meta) -> Option<Element> {
                 })
                 .unwrap_or_default();
 
-            Some(Element::Input {
+            vec![Element::Input {
                 label,
                 kind,
                 id,
                 required,
                 choices,
-            })
+            }]
         }
-        _ => None,
+        "ColumnSet" => normalize_column_items(obj.get("columns").and_then(|v| v.as_array()), meta),
+        "Column" => normalize_items(obj.get("items").and_then(|v| v.as_array()), meta),
+        _ => Vec::new(),
+    }
+}
+
+fn normalize_items(items: Option<&Vec<Value>>, meta: &mut Meta) -> Vec<Element> {
+    if let Some(items) = items {
+        items
+            .iter()
+            .flat_map(|item| normalize_body_element(item, meta))
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn normalize_column_items(columns: Option<&Vec<Value>>, meta: &mut Meta) -> Vec<Element> {
+    if let Some(columns) = columns {
+        columns
+            .iter()
+            .filter_map(|column| column.as_object())
+            .flat_map(|column| {
+                normalize_items(column.get("items").and_then(|v| v.as_array()), meta)
+            })
+            .collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -181,5 +219,54 @@ mod tests {
 
         let ir = ac_to_ir(&card).expect("normalize");
         assert_eq!(ir.elements.len(), 1);
+    }
+
+    #[test]
+    fn column_set_body_elements_are_normalized() {
+        let card = json!({
+            "type": "AdaptiveCard",
+            "version": "1.6",
+            "body": [
+                {
+                    "type": "ColumnSet",
+                    "columns": [
+                        {
+                            "type": "Column",
+                            "width": "auto",
+                            "items": [
+                                {
+                                    "type": "Image",
+                                    "url": "https://example.com/avatar.png"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "Column Title",
+                                    "weight": "Bolder",
+                                    "wrap": true
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": "Column subtitle",
+                                    "isSubtle": true,
+                                    "wrap": true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let ir = ac_to_ir(&card).expect("normalize");
+        assert_eq!(ir.elements.len(), 3);
+        assert!(matches!(ir.elements[0], Element::Image { .. }));
+        assert!(matches!(ir.elements[1], Element::Text { .. }));
+        assert!(matches!(ir.elements[2], Element::Text { .. }));
     }
 }

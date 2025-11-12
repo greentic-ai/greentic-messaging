@@ -97,7 +97,7 @@ impl TelegramApi for HttpTelegramApi {
             let status = res.status();
             if !status.is_success() {
                 let body = res.text().await.unwrap_or_default();
-                return Err(anyhow!("telegram getWebhookInfo {}: {}", status, body));
+                return Err(anyhow!("telegram getWebhookInfo {status}: {body}"));
             }
             let body: TelegramResponse<WebhookInfo> = res
                 .json()
@@ -142,7 +142,7 @@ impl TelegramApi for HttpTelegramApi {
             let status = res.status();
             if !status.is_success() {
                 let body = res.text().await.unwrap_or_default();
-                return Err(anyhow!("telegram setWebhook {}: {}", status, body));
+                return Err(anyhow!("telegram setWebhook {status}: {body}"));
             }
             let body: TelegramResponse<serde_json::Value> = res
                 .json()
@@ -178,7 +178,7 @@ impl TelegramApi for HttpTelegramApi {
             let status = res.status();
             if !status.is_success() {
                 let body = res.text().await.unwrap_or_default();
-                return Err(anyhow!("telegram deleteWebhook {}: {}", status, body));
+                return Err(anyhow!("telegram deleteWebhook {status}: {body}"));
             }
             let body: TelegramResponse<serde_json::Value> = res
                 .json()

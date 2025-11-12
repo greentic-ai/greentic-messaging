@@ -34,7 +34,7 @@ impl IdempotencyKey {
             text.hash(&mut hasher);
         }
         let fingerprint = hasher.finish();
-        Self(format!("{:x}", fingerprint))
+        Self(format!("{fingerprint:x}"))
     }
 }
 

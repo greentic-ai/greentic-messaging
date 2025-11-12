@@ -77,7 +77,7 @@ fn card_to_blocks(card: &MessageCard, out: &OutMessage) -> Result<Vec<Value>> {
                 blocks.push(section_md(text));
             }
             CardBlock::Fact { label, value } => {
-                fact_lines.push(format!("• *{}*: {}", label, value));
+                fact_lines.push(format!("• *{label}*: {value}"));
             }
             CardBlock::Image { url } => {
                 flush_facts(&mut fact_lines, &mut blocks);
@@ -109,7 +109,7 @@ fn card_to_blocks(card: &MessageCard, out: &OutMessage) -> Result<Vec<Value>> {
                     elements.push(json!({
                       "type": "button",
                       "text": { "type": "plain_text", "text": title, "emoji": true },
-                      "action_id": format!("postback_{}", idx),
+                      "action_id": format!("postback_{idx}"),
                       "value": value
                     }));
                 }

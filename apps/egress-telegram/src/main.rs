@@ -112,8 +112,8 @@ async fn init_consumer(
     tenant: &str,
     platform: &str,
 ) -> Result<(Messages, String, String)> {
-    let subject = format!("greentic.msg.out.{}.{}.>", tenant, platform);
-    let stream_name = format!("msg-out-{}-{}", tenant, platform);
+    let subject = format!("greentic.msg.out.{tenant}.{platform}.>");
+    let stream_name = format!("msg-out-{tenant}-{platform}");
     let stream_cfg = StreamConfig {
         name: stream_name.clone(),
         subjects: vec![subject.clone()],
