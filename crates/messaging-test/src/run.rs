@@ -328,12 +328,12 @@ fn flatten_column_sets(value: &mut Value) {
 fn flatten_body(body: &mut Vec<Value>) {
     let mut idx = 0;
     while idx < body.len() {
-        if let Some(obj) = body[idx].as_object() {
-            if obj.get("type").and_then(|v| v.as_str()) == Some("ColumnSet") {
-                let replacements = collect_column_items(obj);
-                body.splice(idx..idx + 1, replacements);
-                continue;
-            }
+        if let Some(obj) = body[idx].as_object()
+            && obj.get("type").and_then(|v| v.as_str()) == Some("ColumnSet")
+        {
+            let replacements = collect_column_items(obj);
+            body.splice(idx..idx + 1, replacements);
+            continue;
         }
         flatten_column_sets(&mut body[idx]);
         idx += 1;

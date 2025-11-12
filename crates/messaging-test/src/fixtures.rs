@@ -76,12 +76,11 @@ fn normalize_adaptive(value: &mut Value) {
 }
 
 fn ensure_version(value: &mut Value) {
-    if let Some(map) = value.as_object_mut() {
-        if map.get("type").and_then(|v| v.as_str()) == Some("AdaptiveCard")
-            && !map.contains_key("version")
-        {
-            map.insert("version".into(), Value::String("1.6".into()));
-        }
+    if let Some(map) = value.as_object_mut()
+        && map.get("type").and_then(|v| v.as_str()) == Some("AdaptiveCard")
+        && !map.contains_key("version")
+    {
+        map.insert("version".into(), Value::String("1.6".into()));
     }
 }
 
