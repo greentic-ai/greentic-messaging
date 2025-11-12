@@ -2,6 +2,8 @@
 name = "greentic-messaging-test"
 version = "0.1.0"
 edition = "2024"
+description = "Interactive tool to run MessageCard fixtures across Teams/Webex/Slack/WebChat/Telegram/WhatsApp translations."
+license = "MIT"
 
 [dependencies]
 anyhow = "1"
