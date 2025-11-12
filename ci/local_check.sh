@@ -190,6 +190,15 @@ test_all_features_step() {
   cargo test --workspace --all-features -- --nocapture
 }
 
+messaging_test_step() {
+  ensure_tool cargo
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  cargo run -p greentic-messaging-test -- all --dry-run
+}
+
 coverage_step() {
   if [ "$STRICT" != "1" ]; then
     printf '[info] Coverage runs only when LOCAL_CHECK_STRICT=1\n'
@@ -347,11 +356,14 @@ main() {
   step "cargo fmt --check"
   run_or_skip "cargo fmt" rustfmt_step
 
-  step "cargo clippy"
-  run_or_skip "cargo clippy" clippy_step
+step "cargo clippy"
+run_or_skip "cargo clippy" clippy_step
 
-  step "cargo build"
-  run_or_skip "cargo build" build_step
+  step "greentic-messaging-test"
+  run_or_skip "greentic-messaging-test all --dry-run" run_messaging_test_step
+
+step "cargo build"
+run_or_skip "cargo build" build_step
 
   step "cargo build (all features)"
   run_or_skip "cargo build --all-features" build_all_features_step

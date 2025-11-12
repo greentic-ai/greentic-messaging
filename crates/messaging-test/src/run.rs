@@ -229,10 +229,11 @@ impl RunContext {
 
     fn process_fixture(&self, fixture: &Fixture, adapters: &mut [AdapterTarget]) -> Result<()> {
         println!("Processing {}", fixture.id);
-        let spec = self
-            .engine
-            .render_spec(&fixture.card)
-            .context("render spec")?;
+        let mut card = fixture.card.clone();
+        if let Some(adaptive) = card.adaptive.as_mut() {
+            flatten_column_sets(adaptive);
+        }
+        let spec = self.engine.render_spec(&card).context("render spec")?;
         for adapter in adapters {
             if !adapter.enabled {
                 println!(" - {}: disabled", adapter.name);
@@ -305,4 +306,56 @@ fn sorted_and_redacted(value: &Value) -> Value {
         Value::Array(list) => Value::Array(list.iter().map(sorted_and_redacted).collect()),
         other => other.clone(),
     }
+}
+
+fn flatten_column_sets(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(body) = map.get_mut("body").and_then(Value::as_array_mut) {
+                flatten_body(body);
+            }
+            for val in map.values_mut() {
+                flatten_column_sets(val);
+            }
+        }
+        Value::Array(arr) => {
+            flatten_body(arr);
+        }
+        _ => {}
+    }
+}
+
+fn flatten_body(body: &mut Vec<Value>) {
+    let mut idx = 0;
+    while idx < body.len() {
+        if let Some(obj) = body[idx].as_object() {
+            if obj.get("type").and_then(|v| v.as_str()) == Some("ColumnSet") {
+                let replacements = collect_column_items(obj);
+                body.splice(idx..idx + 1, replacements);
+                continue;
+            }
+        }
+        flatten_column_sets(&mut body[idx]);
+        idx += 1;
+    }
+}
+
+fn collect_column_items(column_set: &serde_json::Map<String, Value>) -> Vec<Value> {
+    let mut result = Vec::new();
+    if let Some(columns) = column_set.get("columns").and_then(Value::as_array) {
+        for column in columns {
+            if let Some(items) = column
+                .as_object()
+                .and_then(|col| col.get("items"))
+                .and_then(Value::as_array)
+            {
+                for item in items {
+                    let mut clone = item.clone();
+                    flatten_column_sets(&mut clone);
+                    result.push(clone);
+                }
+            }
+        }
+    }
+    result
 }
