@@ -2,12 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use gsm_core::MessageCard;
+use gsm_core::AdaptiveMessageCard;
+use serde_json::Value;
 
 pub struct Fixture {
     pub id: String,
     pub path: PathBuf,
-    pub card: MessageCard,
+    pub card: AdaptiveMessageCard,
 }
 
 pub fn discover(root: &Path) -> Result<Vec<Fixture>> {
@@ -18,11 +19,8 @@ pub fn discover(root: &Path) -> Result<Vec<Fixture>> {
         if !path.is_file() {
             continue;
         }
-        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            if ext != "json" && ext != "yaml" && ext != "yml" {
-                continue;
-            }
-        } else {
+        let ext = path.extension().and_then(|s| s.to_str());
+        if !matches!(ext, Some("json") | Some("yaml") | Some("yml")) {
             continue;
         }
         let id = path
@@ -31,15 +29,31 @@ pub fn discover(root: &Path) -> Result<Vec<Fixture>> {
             .unwrap_or("unnamed")
             .to_string();
         let data = fs::read_to_string(&path).context("read fixture")?;
-        let card = if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+        let value: Value = if matches!(ext, Some("yaml") | Some("yml")) {
             serde_yaml::from_str(&data)?
         } else {
             serde_json::from_str(&data)?
+        };
+        let card = if is_adaptive_card(&value) {
+            AdaptiveMessageCard {
+                adaptive: Some(value),
+                ..Default::default()
+            }
+        } else {
+            serde_json::from_value(value)?
         };
         fixtures.push(Fixture { id, path, card });
     }
     fixtures.sort_by_key(|f| f.id.clone());
     Ok(fixtures)
+}
+
+fn is_adaptive_card(value: &Value) -> bool {
+    value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map(|t| t == "AdaptiveCard")
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

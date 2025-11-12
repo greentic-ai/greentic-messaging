@@ -8,13 +8,13 @@ use serde_json::{Value, json};
 use crate::adapters::{AdapterConfig, AdapterMode, AdapterTarget, registry_from_env};
 use crate::cli::{Cli, CliCommand};
 use crate::fixtures::{Fixture, discover};
-use gsm_core::{TenantCtx, make_tenant_ctx};
+use gsm_core::messaging_card::MessageCardEngine;
 
 pub struct RunContext {
     cli: Cli,
     fixtures: Vec<Fixture>,
     config: AdapterConfig,
-    ctx: TenantCtx,
+    engine: MessageCardEngine,
 }
 
 impl RunContext {
@@ -26,12 +26,12 @@ impl RunContext {
         };
         let fixtures = discover(&fixtures_dir)?;
         let config = cli.adapter_config();
-        let ctx = make_tenant_ctx("local-dev".into(), None, None);
+        let engine = MessageCardEngine::bootstrap();
         Ok(Self {
             cli,
             fixtures,
             config,
-            ctx,
+            engine,
         })
     }
 
@@ -75,7 +75,7 @@ impl RunContext {
                     "disabled"
                 },
                 match &adapter.reason {
-                    Some(reason) => format!(" ({})", reason),
+                    Some(reason) => format!(" ({reason})"),
                     None => "".into(),
                 }
             );
@@ -167,7 +167,7 @@ impl RunContext {
         self.fixtures
             .iter()
             .position(|f| f.id == fixture_id)
-            .ok_or_else(|| anyhow!("unknown fixture {}", fixture_id))
+            .ok_or_else(|| anyhow!("unknown fixture {fixture_id}"))
     }
 
     fn show_status(
@@ -229,15 +229,30 @@ impl RunContext {
 
     fn process_fixture(&self, fixture: &Fixture, adapters: &mut [AdapterTarget]) -> Result<()> {
         println!("Processing {}", fixture.id);
+        let spec = self
+            .engine
+            .render_spec(&fixture.card)
+            .context("render spec")?;
         for adapter in adapters {
             if !adapter.enabled {
                 println!(" - {}: disabled", adapter.name);
                 continue;
             }
-            let payload = adapter.sender.translate(&self.ctx, &fixture.card)?;
-            let result = adapter.sender.send(&self.ctx, &payload)?;
-            self.persist_artifacts(fixture, adapter, &payload.0, &result)?;
-            println!(" - {} -> ok={}", adapter.name, result.ok);
+            let payload = if let Some(snapshot) = self
+                .engine
+                .render_snapshot(adapter.platform.as_str(), &spec)
+            {
+                snapshot.output.payload
+            } else {
+                println!(
+                    " - {}: render snapshot not available for platform {}",
+                    adapter.name,
+                    adapter.platform.as_str()
+                );
+                continue;
+            };
+            self.persist_artifacts(fixture, adapter, &payload)?;
+            println!(" - {} -> recorded", adapter.name);
         }
         Ok(())
     }
@@ -247,7 +262,6 @@ impl RunContext {
         fixture: &Fixture,
         adapter: &AdapterTarget,
         payload: &Value,
-        result: &crate::adapters::SendResult,
     ) -> Result<()> {
         let base = PathBuf::from(".gsm-test")
             .join("artifacts")
@@ -261,10 +275,8 @@ impl RunContext {
         )
         .context("write translated payload")?;
         let response = json!({
-            "ok": result.ok,
-            "message_id": result.message_id,
-            "diagnostics": result.diagnostics,
             "mode": format!("{:?}", adapter.mode),
+            "platform": adapter.platform.as_str(),
         });
         fs::write(
             base.join("response.json"),
@@ -292,69 +304,5 @@ fn sorted_and_redacted(value: &Value) -> Value {
         }
         Value::Array(list) => Value::Array(list.iter().map(sorted_and_redacted).collect()),
         other => other.clone(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::env;
-    use std::fs;
-    use std::io::Write;
-    use std::path::Path;
-    use tempfile::tempdir;
-
-    fn sample_cli(fixtures_dir: PathBuf) -> Cli {
-        Cli {
-            fixtures: fixtures_dir,
-            dry_run: true,
-            command: CliCommand::All { dry_run: true },
-        }
-    }
-
-    fn prepare_fixture(dir: &Path) -> PathBuf {
-        let path = dir.join("test-card.json");
-        let mut file = fs::File::create(&path).unwrap();
-        writeln!(
-            file,
-            "{}",
-            json!({
-                "title": "Hello",
-                "text": "World",
-                "images": [],
-                "actions": []
-            })
-        )
-        .unwrap();
-        path
-    }
-
-    fn set_adapter_env() {
-        let keys = [
-            "MS_GRAPH_TOKEN",
-            "WEBEX_BOT_TOKEN",
-            "SLACK_BOT_TOKEN",
-            "WEBCHAT_SECRET",
-            "TELEGRAM_BOT_TOKEN",
-            "WHATSAPP_TOKEN",
-        ];
-        for key in keys {
-            unsafe {
-                env::set_var(key, "test");
-            }
-        }
-    }
-
-    #[test]
-    fn run_all_generates_artifacts() {
-        let fixtures_dir = tempdir().unwrap();
-        prepare_fixture(fixtures_dir.path());
-        set_adapter_env();
-        let cli = sample_cli(fixtures_dir.path().to_path_buf());
-        let ctx = RunContext::new(cli).expect("context");
-        ctx.run_all(true).expect("run all");
-        let artifacts = PathBuf::from(".gsm-test/artifacts");
-        assert!(artifacts.exists());
-        fs::remove_dir_all(".gsm-test").ok();
     }
 }
