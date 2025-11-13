@@ -2782,6 +2782,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "messaging-egress"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "futures",
+ "greentic-types",
+ "gsm-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "messaging-gateway"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "axum",
+ "greentic-types",
+ "gsm-core",
+ "gsm-telemetry",
+ "hyper",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "messaging-tenants"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "greentic-secrets",
+ "gsm-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "metrics"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

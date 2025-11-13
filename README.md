@@ -93,6 +93,39 @@ and the directory will be created automatically if it does not exist.
 - `cargo run -p greentic-messaging-test -- run <fixture> --dry-run` launches an interactive keyboard session. Press **Enter** or `r` to re-send, `n/p` to cycle fixtures, `a` to toggle adapters (enter a comma-separated list or `all`), and `q` to quit. Artifacts are written to `./.gsm-test/artifacts/<fixture>/<adapter>`, where `translated.json` is redacted before being recorded.
 - `cargo run -p greentic-messaging-test -- all --dry-run` iterates every fixture in a non-interactive way and generates the same artifacts tree. Run `cargo run -p greentic-messaging-test -- gen-golden` afterward to copy the translated payloads into `crates/messaging-test/tests/golden/<fixture>/<adapter>/translated.json`.
 
+## Gateway + Egress flow
+
+The new default deployment is a pair of binaries that consolidate every ingress adapter behind a single HTTP facade and dispatch all outbound traffic through one JetStream consumer.
+
+1. `messaging-gateway` accepts HTTP `POST` requests on `/api/{tenant}/{channel}` or `/api/{tenant}/{team}/{channel}`. Provide a small JSON body with `chatId`, `userId`, `text`, optional `threadId`, and an optional `metadata` map. The gateway injects `TenantCtx` (reading `GREENTIC_ENV`, the tenant/team from the path, and `x-greentic-user` if present), normalizes the payload into a `MessageEnvelope`, and publishes it to `greentic.messaging.ingress.{env}.{tenant}.{team}.{channel}`.
+2. `messaging-egress` subscribes to `greentic.messaging.egress.{env}.>` (configurable via `MESSAGING_EGRESS_SUBJECT`) and routes each `OutMessage` through the translator/sender stack. The runtime reuses `DefaultResolver`, `TenantCtx`, and the existing provider senders so the gateways can be wired up to real Slack/Teams/Webex/Telegram/WebChat credentials without per-provider binaries.
+
+Run locally with:
+```bash
+GREENTIC_ENV=dev NATS_URL=nats://127.0.0.1:4222 cargo run -p messaging-gateway
+TENANT=acme NATS_URL=nats://127.0.0.1:4222 cargo run -p messaging-egress
+```
+Point your test client at `http://localhost:8080/api/acme/default/webchat` with a JSON payload such as `{"chatId":"chat-1","userId":"user-42","text":"hi","metadata":{"channelData":{"env":"dev","tenant":"acme"}}}` and watch the gateway publish to NATS. The egress log will print the normalized `OutMessage` that would be sent to the downstream provider. This flow makes it easy to reason about the runtime without maintaining one binary per platform.
+
+## Tenant bootstrap CLI
+
+`messaging-tenants` is the helper CLI that writes tenant/platform credentials into `greentic-secrets` so humans don’t have to hand-craft URIs.
+
+1. Prepare your env/tenant/team:
+   ```bash
+   cargo run -p messaging-tenants -- init-env --env dev
+   cargo run -p messaging-tenants -- add-tenant --env dev --tenant acme --team support
+   ```
+2. Write credentials JSON for each platform:
+   ```bash
+   cargo run -p messaging-tenants -- set-credentials \
+     --env dev --tenant acme --team support \
+     --platform slack --file ./slack-creds.json
+   ```
+   Each invocation stores a secret at `secret://{env}/{tenant}/{team}/messaging/{platform}-{team}-credentials.json`, so the runtime can lift the correct credential bundle from `DefaultResolver` without extra wiring.
+
+3. Point `messaging-egress` at the same `GREENTIC_ENV`/`TENANT` and the credentials walk through to the downstream providers automatically.
+
 Real sends require all adapter credentials to be exported (dry-run is the default). The required environment variables are:
 
 | Adapter | Env vars |
