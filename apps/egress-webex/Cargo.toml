@@ -25,7 +25,6 @@ gsm-translator = { path = "../../libs/translator" }
 gsm-egress-common = { path = "../egress-common" }
 gsm-backpressure = { path = "../../libs/backpressure" }
 gsm-dlq = { path = "../../libs/dlq" }
-gsm-telemetry = { workspace = true }
 async-trait = { workspace = true }
 metrics = { workspace = true }
 futures = { workspace = true }

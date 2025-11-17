@@ -36,3 +36,13 @@ jobs:
         run: cargo test -p gsm-core --features "adaptive-cards directline_standalone" --test renderers_oauth -- --nocapture
       - name: OAuth builder helpers
         run: cargo test -p gsm-core --features "adaptive-cards directline_standalone" ensure_oauth_start_url -- --nocapture
+
+  messaging-core:
+    name: messaging-core providers-all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test messaging-core providers-all
+        run: cargo test -p messaging-core --no-default-features --features providers-all

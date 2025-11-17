@@ -1,10 +1,10 @@
 use gsm_core::OutMessage;
-use gsm_telemetry::{
+use gsm_core::telemetry::{
     MessageContext, TelemetryLabels, record_counter, record_histogram, set_current_tenant_ctx,
     with_common_fields,
 };
 
-pub use gsm_telemetry::{AuthRenderMode, record_auth_card_render};
+pub use gsm_core::telemetry::{AuthRenderMode, record_auth_card_render};
 use tracing::Span;
 
 const EGRESS_ACQUIRE_SPAN: &str = "egress.acquire_permit";

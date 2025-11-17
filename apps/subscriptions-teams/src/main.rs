@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use async_nats::Client as Nats;
 use futures::StreamExt;
-use gsm_telemetry::install as init_telemetry;
+use greentic_telemetry::{TelemetryConfig, init_telemetry};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::time::{Duration, sleep};
@@ -25,7 +25,9 @@ struct Cfg {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_telemetry("greentic-messaging")?;
+    init_telemetry(TelemetryConfig {
+        service_name: "greentic-messaging".into(),
+    })?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let cfg = Cfg {

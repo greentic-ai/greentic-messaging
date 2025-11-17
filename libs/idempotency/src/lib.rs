@@ -16,7 +16,7 @@ use async_nats::jetstream::{
     kv::{self, CreateErrorKind},
 };
 use async_trait::async_trait;
-use gsm_telemetry::{TelemetryLabels, record_counter};
+use gsm_core::telemetry::{TelemetryLabels, record_counter};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;

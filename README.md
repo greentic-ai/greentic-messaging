@@ -240,14 +240,38 @@ Action Links (optional): provide `JWT_SECRET`, `JWT_ALG` (e.g. HS256), and `ACTI
 
 Admin endpoints share the same middleware stack as `/telegram/webhook`. If guards are enabled, include the headers when curling (example below). Otherwise, the endpoints are open on localhost.
 
-Example status call with bearer + HMAC:
+### Messaging Admin Framework
+
+`apps/messaging-gateway` now hosts the provider-agnostic admin framework under `/admin/messaging`. The router is backed by `crates/messaging-core` and exposes a uniform surface for bootstrap, tenant onboarding, and capability discovery:
+
+```
+GET    /admin/messaging/providers
+POST   /admin/messaging/{provider}/global/ensure
+POST   /admin/messaging/{provider}/tenant/plan
+POST   /admin/messaging/{provider}/tenant/ensure
+POST   /admin/messaging/{provider}/tenant/start
+GET    /admin/messaging/{provider}/tenant/callback
+```
+
+In PR-0 the registry is intentionally empty; tests use mock provisioners. Future provider crates will register concrete implementations so the capability matrix lists Teams/Webex/etc.
+
+Example discovery call (with optional guards):
+
 ```bash
-sig=$(printf '' | openssl dgst -binary -sha256 -hmac "$INGRESS_HMAC_SECRET" | base64)
+sig=$(printf 'GET /admin/messaging/providers' | openssl dgst -binary -sha256 -hmac "$INGRESS_HMAC_SECRET" | base64)
 curl -s \
   -H "Authorization: Bearer $INGRESS_BEARER" \
   -H "${INGRESS_HMAC_HEADER:-x-signature}: $sig" \
-  http://localhost:8080/admin/telegram/acme/status | jq
+  http://localhost:8080/admin/messaging/providers | jq
 ```
+
+The JSON body lists every registered provider and its `ProvisionCaps`. POST endpoints accept the serde models in `crates/messaging-core/src/admin/models.rs`; see that crate’s tests for working payloads.
+
+### Shared Telemetry & Session Stores
+
+- Messaging services now consume the shared `greentic-telemetry` crate (re-exported via `gsm_core::telemetry`). Metric helpers emit through the Greentic OTLP client with the same label set (`tenant`, `platform`, `chat_id`, `msg_id`, plus any extra context) so dashboards continue to function without per-service shims. Local `libs/telemetry` has been removed.
+- Session persistence is handled by `greentic-session` through `gsm_core::session::{SharedSessionStore, store_from_env}`. Ingress surfaces resolve the active session via `find_by_user`, and the runner writes `SessionData` snapshots via `create_session`/`update_session`. The Redis namespace still defaults to `gsm`, but you can override it with `SESSION_NAMESPACE`.
+- If you need to migrate existing Redis data, reuse the same namespace and key layout – the shared crate stores JSON blobs under `greentic:session:session:{session_key}` and user lookups under `greentic:session:user:{env}:{tenant}:{team}:{user}`.
 
 ## MessageCard Schema
 

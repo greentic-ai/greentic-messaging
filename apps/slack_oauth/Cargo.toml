@@ -8,7 +8,6 @@ publish = false
 axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gsm-telemetry = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }

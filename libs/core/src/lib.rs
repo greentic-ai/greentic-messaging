@@ -17,6 +17,7 @@ pub mod prelude;
 pub mod provider;
 pub mod registry;
 pub mod secrets_paths;
+pub mod session;
 pub mod subjects;
 pub mod telemetry;
 pub mod types;

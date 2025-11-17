@@ -22,7 +22,6 @@ gsm-dlq = { path = "../../libs/dlq" }
 async-stream = { workspace = true }
 futures = { workspace = true }
 metrics = { workspace = true }
-gsm-telemetry = { workspace = true }
 dashmap = { workspace = true }
 reqwest = { workspace = true }
 

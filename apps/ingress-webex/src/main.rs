@@ -12,6 +12,7 @@ use axum::{
 #[cfg(not(test))]
 use gsm_core::DefaultResolver;
 use gsm_core::platforms::webex::{creds::WebexCredentials, provision::ensure_webhooks};
+use gsm_core::telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use gsm_core::{
     NodeResult, Platform, Provider, ProviderKey, ProviderRegistry, TeamId, TenantCtx, UserId,
     in_subject, make_tenant_ctx,
@@ -21,7 +22,6 @@ use gsm_ingress_common::{
     SharedSessionStore, SignatureAlgorithm, attach_session_id, init_guard, init_session_store,
     record_idempotency_hit, record_ingress, signature_header_from_env, start_ingress_span,
 };
-use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use serde_json::Value;
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::{error, info, warn};

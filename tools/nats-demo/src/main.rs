@@ -1,8 +1,8 @@
 use anyhow::{Error, Result};
 use async_nats::Client;
 use futures::StreamExt;
+use gsm_core::telemetry::install as init_telemetry;
 use gsm_core::*;
-use gsm_telemetry::install as init_telemetry;
 
 #[tokio::main]
 async fn main() -> Result<()> {

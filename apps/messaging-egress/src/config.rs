@@ -17,12 +17,10 @@ impl EgressConfig {
 
         let subject_filter = if base.contains('>') {
             base
+        } else if base.ends_with('.') {
+            format!("{base}>")
         } else {
-            if base.ends_with('.') {
-                format!("{base}>")
-            } else {
-                format!("{base}.>")
-            }
+            format!("{base}.>")
         };
 
         Ok(Self {

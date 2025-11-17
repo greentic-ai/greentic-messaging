@@ -19,10 +19,9 @@ base64 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-nats = { workspace = true }
-gsm-telemetry = { workspace = true }
+greentic-types = { workspace = true }
 gsm-idempotency = { path = "../../libs/idempotency" }
 gsm-core = { path = "../../libs/core" }
-gsm-session = { path = "../../libs/session" }
 
 [dev-dependencies]
 http-body-util = { workspace = true }

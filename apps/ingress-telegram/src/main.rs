@@ -24,6 +24,7 @@ use axum::{
 use config::load_tenants;
 use gsm_core::platforms::telegram::{creds::TelegramCreds, provision::ensure_provisioned};
 use gsm_core::prelude::{DefaultResolver, SecretsResolver};
+use gsm_core::telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use gsm_core::{
     InvocationEnvelope, MessageEnvelope, NodeError, NodeResult, Platform, Provider, ProviderKey,
     ProviderRegistry, TenantCtx, in_subject, make_tenant_ctx, messaging_credentials,
@@ -35,7 +36,6 @@ use gsm_ingress_common::{
     record_idempotency_hit, record_ingress, start_ingress_span, verify_bearer, verify_hmac,
     with_request_id,
 };
-use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use reconciler::{
     allowed_updates, desired_webhook_url, ensure_secret, reconcile_all_telegram_webhooks,
     urls_match,

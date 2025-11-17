@@ -17,12 +17,12 @@ use gsm_core::egress::{EgressSender, OutboundMessage};
 use gsm_core::messaging_card::{MessageCardKind, ensure_oauth_start_url};
 use gsm_core::oauth::{OauthClient, ReqwestTransport};
 use gsm_core::prelude::{DefaultResolver, SecretsResolver};
+use gsm_core::telemetry::install as init_telemetry;
 use gsm_core::{OutMessage, Platform};
 use gsm_egress_common::telemetry::{
     AuthRenderMode, context_from_out, record_auth_card_render, record_egress_success,
     start_acquire_span, start_send_span,
 };
-use gsm_telemetry::install as init_telemetry;
 use gsm_translator::{TelegramTranslator, Translator};
 use sender::TelegramSender;
 use serde_json::Value;

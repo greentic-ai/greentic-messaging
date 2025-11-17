@@ -20,5 +20,4 @@ gsm-idempotency = { path = "../../libs/idempotency" }
 gsm-dlq = { path = "../../libs/dlq" }
 include_dir = { workspace = true }
 security = { workspace = true }
-gsm-telemetry = { workspace = true }
 metrics = { workspace = true }

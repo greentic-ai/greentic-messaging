@@ -1,24 +1,25 @@
 mod card_node;
 mod model;
 mod qa_node;
-mod session;
 mod template_node;
 mod tool_node;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_nats::Client as Nats;
 use futures::StreamExt;
-use greentic_types::session::SessionKey;
-use gsm_core::*;
-use gsm_dlq::{DlqError, DlqPublisher, replay_subject};
-use gsm_session::{SessionRecord, SessionSnapshot, SharedSessionStore, store_from_env};
-use gsm_telemetry::{
+use greentic_types::{
+    FlowId, UserId,
+    session::{SessionCursor, SessionData, SessionKey},
+};
+use gsm_core::session::{SharedSessionStore, store_from_env};
+use gsm_core::telemetry::{
     AuthRenderMode, MessageContext, TelemetryLabels, install as init_telemetry,
     record_auth_card_render, set_current_tenant_ctx,
 };
+use gsm_core::*;
+use gsm_dlq::{DlqError, DlqPublisher, replay_subject};
 use serde_json::json;
 use std::sync::Arc;
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -92,20 +93,39 @@ async fn run_one(
     tenant_ctx: TenantCtx,
     env: MessageEnvelope,
 ) -> Result<()> {
-    let scope = session::scope_from(&tenant_ctx, &env);
-    let existing = sessions.find_by_scope(&scope).await?;
-    let (session_key, mut state) = if let Some(record) = existing {
-        match serde_json::from_str::<serde_json::Value>(&record.snapshot.context_json) {
-            Ok(value) if value.is_object() => (record.key, value),
-            Ok(_) => (record.key, json!({})),
-            Err(err) => {
-                tracing::warn!(error = %err, "failed to parse stored session context");
-                (record.key, json!({}))
+    let mut tenant_ctx = tenant_ctx;
+    if tenant_ctx.user_id.is_none()
+        && tenant_ctx.user.is_none()
+        && let Ok(user) = UserId::try_from(env.user_id.as_str())
+    {
+        tenant_ctx = tenant_ctx.with_user(Some(user));
+    }
+    let mut state = json!({});
+    let mut existing_key: Option<SessionKey> = None;
+    if let Some(user) = tenant_ctx
+        .user_id
+        .clone()
+        .or_else(|| tenant_ctx.user.clone())
+    {
+        match sessions
+            .find_by_user(tenant_ctx.clone(), user.clone())
+            .await
+        {
+            Ok(Some((key, data))) => {
+                existing_key = Some(key);
+                match serde_json::from_str::<serde_json::Value>(&data.context_json) {
+                    Ok(value) if value.is_object() => state = value,
+                    Ok(_) => state = json!({}),
+                    Err(err) => {
+                        tracing::warn!(error = %err, "failed to parse stored session context");
+                        state = json!({});
+                    }
+                }
             }
+            Ok(None) => {}
+            Err(err) => tracing::warn!(error = %err, "session lookup failed; starting fresh"),
         }
-    } else {
-        (SessionKey::new(Uuid::new_v4().to_string()), json!({}))
-    };
+    }
 
     let mut current = flow.r#in.clone();
     let mut payload: serde_json::Value = serde_json::json!({});
@@ -175,14 +195,20 @@ async fn run_one(
         break;
     }
 
-    let snapshot = SessionSnapshot {
+    let flow_id = FlowId::try_from(flow.id.as_str())
+        .with_context(|| format!("invalid flow id {}", flow.id))?;
+    let cursor = SessionCursor::new(&current);
+    let snapshot = SessionData {
         tenant_ctx: tenant_ctx.clone(),
-        flow_id: flow.id.clone(),
-        cursor_node: current,
+        flow_id,
+        cursor,
         context_json: serde_json::to_string(&state)?,
     };
-    let record = SessionRecord::new(session_key, scope, snapshot);
-    sessions.save(record).await?;
+    if let Some(key) = existing_key {
+        sessions.update_session(key, snapshot).await?;
+    } else {
+        sessions.create_session(tenant_ctx, snapshot).await?;
+    }
     Ok(())
 }
 

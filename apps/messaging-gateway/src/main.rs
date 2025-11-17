@@ -3,7 +3,7 @@ mod http;
 
 use anyhow::Result;
 use axum::serve;
-use gsm_telemetry::install as init_telemetry;
+use gsm_core::telemetry::install as init_telemetry;
 use tokio::net::TcpListener;
 use tracing::info;
 

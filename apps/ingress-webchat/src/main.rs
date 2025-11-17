@@ -15,6 +15,7 @@ use axum::{
     response::{Html, IntoResponse},
     routing::{get, post},
 };
+use gsm_core::telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_idempotency::{IdKey as IdemKey, IdempotencyGuard};
@@ -22,7 +23,6 @@ use gsm_ingress_common::{
     SharedSessionStore, ack202, attach_session_id, init_guard, init_session_store,
     record_idempotency_hit, record_ingress, start_ingress_span, verify_bearer, with_request_id,
 };
-use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use include_dir::{Dir, include_dir};
 use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::{Deserialize, Serialize};

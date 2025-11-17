@@ -15,4 +15,4 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 time = { workspace = true }
 futures = { workspace = true }
-gsm-telemetry = { workspace = true }
+greentic-telemetry = { workspace = true }

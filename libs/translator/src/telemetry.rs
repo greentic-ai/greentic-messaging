@@ -1,6 +1,6 @@
 use anyhow::Result;
 use gsm_core::OutMessage;
-use gsm_telemetry::{
+use gsm_core::telemetry::{
     MessageContext, TelemetryLabels, record_counter, telemetry_enabled, with_common_fields,
 };
 

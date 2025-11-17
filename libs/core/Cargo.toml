@@ -6,12 +6,13 @@ description = "Core types and platform abstractions for the Greentic messaging r
 license.workspace = true
 
 [features]
-default = ["adaptive-cards"]
+default = ["adaptive-cards", "store_redis", "telemetry-client"]
 nats = ["dep:async-nats"]
 directline_standalone = []
 store_redis = ["dep:redis"]
 store_sqlite = ["dep:rusqlite"]
 adaptive-cards = []
+telemetry-client = []
 
 [dependencies]
 serde = { workspace = true }
@@ -43,7 +44,9 @@ base64 = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 urlencoding = { workspace = true }
-gsm-telemetry = { workspace = true }
+greentic-telemetry = { workspace = true }
+greentic-session = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

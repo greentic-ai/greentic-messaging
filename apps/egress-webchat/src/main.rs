@@ -16,6 +16,7 @@ use gsm_backpressure::BackpressureLimiter;
 use gsm_core::messaging_card::ensure_oauth_start_url;
 use gsm_core::messaging_card::{MessageCardEngine, MessageCardKind, RenderSpec};
 use gsm_core::oauth::{OauthClient, ReqwestTransport};
+use gsm_core::telemetry::{MessageContext, install as init_telemetry};
 use gsm_core::{AdaptiveMessageCard, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
@@ -25,7 +26,6 @@ use gsm_egress_common::{
         start_acquire_span, start_send_span,
     },
 };
-use gsm_telemetry::{MessageContext, install as init_telemetry};
 use gsm_translator::{Translator, WebChatTranslator};
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;

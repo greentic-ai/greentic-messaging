@@ -7,13 +7,14 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::post,
 };
+use messaging_core::admin;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
 
 use crate::config::GatewayConfig;
+use gsm_core::telemetry::set_current_tenant_ctx;
 use gsm_core::{MessageEnvelope, Platform, make_tenant_ctx};
-use gsm_telemetry::set_current_tenant_ctx;
 
 #[derive(Clone)]
 pub struct GatewayState {
@@ -30,7 +31,7 @@ impl GatewayState {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedRequest {
     pub chat_id: Option<String>,
@@ -40,19 +41,6 @@ pub struct NormalizedRequest {
     pub msg_id: Option<String>,
     #[serde(default)]
     pub metadata: BTreeMap<String, Value>,
-}
-
-impl Default for NormalizedRequest {
-    fn default() -> Self {
-        Self {
-            chat_id: None,
-            user_id: None,
-            text: None,
-            thread_id: None,
-            msg_id: None,
-            metadata: BTreeMap::new(),
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -69,11 +57,14 @@ struct ApiError {
 pub async fn build_router(config: GatewayConfig) -> anyhow::Result<Router> {
     let client = async_nats::connect(&config.nats_url).await?;
     let state = Arc::new(GatewayState { client, config });
+    let admin_registry = Arc::new(admin::build_registry());
+    let admin_routes = admin::router::admin_router(admin_registry);
 
     let router = Router::new()
         .route("/api/:tenant/:channel", post(ingest_without_team))
         .route("/api/:tenant/:team/:channel", post(ingest_with_team))
-        .layer(Extension(state));
+        .layer(Extension(state))
+        .nest("/admin/messaging", admin_routes);
 
     Ok(router)
 }

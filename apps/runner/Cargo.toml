@@ -19,15 +19,12 @@ serde_json = { workspace = true }
 serde_yaml_bw = { workspace = true }
 handlebars = { workspace = true }
 regex = { workspace = true }
-uuid = { workspace = true }
 reqwest = { workspace = true }
 time = { workspace = true }
 gsm-core = { path = "../../libs/core" }
-gsm-session = { path = "../../libs/session", features = ["redis-store"] }
 gsm-dlq = { path = "../../libs/dlq" }
 futures = { workspace = true }
 rand = { workspace = true }
-gsm-telemetry = { workspace = true }
 
 [dev-dependencies]
 gsm-backpressure = { path = "../../libs/backpressure" }

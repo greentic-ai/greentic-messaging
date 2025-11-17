@@ -21,7 +21,6 @@ gsm-dlq = { path = "../../libs/dlq" }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 security = { workspace = true }
-gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
 reqwest = { workspace = true }
 async-trait = { workspace = true }

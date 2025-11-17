@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
+use gsm_core::telemetry::install as init_telemetry;
 use gsm_dlq::{DlqEntry, get_entry, list_entries, replay_entries};
-use gsm_telemetry::install as init_telemetry;
 use serde::Serialize;
 
 #[derive(Parser, Debug)]

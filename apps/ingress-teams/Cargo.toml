@@ -19,5 +19,4 @@ gsm-ingress-common = { path = "../ingress-common" }
 gsm-idempotency = { path = "../../libs/idempotency" }
 gsm-dlq = { path = "../../libs/dlq" }
 security = { workspace = true }
-gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
