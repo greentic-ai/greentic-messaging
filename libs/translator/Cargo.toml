@@ -21,4 +21,4 @@ once_cell = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
-gsm-testutil = { path = "../testutil" }
+gsm-testutil = { workspace = true }

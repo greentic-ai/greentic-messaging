@@ -100,10 +100,10 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "std"] }
 tracing-test = "0.2"
-gsm-core = { version = "0.4.0", path = "libs/core" }
-greentic-telemetry = { path = "../greentic-telemetry" }
-greentic-session = { path = "../greentic-session" }
-security = { package = "greentic-messaging-security", version = "0.4.0", path = "libs/security" }
+gsm-core = { version = "0.4", path = "libs/core" }
+greentic-telemetry = { version = "0.4" }
+greentic-session = {version = "0.4" }
+security = { package = "greentic-messaging-security", version = "0.4", path = "libs/security" }
 unicode-segmentation = "1"
 urlencoding = "2"
 uuid = { version = "1", features = ["v4","serde"] }
@@ -111,4 +111,4 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 url = "2.5"
-gsm-translator = { path = "libs/translator" }
+gsm-translator = { path = "libs/translator", version = "0.4" }

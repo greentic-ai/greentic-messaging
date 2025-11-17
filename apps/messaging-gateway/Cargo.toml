@@ -16,4 +16,4 @@ time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-messaging-core = { path = "../../crates/messaging-core" }
+messaging-core = { workspace = true }

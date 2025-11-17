@@ -13,5 +13,5 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
-gsm-core = { path = "../../libs/core" }
-gsm-dlq = { path = "../../libs/dlq" }
+gsm-core = { workspace = true }
+gsm-dlq = { workspace = true }

@@ -14,11 +14,11 @@ axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 include_dir = { workspace = true }
-gsm-core = { path = "../../libs/core", features = ["adaptive-cards"] }
-gsm-translator = { path = "../../libs/translator" }
-gsm-egress-common = { path = "../egress-common" }
-gsm-backpressure = { path = "../../libs/backpressure" }
-gsm-dlq = { path = "../../libs/dlq" }
+gsm-core = { workspace = true, features = ["adaptive-cards"] }
+gsm-translator = { workspace = true }
+gsm-egress-common = { workspace = true }
+gsm-backpressure = { workspace = true }
+gsm-dlq = { workspace = true }
 async-stream = { workspace = true }
 futures = { workspace = true }
 metrics = { workspace = true }

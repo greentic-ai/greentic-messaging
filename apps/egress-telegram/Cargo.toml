@@ -11,8 +11,8 @@ e2e = ["dep:gsm-testutil"]
 
 [dependencies]
 anyhow = { workspace = true }
-gsm-core = { path = "../../libs/core" }
-gsm-translator = { path = "../../libs/translator" }
+gsm-core = { workspace = true }
+gsm-translator = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -20,11 +20,11 @@ tracing = { workspace = true }
 greentic-types = { workspace = true }
 async-nats = { workspace = true }
 futures = { workspace = true }
-gsm-backpressure = { path = "../../libs/backpressure" }
+gsm-backpressure = { workspace = true }
 metrics = { workspace = true }
-gsm-egress-common = { path = "../egress-common" }
+gsm-egress-common = { workspace = true }
 async-trait = { workspace = true }
-gsm-testutil = { path = "../../libs/testutil", optional = true, features = ["e2e"] }
+gsm-testutil = { workspace = true, optional = true, features = ["e2e"] }
 
 [dev-dependencies]
 axum = { workspace = true }

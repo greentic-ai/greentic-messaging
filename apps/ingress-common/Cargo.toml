@@ -20,8 +20,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 async-nats = { workspace = true }
 greentic-types = { workspace = true }
-gsm-idempotency = { path = "../../libs/idempotency" }
-gsm-core = { path = "../../libs/core" }
+gsm-idempotency = { workspace = true }
+gsm-core = { workspace = true }
 
 [dev-dependencies]
 http-body-util = { workspace = true }

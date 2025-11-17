@@ -21,12 +21,12 @@ handlebars = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
 time = { workspace = true }
-gsm-core = { path = "../../libs/core" }
-gsm-dlq = { path = "../../libs/dlq" }
+gsm-core = { workspace = true }
+gsm-dlq = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-gsm-backpressure = { path = "../../libs/backpressure" }
-gsm-idempotency = { path = "../../libs/idempotency" }
+gsm-backpressure = { workspace = true }
+gsm-idempotency = { workspace = true }
 tracing-subscriber = { workspace = true }

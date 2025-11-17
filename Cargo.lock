@@ -1457,6 +1457,8 @@ dependencies = [
 [[package]]
 name = "greentic-session"
 version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45879ecc91ed1f726cecc52b912d43c3d5fc96dade4318cfec4ef65ed57a2789"
 dependencies = [
  "greentic-types",
  "hex",
@@ -1465,27 +1467,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "uuid",
-]
-
-[[package]]
-name = "greentic-telemetry"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "atty",
- "once_cell",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-error",
- "tracing-opentelemetry",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1518,7 +1499,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "507d0ae02e13d8605f1fbee32e022ce3a8e7df75f3fd26966f4540e55cfb9ee2"
 dependencies = [
  "fnv",
- "greentic-telemetry 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "greentic-telemetry",
  "greentic-types-macros",
  "indexmap",
  "opentelemetry-otlp",
@@ -1618,7 +1599,7 @@ dependencies = [
  "greentic-secrets",
  "greentic-secrets-core",
  "greentic-session",
- "greentic-telemetry 0.4.0",
+ "greentic-telemetry",
  "greentic-types",
  "hmac",
  "http",
@@ -2063,7 +2044,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "futures",
- "greentic-telemetry 0.4.0",
+ "greentic-telemetry",
  "greentic-types",
  "reqwest",
  "serde",
@@ -2485,9 +2466,9 @@ dependencies = [
 
 [[package]]
 name = "image"
-version = "0.25.8"
+version = "0.25.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "529feb3e6769d234375c4cf1ee2ce713682b8e76538cb13f9fc23e1400a591e7"
+checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
@@ -2866,7 +2847,7 @@ version = "0.4.8"
 dependencies = [
  "anyhow",
  "axum",
- "greentic-telemetry 0.4.0",
+ "greentic-telemetry",
  "greentic-types",
  "serde",
  "serde_json",
@@ -2880,7 +2861,7 @@ version = "0.4.8"
 dependencies = [
  "anyhow",
  "axum",
- "greentic-telemetry 0.4.0",
+ "greentic-telemetry",
  "greentic-types",
  "serde",
  "serde_json",
@@ -2895,7 +2876,7 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "greentic-telemetry 0.4.0",
+ "greentic-telemetry",
  "greentic-types",
  "serde",
  "serde_json",
@@ -5883,15 +5864,15 @@ dependencies = [
 
 [[package]]
 name = "zune-core"
-version = "0.4.12"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
+checksum = "111f7d9820f05fd715df3144e254d6fc02ee4088b0644c0ffd0efc9e6d9d2773"
 
 [[package]]
 name = "zune-jpeg"
-version = "0.4.21"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29ce2c8a9384ad323cf564b67da86e21d3cfdff87908bc1223ed5c99bc792713"
+checksum = "dc6fb7703e32e9a07fb3f757360338b3a567a5054f21b5f52a666752e333d58e"
 dependencies = [
  "zune-core",
 ]

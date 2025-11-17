@@ -16,4 +16,4 @@ time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
-gsm-core = { path = "../core" }
+gsm-core = { workspace = true }

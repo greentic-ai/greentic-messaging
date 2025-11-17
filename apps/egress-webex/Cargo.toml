@@ -20,15 +20,15 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
 time = { workspace = true }
-gsm-core = { path = "../../libs/core" }
-gsm-translator = { path = "../../libs/translator" }
-gsm-egress-common = { path = "../egress-common" }
-gsm-backpressure = { path = "../../libs/backpressure" }
-gsm-dlq = { path = "../../libs/dlq" }
+gsm-core = { workspace = true }
+gsm-translator = { workspace = true }
+gsm-egress-common = { workspace = true }
+gsm-backpressure = { workspace = true }
+gsm-dlq = { workspace = true }
 async-trait = { workspace = true }
 metrics = { workspace = true }
 futures = { workspace = true }
-gsm-testutil = { path = "../../libs/testutil", optional = true, features = ["visual"] }
+gsm-testutil = { workspace = true, optional = true, features = ["visual"] }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["macros"] }

@@ -14,10 +14,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 async-nats = { workspace = true }
 time = { workspace = true }
-gsm-core = { path = "../../libs/core" }
-gsm-idempotency = { path = "../../libs/idempotency" }
-gsm-ingress-common = { path = "../ingress-common" }
-gsm-dlq = { path = "../../libs/dlq" }
+gsm-core = { workspace = true }
+gsm-idempotency = { workspace = true }
+gsm-ingress-common = { workspace = true }
+gsm-dlq = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 security = { workspace = true }

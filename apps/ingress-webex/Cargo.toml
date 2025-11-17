@@ -20,10 +20,10 @@ sha1 = { workspace = true }
 subtle = { workspace = true }
 hex = { workspace = true }
 async-trait = { workspace = true }
-gsm-core = { path = "../../libs/core" }
-gsm-idempotency = { path = "../../libs/idempotency" }
-gsm-ingress-common = { path = "../ingress-common" }
-gsm-translator = { path = "../../libs/translator" }
+gsm-core = { workspace = true }
+gsm-idempotency = { workspace = true }
+gsm-ingress-common = { workspace = true }
+gsm-translator = { workspace = true }
 metrics = { workspace = true }
 reqwest = { workspace = true }
 

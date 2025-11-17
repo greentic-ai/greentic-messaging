@@ -11,5 +11,5 @@ async-nats = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gsm-core = { path = "../../libs/core" }
+gsm-core = { workspace = true }
 futures = { workspace = true }
