@@ -12,4 +12,4 @@ tracing = { workspace = true }
 greentic-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-gsm-telemetry = { workspace = true }
+greentic-telemetry = { workspace = true }

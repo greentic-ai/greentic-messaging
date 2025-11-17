@@ -1,5 +1,5 @@
 use gsm_core::MessageEnvelope;
-use gsm_telemetry::{MessageContext, TelemetryLabels, record_counter, with_common_fields};
+use gsm_core::telemetry::{MessageContext, TelemetryLabels, record_counter, with_common_fields};
 use tracing::Span;
 
 const INGRESS_COUNTER: &str = "messages_ingressed";

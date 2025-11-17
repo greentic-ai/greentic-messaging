@@ -16,6 +16,7 @@ use axum::{
     routing::get,
 };
 use gsm_core::platforms::whatsapp::{creds::WhatsAppCredentials, provision::ensure_subscription};
+use gsm_core::telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use gsm_core::{
     DefaultResolver, MessageEnvelope, NodeResult, Platform, Provider, ProviderKey,
     ProviderRegistry, SecretsResolver, TenantCtx, in_subject, make_tenant_ctx,
@@ -26,7 +27,6 @@ use gsm_ingress_common::{
     SharedSessionStore, attach_session_id, init_guard, init_session_store, record_idempotency_hit,
     record_ingress, start_ingress_span,
 };
-use gsm_telemetry::{install as init_telemetry, set_current_tenant_ctx};
 use hmac::{Hmac, Mac};
 use security::middleware::{ActionContext, SharedActionContext, handle_action};
 use serde::Deserialize;

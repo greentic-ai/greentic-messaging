@@ -1,3 +1,4 @@
+use crate::telemetry::{MessageContext, TelemetryLabels, record_auth_card_clicked};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use axum::{
@@ -5,7 +6,6 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
 };
 use greentic_types::TenantCtx;
-use gsm_telemetry::{MessageContext, TelemetryLabels, record_auth_card_clicked};
 use metrics::counter;
 use reqwest::{Client, Url};
 use serde::Deserialize;

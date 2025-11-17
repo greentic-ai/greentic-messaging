@@ -4,7 +4,7 @@ use crate::{
     telegram_api::{TelegramApi, WebhookInfo},
 };
 use anyhow::{Context, Result};
-use gsm_telemetry::{TelemetryLabels, record_counter};
+use gsm_core::telemetry::{TelemetryLabels, record_counter};
 use rand::{Rng, rng};
 use tracing::{info, warn};
 

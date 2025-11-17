@@ -8,7 +8,7 @@ publish = false
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "json"] }
-gsm-core = { path = "../../libs/core", features = ["directline_standalone"] }
+gsm-core = { workspace = true, features = ["directline_standalone"] }
 greentic-types = { workspace = true }
 greentic-secrets = { workspace = true }
 http = "1"

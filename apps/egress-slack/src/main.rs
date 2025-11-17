@@ -10,6 +10,7 @@ use gsm_core::messaging_card::{MessageCardKind, ensure_oauth_start_url};
 use gsm_core::oauth::{OauthClient, ReqwestTransport};
 use gsm_core::platforms::slack::sender::SlackSender;
 use gsm_core::prelude::DefaultResolver;
+use gsm_core::telemetry::install as init_telemetry;
 use gsm_core::{NodeError, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
@@ -19,7 +20,6 @@ use gsm_egress_common::{
         start_acquire_span, start_send_span,
     },
 };
-use gsm_telemetry::install as init_telemetry;
 use gsm_translator::slack::to_slack_payloads;
 use std::sync::Arc;
 use std::time::Duration;

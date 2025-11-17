@@ -93,6 +93,39 @@ and the directory will be created automatically if it does not exist.
 - `cargo run -p greentic-messaging-test -- run <fixture> --dry-run` launches an interactive keyboard session. Press **Enter** or `r` to re-send, `n/p` to cycle fixtures, `a` to toggle adapters (enter a comma-separated list or `all`), and `q` to quit. Artifacts are written to `./.gsm-test/artifacts/<fixture>/<adapter>`, where `translated.json` is redacted before being recorded.
 - `cargo run -p greentic-messaging-test -- all --dry-run` iterates every fixture in a non-interactive way and generates the same artifacts tree. Run `cargo run -p greentic-messaging-test -- gen-golden` afterward to copy the translated payloads into `crates/messaging-test/tests/golden/<fixture>/<adapter>/translated.json`.
 
+## Gateway + Egress flow
+
+The new default deployment is a pair of binaries that consolidate every ingress adapter behind a single HTTP facade and dispatch all outbound traffic through one JetStream consumer.
+
+1. `messaging-gateway` accepts HTTP `POST` requests on `/api/{tenant}/{channel}` or `/api/{tenant}/{team}/{channel}`. Provide a small JSON body with `chatId`, `userId`, `text`, optional `threadId`, and an optional `metadata` map. The gateway injects `TenantCtx` (reading `GREENTIC_ENV`, the tenant/team from the path, and `x-greentic-user` if present), normalizes the payload into a `MessageEnvelope`, and publishes it to `greentic.messaging.ingress.{env}.{tenant}.{team}.{channel}`.
+2. `messaging-egress` subscribes to `greentic.messaging.egress.{env}.>` (configurable via `MESSAGING_EGRESS_SUBJECT`) and routes each `OutMessage` through the translator/sender stack. The runtime reuses `DefaultResolver`, `TenantCtx`, and the existing provider senders so the gateways can be wired up to real Slack/Teams/Webex/Telegram/WebChat credentials without per-provider binaries.
+
+Run locally with:
+```bash
+GREENTIC_ENV=dev NATS_URL=nats://127.0.0.1:4222 cargo run -p messaging-gateway
+TENANT=acme NATS_URL=nats://127.0.0.1:4222 cargo run -p messaging-egress
+```
+Point your test client at `http://localhost:8080/api/acme/default/webchat` with a JSON payload such as `{"chatId":"chat-1","userId":"user-42","text":"hi","metadata":{"channelData":{"env":"dev","tenant":"acme"}}}` and watch the gateway publish to NATS. The egress log will print the normalized `OutMessage` that would be sent to the downstream provider. This flow makes it easy to reason about the runtime without maintaining one binary per platform.
+
+## Tenant bootstrap CLI
+
+`messaging-tenants` is the helper CLI that writes tenant/platform credentials into `greentic-secrets` so humans don’t have to hand-craft URIs.
+
+1. Prepare your env/tenant/team:
+   ```bash
+   cargo run -p messaging-tenants -- init-env --env dev
+   cargo run -p messaging-tenants -- add-tenant --env dev --tenant acme --team support
+   ```
+2. Write credentials JSON for each platform:
+   ```bash
+   cargo run -p messaging-tenants -- set-credentials \
+     --env dev --tenant acme --team support \
+     --platform slack --file ./slack-creds.json
+   ```
+   Each invocation stores a secret at `secret://{env}/{tenant}/{team}/messaging/{platform}-{team}-credentials.json`, so the runtime can lift the correct credential bundle from `DefaultResolver` without extra wiring.
+
+3. Point `messaging-egress` at the same `GREENTIC_ENV`/`TENANT` and the credentials walk through to the downstream providers automatically.
+
 Real sends require all adapter credentials to be exported (dry-run is the default). The required environment variables are:
 
 | Adapter | Env vars |
@@ -207,14 +240,38 @@ Action Links (optional): provide `JWT_SECRET`, `JWT_ALG` (e.g. HS256), and `ACTI
 
 Admin endpoints share the same middleware stack as `/telegram/webhook`. If guards are enabled, include the headers when curling (example below). Otherwise, the endpoints are open on localhost.
 
-Example status call with bearer + HMAC:
+### Messaging Admin Framework
+
+`apps/messaging-gateway` now hosts the provider-agnostic admin framework under `/admin/messaging`. The router is backed by `crates/messaging-core` and exposes a uniform surface for bootstrap, tenant onboarding, and capability discovery:
+
+```
+GET    /admin/messaging/providers
+POST   /admin/messaging/{provider}/global/ensure
+POST   /admin/messaging/{provider}/tenant/plan
+POST   /admin/messaging/{provider}/tenant/ensure
+POST   /admin/messaging/{provider}/tenant/start
+GET    /admin/messaging/{provider}/tenant/callback
+```
+
+In PR-0 the registry is intentionally empty; tests use mock provisioners. Future provider crates will register concrete implementations so the capability matrix lists Teams/Webex/etc.
+
+Example discovery call (with optional guards):
+
 ```bash
-sig=$(printf '' | openssl dgst -binary -sha256 -hmac "$INGRESS_HMAC_SECRET" | base64)
+sig=$(printf 'GET /admin/messaging/providers' | openssl dgst -binary -sha256 -hmac "$INGRESS_HMAC_SECRET" | base64)
 curl -s \
   -H "Authorization: Bearer $INGRESS_BEARER" \
   -H "${INGRESS_HMAC_HEADER:-x-signature}: $sig" \
-  http://localhost:8080/admin/telegram/acme/status | jq
+  http://localhost:8080/admin/messaging/providers | jq
 ```
+
+The JSON body lists every registered provider and its `ProvisionCaps`. POST endpoints accept the serde models in `crates/messaging-core/src/admin/models.rs`; see that crate’s tests for working payloads.
+
+### Shared Telemetry & Session Stores
+
+- Messaging services now consume the shared `greentic-telemetry` crate (re-exported via `gsm_core::telemetry`). Metric helpers emit through the Greentic OTLP client with the same label set (`tenant`, `platform`, `chat_id`, `msg_id`, plus any extra context) so dashboards continue to function without per-service shims. Local `libs/telemetry` has been removed.
+- Session persistence is handled by `greentic-session` through `gsm_core::session::{SharedSessionStore, store_from_env}`. Ingress surfaces resolve the active session via `find_by_user`, and the runner writes `SessionData` snapshots via `create_session`/`update_session`. The Redis namespace still defaults to `gsm`, but you can override it with `SESSION_NAMESPACE`.
+- If you need to migrate existing Redis data, reuse the same namespace and key layout – the shared crate stores JSON blobs under `greentic:session:session:{session_key}` and user lookups under `greentic:session:user:{env}:{tenant}:{team}:{user}`.
 
 ## MessageCard Schema
 

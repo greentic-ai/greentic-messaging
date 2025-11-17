@@ -1,7 +1,7 @@
 use anyhow::Result;
 use axum::{Json, Router, routing::post};
 use chrono::Utc;
-use gsm_telemetry::install as init_telemetry;
+use greentic_telemetry::{TelemetryConfig, init_telemetry};
 use serde::Deserialize;
 use serde_json::{Value as JsonValue, json};
 
@@ -13,7 +13,9 @@ struct ForecastRequest {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_telemetry("greentic-messaging")?;
+    init_telemetry(TelemetryConfig {
+        service_name: "greentic-messaging".into(),
+    })?;
     let app = Router::new().route("/weather_api/forecast_weather", post(handle_forecast));
 
     let addr: std::net::SocketAddr = std::env::var("BIND")

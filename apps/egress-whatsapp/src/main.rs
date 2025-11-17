@@ -10,6 +10,7 @@ use gsm_core::messaging_card::{MessageCardKind, ensure_oauth_start_url};
 use gsm_core::oauth::OauthClient;
 use gsm_core::platforms::whatsapp::{WhatsAppCreds, WhatsAppSender};
 use gsm_core::prelude::{DefaultResolver, SecretsResolver};
+use gsm_core::telemetry::install as init_telemetry;
 use gsm_core::{OutKind, OutMessage, Platform, TenantCtx};
 use gsm_dlq::{DlqError, DlqPublisher};
 use gsm_egress_common::{
@@ -19,7 +20,6 @@ use gsm_egress_common::{
         start_acquire_span, start_send_span,
     },
 };
-use gsm_telemetry::install as init_telemetry;
 use gsm_translator::secure_action_url;
 use serde_json::json;
 use std::sync::Arc;

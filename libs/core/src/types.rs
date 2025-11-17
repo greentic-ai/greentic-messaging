@@ -6,6 +6,8 @@ use greentic_types::{InvocationEnvelope, NodeError, NodeResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
 use std::collections::BTreeMap;
+use std::fmt;
+use std::str::FromStr;
 
 /// Supported messaging platforms (kept small and stable).
 ///
@@ -39,6 +41,33 @@ impl Platform {
         }
     }
 }
+
+impl FromStr for Platform {
+    type Err = PlatformParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
+            "slack" => Ok(Platform::Slack),
+            "teams" => Ok(Platform::Teams),
+            "telegram" => Ok(Platform::Telegram),
+            "whatsapp" => Ok(Platform::WhatsApp),
+            "webchat" => Ok(Platform::WebChat),
+            "webex" => Ok(Platform::Webex),
+            _ => Err(PlatformParseError(value.to_string())),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlatformParseError(String);
+
+impl fmt::Display for PlatformParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown platform '{}'", self.0)
+    }
+}
+
+impl std::error::Error for PlatformParseError {}
 
 /// Normalized inbound message from webhooks.
 ///

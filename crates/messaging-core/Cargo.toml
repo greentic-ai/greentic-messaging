@@ -1,0 +1,39 @@
+[package]
+name = "messaging-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+provider-teams = []
+provider-webex = []
+provider-slack = []
+provider-telegram = []
+provider-whatsapp = []
+provider-webchat = []
+providers-all = [
+    "provider-teams",
+    "provider-webex",
+    "provider-slack",
+    "provider-telegram",
+    "provider-whatsapp",
+    "provider-webchat",
+]
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tower = { workspace = true }
+url = { workspace = true }
+http = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+hyper = { workspace = true }

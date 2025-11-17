@@ -8,11 +8,11 @@ use axum::{
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use gsm_core::platforms::slack::workspace::{SlackWorkspace, SlackWorkspaceIndex};
+use gsm_core::telemetry::install as init_telemetry;
 use gsm_core::{
     DefaultResolver, NodeResult, SecretsResolver, TenantCtx, make_tenant_ctx,
     slack_workspace_index, slack_workspace_secret,
 };
-use gsm_telemetry::install as init_telemetry;
 use rand::{
     distr::{Alphanumeric, SampleString},
     rng,

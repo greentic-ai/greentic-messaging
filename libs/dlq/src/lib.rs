@@ -39,7 +39,7 @@ use async_nats::{
     },
 };
 use futures::TryStreamExt;
-use gsm_telemetry::{TelemetryLabels, record_counter};
+use gsm_core::telemetry::{TelemetryLabels, record_counter};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
