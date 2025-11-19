@@ -9,6 +9,10 @@ name = "telegram_setup"
 path = "telegram_setup.rs"
 
 [[bin]]
+name = "teams_setup"
+path = "teams_setup.rs"
+
+[[bin]]
 name = "whatsapp_setup"
 path = "whatsapp_setup.rs"
 

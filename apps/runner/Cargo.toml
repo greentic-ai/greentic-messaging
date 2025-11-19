@@ -23,7 +23,7 @@ uuid = { workspace = true }
 reqwest = { workspace = true }
 time = { workspace = true }
 gsm-core = { path = "../../libs/core" }
-gsm-session = { path = "../../libs/session", features = ["redis-store"] }
+gsm-session = { path = "../../libs/session" }
 gsm-dlq = { path = "../../libs/dlq" }
 futures = { workspace = true }
 rand = { workspace = true }

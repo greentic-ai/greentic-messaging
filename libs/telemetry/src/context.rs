@@ -18,20 +18,20 @@ impl TelemetryLabels {
         }
     }
 
-    pub fn tags(&self) -> Vec<(&str, String)> {
-        let mut tags = Vec::with_capacity(4);
-        tags.push(("tenant", self.tenant.clone()));
+    pub fn tags(&self) -> Vec<(String, String)> {
+        let mut tags = Vec::with_capacity(4 + self.extra.len());
+        tags.push(("tenant".into(), self.tenant.clone()));
         if let Some(p) = &self.platform {
-            tags.push(("platform", p.clone()));
+            tags.push(("platform".into(), p.clone()));
         }
         if let Some(chat) = &self.chat_id {
-            tags.push(("chat_id", chat.clone()));
+            tags.push(("chat_id".into(), chat.clone()));
         }
         if let Some(msg) = &self.msg_id {
-            tags.push(("msg_id", msg.clone()));
+            tags.push(("msg_id".into(), msg.clone()));
         }
         for (key, value) in &self.extra {
-            tags.push((key.as_str(), value.clone()));
+            tags.push((key.clone(), value.clone()));
         }
         tags
     }

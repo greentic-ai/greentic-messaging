@@ -36,6 +36,7 @@ members = [
   "apps/slack_oauth",
   "conformance/webchat",
   "tools/dev-viewer",
+  "crates/greentic-messaging-cli",
   "crates/messaging-test",
 ]
 resolver = "2"
@@ -43,7 +44,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
@@ -61,6 +62,8 @@ futures = "0.3"
 greentic-types = "0.4"
 greentic-secrets = "0.4"
 greentic-interfaces = "0.4"
+greentic-session = { version = "0.4.0", default-features = false, features = ["inmemory", "redis"] }
+greentic-telemetry = { version = "0.4.0", features = ["fmt"] }
 handlebars = "6.3"
 hex = "0.4"
 hmac = "0.12"

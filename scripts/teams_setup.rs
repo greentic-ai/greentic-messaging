@@ -87,7 +87,9 @@ async fn acquire_token(
     client_secret: &str,
 ) -> Result<String> {
     #[derive(Deserialize)]
-    struct Token { access_token: String }
+    struct Token {
+        access_token: String,
+    }
 
     let res = client
         .post(format!(
@@ -111,7 +113,13 @@ async fn acquire_token(
     Ok(res.access_token)
 }
 
-fn persist_env(path: &str, tenant: &str, client_id: &str, client_secret: &str, chat_id: &str) -> Result<()> {
+fn persist_env(
+    path: &str,
+    tenant: &str,
+    client_id: &str,
+    client_secret: &str,
+    chat_id: &str,
+) -> Result<()> {
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
