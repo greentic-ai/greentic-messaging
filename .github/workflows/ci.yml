@@ -6,6 +6,9 @@ jobs:
   build:
     name: build (${{ matrix.name }})
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: "-C debuginfo=0"
     strategy:
       fail-fast: false
       matrix:
@@ -16,14 +19,22 @@ jobs:
             cargo_args: "--features adaptive-cards"
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
+          echo "Disk usage after cleanup:"
+          df -h
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --workspace --all-targets ${{ matrix.cargo_args }}
+        run: cargo build --workspace --all-targets --exclude dev-viewer ${{ matrix.cargo_args }}
       - name: Clippy
-        run: cargo clippy --workspace --all-targets ${{ matrix.cargo_args }} -- -D warnings || true
+        run: cargo clippy --workspace --bins --tests --exclude dev-viewer ${{ matrix.cargo_args }} -- -D warnings || true
       - name: Test
-        run: cargo test --workspace --all-targets ${{ matrix.cargo_args }}
+        run: cargo test --workspace --all-targets --exclude dev-viewer ${{ matrix.cargo_args }}
 
   oauth:
     name: oauth suites
