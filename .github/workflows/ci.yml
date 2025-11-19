@@ -4,19 +4,11 @@ on:
   pull_request:
 jobs:
   lint:
-    name: lint (${{ matrix.name }})
+    name: lint
     runs-on: ubuntu-latest
     env:
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: "-C debuginfo=0"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: default
-            cargo_args: ""
-          - name: adaptive-cards
-            cargo_args: "--features adaptive-cards"
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -32,7 +24,7 @@ jobs:
       - name: fmt
         run: cargo fmt --all -- --check
       - name: clippy
-        run: cargo clippy --workspace --bins --tests --exclude dev-viewer ${{ matrix.cargo_args }} -- -D warnings
+        run: cargo clippy --workspace --bins --tests --exclude dev-viewer -- -D warnings
 
   test:
     name: test (${{ matrix.name }})
