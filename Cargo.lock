@@ -5916,7 +5916,3 @@ checksum = "dc6fb7703e32e9a07fb3f757360338b3a567a5054f21b5f52a666752e333d58e"
 dependencies = [
  "zune-core",
 ]
-
-[[patch.unused]]
-name = "greentic-interfaces-guest"
-version = "0.4.34"
