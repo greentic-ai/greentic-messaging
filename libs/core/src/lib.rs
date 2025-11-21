@@ -4,11 +4,14 @@
 //! components. It also provides validation helpers and small utilities for subject naming and
 //! idempotency tracking.
 pub mod cards;
+#[cfg(feature = "component-host")]
+pub mod component_host;
 pub mod context;
 pub mod egress;
 pub mod http;
 pub mod idempotency;
 pub mod ingress;
+pub mod interfaces;
 #[cfg(feature = "adaptive-cards")]
 pub mod messaging_card;
 pub mod oauth;
@@ -23,10 +26,13 @@ pub mod types;
 pub mod validate;
 
 pub use cards::*;
+#[cfg(feature = "component-host")]
+pub use component_host::*;
 pub use context::*;
 pub use http::*;
 pub use idempotency::*;
 pub use ingress::*;
+pub use interfaces::*;
 #[cfg(feature = "adaptive-cards")]
 pub use messaging_card::types::{
     Action as AdaptiveAction, ImageRef as AdaptiveImageRef, MessageCard as AdaptiveMessageCard,

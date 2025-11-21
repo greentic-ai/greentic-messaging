@@ -12,6 +12,7 @@ directline_standalone = []
 store_redis = ["dep:redis"]
 store_sqlite = ["dep:rusqlite"]
 adaptive-cards = []
+component-host = ["dep:wasmtime"]
 
 [dependencies]
 serde = { workspace = true }
@@ -22,6 +23,8 @@ greentic-types = { workspace = true }
 jsonschema = { workspace = true }
 secrets-core = { workspace = true }
 greentic-secrets = { workspace = true }
+greentic-interfaces-host = { workspace = true }
+greentic-interfaces-wasmtime = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 http = { workspace = true }
@@ -39,6 +42,7 @@ metrics = { workspace = true }
 axum = { workspace = true, features = ["macros", "json", "ws", "tokio"] }
 redis = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
+wasmtime = { version = "24", optional = true, default-features = false, features = ["component-model"] }
 base64 = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }

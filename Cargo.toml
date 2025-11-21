@@ -44,7 +44,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.3"
+version = "0.4.5"
 authors = ["Greentic AI"]
 
 [workspace.dependencies]
@@ -61,7 +61,8 @@ dashmap = "6"
 futures = "0.3"
 greentic-types = "0.4"
 greentic-secrets = "0.4"
-greentic-interfaces = "0.4"
+greentic-interfaces-host = "0.4"
+greentic-interfaces-wasmtime = "0.4"
 greentic-session = { version = "0.4.0", default-features = false, features = ["inmemory", "redis"] }
 greentic-telemetry = { version = "0.4.0", features = ["fmt"] }
 handlebars = "6.3"
@@ -71,7 +72,7 @@ http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 include_dir = "0.7"
-insta = { version = "1.43", features = ["json"] }
+insta = { version = "1", features = ["json"] }
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 metrics = "0.24"
 nanoid = "0.4"
@@ -82,7 +83,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rsa = { version = "0.9", features = ["pem"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-jsonschema = "0.36"
+jsonschema = "0.37"
 serde_yaml_bw = "2.4.1"
 serde_yaml = { package = "serde_yaml_bw", version = "2.4.1" }
 secrets-core = { package = "greentic-secrets-core", version = "0.4" }

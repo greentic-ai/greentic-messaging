@@ -136,7 +136,7 @@ clippy_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  local args=(clippy --workspace --all-targets)
+  local args=(clippy --workspace --all-targets --locked)
   if [ "$STRICT" = "1" ]; then
     args+=(--all-features)
   fi
@@ -150,9 +150,9 @@ build_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  local args=(build --workspace --all-targets)
+  local args=(build --workspace --all-targets --locked)
   if [ "$STRICT" = "1" ]; then
-    args+=(--all-features --locked)
+    args+=(--all-features)
   fi
   cargo "${args[@]}"
 }
@@ -163,7 +163,7 @@ build_all_features_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  cargo build --workspace --all-features
+  cargo build --workspace --all-features --locked
 }
 
 test_step() {
@@ -172,7 +172,7 @@ test_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  local args=(test --workspace --all-targets)
+  local args=(test --workspace --all-targets --locked)
   if [ "$STRICT" = "1" ]; then
     args+=(--all-features)
     cargo "${args[@]}" -- --nocapture
@@ -187,7 +187,7 @@ test_all_features_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  cargo test --workspace --all-features -- --nocapture
+  cargo test --workspace --all-features --locked -- --nocapture
 }
 
 run_messaging_test_step() {
@@ -196,7 +196,7 @@ run_messaging_test_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  cargo run -p greentic-messaging-test -- all --dry-run
+  cargo run -p greentic-messaging-test --locked -- all --dry-run
 }
 
 coverage_step() {
@@ -211,12 +211,12 @@ coverage_step() {
   fi
   if ! have cargo-tarpaulin; then
     printf '[warn] cargo-tarpaulin is not installed (cargo install cargo-tarpaulin)\n'
-    if [ "$STRICT" = "1" ]; then
+  if [ "$STRICT" = "1" ]; then
       return 1
     fi
     return "$SKIP_CODE"
   fi
-  cargo tarpaulin --workspace --all-features --out Lcov --output-dir coverage
+  cargo tarpaulin --workspace --all-features --locked --out Lcov --output-dir coverage
 }
 
 ensure_stack_up() {
