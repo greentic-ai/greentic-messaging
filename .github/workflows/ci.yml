@@ -9,7 +9,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: 0
       CARGO_BUILD_JOBS: 1
-      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=lld"
+      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -20,9 +20,9 @@ jobs:
           if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
           echo "Disk usage after cleanup:"
           df -h
-      - name: Install lld linker
+      - name: Install mold linker
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y lld
+        run: sudo apt-get update && sudo apt-get install -y mold
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: fmt
@@ -37,7 +37,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: 0
       CARGO_BUILD_JOBS: 1
-      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=lld"
+      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=mold"
     strategy:
       fail-fast: false
       matrix:
@@ -56,9 +56,9 @@ jobs:
           if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
           echo "Disk usage after cleanup:"
           df -h
-      - name: Install lld linker
+      - name: Install mold linker
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y lld
+        run: sudo apt-get update && sudo apt-get install -y mold
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: build
