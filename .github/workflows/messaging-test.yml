@@ -20,8 +20,13 @@ jobs:
       WEBCHAT_SECRET: token
       TELEGRAM_BOT_TOKEN: token
       WHATSAPP_TOKEN: token
+      CARGO_BUILD_JOBS: 1
+      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v4
+      - name: Install mold linker
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mold
       - name: Install Rust toolchain
         run: rustup component add rustfmt
       - name: Run messaging-test artifacts
