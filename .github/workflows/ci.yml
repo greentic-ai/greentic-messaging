@@ -8,7 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_INCREMENTAL: 0
-      RUSTFLAGS: "-C debuginfo=0"
+      CARGO_BUILD_JOBS: 1
+      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=lld"
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space
@@ -19,6 +20,9 @@ jobs:
           if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
           echo "Disk usage after cleanup:"
           df -h
+      - name: Install lld linker
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y lld
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: fmt
@@ -32,7 +36,8 @@ jobs:
     needs: lint
     env:
       CARGO_INCREMENTAL: 0
-      RUSTFLAGS: "-C debuginfo=0"
+      CARGO_BUILD_JOBS: 1
+      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=lld"
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +56,9 @@ jobs:
           if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
           echo "Disk usage after cleanup:"
           df -h
+      - name: Install lld linker
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y lld
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: build
