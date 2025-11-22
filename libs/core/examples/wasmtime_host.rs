@@ -16,7 +16,7 @@ mod demo {
             &mut self,
             _key: String,
             _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, iface_types::IfaceError>> {
+        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
             Ok(Err(unavailable("secrets_get")))
         }
 
@@ -32,7 +32,7 @@ mod demo {
             &mut self,
             _req: http::HttpRequest,
             _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<http::HttpResponse, iface_types::IfaceError>> {
+        ) -> wasmtime::Result<Result<http::HttpResponse, types::IfaceError>> {
             Ok(Err(unavailable("http_fetch")))
         }
 
@@ -42,7 +42,7 @@ mod demo {
             _action: String,
             _args_json: String,
             _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, iface_types::IfaceError>> {
+        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
             Ok(Err(unavailable("mcp_exec")))
         }
 
@@ -50,7 +50,7 @@ mod demo {
             &mut self,
             _key: iface_types::StateKey,
             _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, iface_types::IfaceError>> {
+        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
             Ok(Err(unavailable("state_get")))
         }
 
@@ -59,7 +59,7 @@ mod demo {
             _key: iface_types::StateKey,
             _value_json: String,
             _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<state::OpAck, iface_types::IfaceError>> {
+        ) -> wasmtime::Result<Result<state::OpAck, types::IfaceError>> {
             Ok(Err(unavailable("state_set")))
         }
 
@@ -67,17 +67,13 @@ mod demo {
             &mut self,
             _cursor: iface_types::SessionCursor,
             _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, iface_types::IfaceError>> {
+        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
             Ok(Err(unavailable("session_update")))
         }
     }
 
-    fn unavailable(op: &str) -> iface_types::IfaceError {
-        iface_types::IfaceError {
-            code: iface_types::ErrorCode::Unavailable,
-            message: format!("{op} not implemented"),
-            detail_json: None,
-        }
+    fn unavailable(_op: &str) -> types::IfaceError {
+        types::IfaceError::Unavailable
     }
 
     pub fn run() -> Result<()> {
