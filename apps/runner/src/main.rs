@@ -1,24 +1,22 @@
 mod card_node;
 mod model;
 mod qa_node;
-mod session;
 mod template_node;
 mod tool_node;
 
 use anyhow::Result;
 use async_nats::Client as Nats;
 use futures::StreamExt;
-use greentic_types::session::SessionKey;
+use greentic_types::{FlowId, SessionCursor, SessionKey, UserId};
 use gsm_core::*;
 use gsm_dlq::{DlqError, DlqPublisher, replay_subject};
-use gsm_session::{SessionRecord, SessionSnapshot, SharedSessionStore, store_from_env};
+use gsm_session::{SessionData, SharedSessionStore, store_from_env};
 use gsm_telemetry::{
     AuthRenderMode, MessageContext, TelemetryLabels, install as init_telemetry,
     record_auth_card_render, set_current_tenant_ctx,
 };
 use serde_json::json;
 use std::sync::Arc;
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -92,19 +90,33 @@ async fn run_one(
     tenant_ctx: TenantCtx,
     env: MessageEnvelope,
 ) -> Result<()> {
-    let scope = session::scope_from(&tenant_ctx, &env);
-    let existing = sessions.find_by_scope(&scope).await?;
-    let (session_key, mut state) = if let Some(record) = existing {
-        match serde_json::from_str::<serde_json::Value>(&record.snapshot.context_json) {
-            Ok(value) if value.is_object() => (record.key, value),
-            Ok(_) => (record.key, json!({})),
+    let active_user = tenant_ctx
+        .user
+        .clone()
+        .or_else(|| tenant_ctx.user_id.clone())
+        .or_else(|| UserId::try_from(env.user_id.as_str()).ok());
+    let mut previous_session: Option<SessionKey> = None;
+    let mut state = if let Some(user) = active_user.clone() {
+        match sessions.find_by_user(&tenant_ctx, &user).await {
+            Ok(Some((key, data))) => {
+                previous_session = Some(key);
+                match serde_json::from_str::<serde_json::Value>(&data.context_json) {
+                    Ok(value) if value.is_object() => value,
+                    Ok(_) => json!({}),
+                    Err(err) => {
+                        tracing::warn!(error = %err, "failed to parse stored session context");
+                        json!({})
+                    }
+                }
+            }
+            Ok(None) => json!({}),
             Err(err) => {
-                tracing::warn!(error = %err, "failed to parse stored session context");
-                (record.key, json!({}))
+                tracing::warn!(error = %err, "session lookup failed; starting fresh");
+                json!({})
             }
         }
     } else {
-        (SessionKey::new(Uuid::new_v4().to_string()), json!({}))
+        json!({})
     };
 
     let mut current = flow.r#in.clone();
@@ -175,14 +187,20 @@ async fn run_one(
         break;
     }
 
-    let snapshot = SessionSnapshot {
+    let session_data = SessionData {
         tenant_ctx: tenant_ctx.clone(),
-        flow_id: flow.id.clone(),
-        cursor_node: current,
+        flow_id: flow_id(&flow.id)?,
+        cursor: SessionCursor::new(current),
         context_json: serde_json::to_string(&state)?,
     };
-    let record = SessionRecord::new(session_key, scope, snapshot);
-    sessions.save(record).await?;
+
+    if let Some(existing_key) = previous_session {
+        sessions.update_session(&existing_key, session_data).await?;
+    } else if active_user.is_some() {
+        sessions.create_session(&tenant_ctx, session_data).await?;
+    } else {
+        tracing::debug!("skipping session persistence; no user context available");
+    }
     Ok(())
 }
 
@@ -256,4 +274,8 @@ fn emit_pending_auth_telemetry(out: &OutMessage) {
             team,
         );
     }
+}
+
+fn flow_id(raw: &str) -> Result<FlowId> {
+    FlowId::try_from(raw).map_err(|err| anyhow::anyhow!(err))
 }

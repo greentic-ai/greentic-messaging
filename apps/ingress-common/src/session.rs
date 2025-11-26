@@ -1,7 +1,8 @@
 use anyhow::Result;
+use greentic_types::UserId;
 use gsm_core::{InvocationEnvelope, MessageEnvelope, TenantCtx};
 pub use gsm_session::SharedSessionStore;
-use gsm_session::{ConversationScope, store_from_env};
+use gsm_session::store_from_env;
 use tracing::warn;
 
 /// Constructs a shared session store using environment configuration.
@@ -20,18 +21,19 @@ pub async fn attach_session_id(
         return;
     }
 
-    let scope = ConversationScope::new(
-        ctx.env.as_str(),
-        ctx.tenant.as_str(),
-        env.platform.as_str(),
-        &env.chat_id,
-        &env.user_id,
-        env.thread_id.clone(),
-    );
+    let user = ctx
+        .user
+        .clone()
+        .or_else(|| ctx.user_id.clone())
+        .or_else(|| UserId::try_from(env.user_id.as_str()).ok());
+    let Some(user) = user else {
+        warn!("no user identifier available for session lookup");
+        return;
+    };
 
-    match store.find_by_scope(&scope).await {
-        Ok(Some(record)) => {
-            invocation.ctx.session_id = Some(record.key.as_str().to_string());
+    match store.find_by_user(ctx, &user).await {
+        Ok(Some((key, _data))) => {
+            invocation.ctx.session_id = Some(key.as_str().to_string());
         }
         Ok(None) => {}
         Err(err) => {

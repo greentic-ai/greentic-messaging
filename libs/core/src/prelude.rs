@@ -21,6 +21,8 @@ impl SecretPath {
 
 #[async_trait]
 pub trait SecretsResolver: Send + Sync {
+    // TODO(greentic-core): keep this aligned with greentic-secrets abstractions
+    // (docs/DESIGN-telemetry-secrets.md) instead of growing bespoke features.
     async fn get_json<T>(&self, path: &SecretPath, ctx: &TenantCtx) -> NodeResult<Option<T>>
     where
         T: serde::de::DeserializeOwned + Send;

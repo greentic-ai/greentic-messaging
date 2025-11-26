@@ -29,6 +29,29 @@ cargo tarpaulin --workspace --all-features --out Lcov --output-dir coverage
 The generated `coverage/` directory contains the LCOV output that mirrors the
 artifact uploaded by GitHub Actions.
 
+## Quickstart via greentic-messaging CLI
+
+The workspace ships with a thin orchestration CLI. Start with:
+
+```bash
+cargo run -p greentic-messaging-cli -- info
+cargo run -p greentic-messaging-cli -- dev up
+cargo run -p greentic-messaging-cli -- serve ingress slack --tenant acme
+cargo run -p greentic-messaging-cli -- flows run --flow examples/flows/weather_telegram.yaml --platform telegram --tenant acme
+cargo run -p greentic-messaging-cli -- test fixtures
+cargo run -p greentic-messaging-cli -- admin guard-rails show
+```
+
+The CLI inspects `GREENTIC_ENV`, detects tenants/teams from your local secrets
+directory (defaults to `./secrets`), and wraps the existing Makefile targets so
+you can bring up ingress/egress/subscription services without memorising every
+command. Refer to [docs/cli.md](docs/cli.md) for the expanding command
+reference.
+
+## Design Docs
+
+- [Telemetry, secrets, and session wiring](docs/DESIGN-telemetry-secrets.md)
+
 ## Releases & Publishing
 
 - Versions are derived from each crate's `Cargo.toml`.
@@ -54,11 +77,13 @@ Set the following environment variables to emit spans and OTLP traces when runni
 
 ### Dev-Friendly Logging
 
-During iterative development you can bypass OpenTelemetry exporters entirely by
-setting `GREENTIC_DEV_TELEMETRY=1`. Each binary will then stream structured logs
-to `./<service>.log` (for example `gsm-ingress-slack.log`) at `info` level. To
-write those files elsewhere, also set `GREENTIC_DEV_LOG_DIR=/tmp/greentic-logs`
-and the directory will be created automatically if it does not exist.
+During iterative development you can toggle structured stdout logs without
+pushing traces to an OTLP collector by exporting `GREENTIC_DEV_TELEMETRY=1`.
+The flag automatically sets `GT_TELEMETRY_FMT=1`, which tells the shared
+`greentic-telemetry` crate to install a JSON `tracing_subscriber::fmt` layer on
+top of the OTLP pipeline. Point `RUST_LOG=debug` if you need verbose spans in
+addition to the structured output. (The previous `./<service>.log` files created
+by the bespoke telemetry shim are no longer emitted.)
 
 ### MessageCard Telemetry & Limits
 

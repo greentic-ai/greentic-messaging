@@ -23,6 +23,7 @@ gsm-telemetry = { workspace = true }
 gsm-idempotency = { path = "../../libs/idempotency" }
 gsm-core = { path = "../../libs/core" }
 gsm-session = { path = "../../libs/session" }
+greentic-types = { workspace = true }
 
 [dev-dependencies]
 http-body-util = { workspace = true }
