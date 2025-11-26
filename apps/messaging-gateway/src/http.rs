@@ -1,36 +1,45 @@
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 
-use async_nats::Client;
 use axum::{
     Router, debug_handler,
     extract::{Extension, Json, Path},
     http::{HeaderMap, StatusCode},
     routing::post,
 };
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
+use tracing::{Instrument, warn};
 
 use crate::config::GatewayConfig;
-use gsm_core::{MessageEnvelope, Platform, make_tenant_ctx};
+use gsm_core::{
+    AdapterDescriptor, AdapterRegistry, ChannelMessage, Platform, infer_platform_from_adapter_name,
+    make_tenant_ctx,
+};
 use gsm_telemetry::set_current_tenant_ctx;
+use messaging_bus::{BusClient, BusError, to_value};
 
 #[derive(Clone)]
 pub struct GatewayState {
-    pub client: Client,
+    pub bus: Arc<dyn BusClient>,
     pub config: GatewayConfig,
+    pub adapters: AdapterRegistry,
 }
 
 impl GatewayState {
-    fn subject(&self, tenant: &str, team: &str, channel: &str) -> String {
-        format!(
-            "greentic.messaging.ingress.{}.{}.{}.{}",
-            self.config.env.0, tenant, team, channel
+    fn subject(&self, tenant: &str, team: &str, platform: &str) -> String {
+        messaging_bus::ingress_subject_with_prefix(
+            self.config.subject_prefix.as_str(),
+            self.config.env.0.as_str(),
+            tenant,
+            team,
+            platform,
         )
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedRequest {
     pub chat_id: Option<String>,
@@ -42,33 +51,31 @@ pub struct NormalizedRequest {
     pub metadata: BTreeMap<String, Value>,
 }
 
-impl Default for NormalizedRequest {
-    fn default() -> Self {
-        Self {
-            chat_id: None,
-            user_id: None,
-            text: None,
-            thread_id: None,
-            msg_id: None,
-            metadata: BTreeMap::new(),
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct ApiResponse {
+#[derive(Serialize, Debug)]
+pub struct ApiResponse {
     status: String,
     subject: String,
 }
 
-#[derive(Serialize)]
-struct ApiError {
+#[derive(Serialize, Debug)]
+pub struct ApiError {
     error: String,
 }
 
-pub async fn build_router(config: GatewayConfig) -> anyhow::Result<Router> {
-    let client = async_nats::connect(&config.nats_url).await?;
-    let state = Arc::new(GatewayState { client, config });
+pub async fn build_router_with_bus(
+    config: GatewayConfig,
+    adapters: AdapterRegistry,
+    bus: Arc<dyn BusClient>,
+) -> anyhow::Result<Router> {
+    let state = Arc::new(GatewayState {
+        bus,
+        config,
+        adapters,
+    });
+
+    if state.adapters.is_empty() {
+        warn!("messaging-gateway running with no adapter packs; legacy platform names only");
+    }
 
     let router = Router::new()
         .route("/api/:tenant/:channel", post(ingest_without_team))
@@ -98,7 +105,7 @@ async fn ingest_with_team(
     handle_ingress(tenant, Some(team), channel, state, payload, headers).await
 }
 
-async fn handle_ingress(
+pub async fn handle_ingress(
     tenant: String,
     team_path: Option<String>,
     channel: String,
@@ -106,28 +113,43 @@ async fn handle_ingress(
     payload: NormalizedRequest,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse>, (StatusCode, Json<ApiError>)> {
-    publish(
-        &tenant,
-        team_path.as_deref(),
-        &channel,
-        state.as_ref(),
-        payload,
-        &headers,
-    )
-    .await
-    .map(|subject| {
-        Json(ApiResponse {
-            status: "accepted".into(),
-            subject,
+    let span = tracing::info_span!(
+        "ingress",
+        tenant = %tenant,
+        team = team_path.as_deref().unwrap_or(""),
+        channel = %channel
+    );
+    async move {
+        let (platform, adapter) = resolve_ingress_target(&channel, &state.adapters)
+            .map_err(|(code, message)| (code, Json(ApiError { error: message })))?;
+
+        publish(
+            &tenant,
+            team_path.as_deref(),
+            &platform,
+            adapter.as_ref(),
+            state.as_ref(),
+            payload,
+            &headers,
+        )
+        .await
+        .map(|subject| {
+            Json(ApiResponse {
+                status: "accepted".into(),
+                subject,
+            })
         })
-    })
-    .map_err(|(code, message)| (code, Json(ApiError { error: message })))
+        .map_err(|(code, message)| (code, Json(ApiError { error: message })))
+    }
+    .instrument(span)
+    .await
 }
 
 async fn publish(
     tenant: &str,
     team_path: Option<&str>,
-    channel: &str,
+    platform: &Platform,
+    adapter: Option<&AdapterDescriptor>,
     state: &GatewayState,
     payload: NormalizedRequest,
     headers: &HeaderMap,
@@ -136,12 +158,6 @@ async fn publish(
         .chat_id
         .clone()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, "chat_id is required".into()))?;
-    let platform = Platform::from_str(channel).map_err(|err| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("invalid platform name: {err}"),
-        )
-    })?;
 
     let team = sanitize_team(team_path, &state.config.default_team);
     let user_id = payload.user_id.or_else(|| {
@@ -163,33 +179,158 @@ async fn publish(
         .unwrap_or_else(|| format!("gw:{}", now.unix_timestamp_nanos()));
 
     let mut context = payload.metadata;
+    if let Some(adapter) = adapter {
+        context.insert("adapter".into(), Value::String(adapter.name.clone()));
+    }
     if let Some(user) = user_id.as_deref() {
         context.insert("user".into(), Value::String(user.into()));
     }
 
-    let envelope = MessageEnvelope {
-        tenant: tenant.into(),
-        platform,
-        chat_id,
-        user_id: user_id.unwrap_or_else(|| "unknown".into()),
-        thread_id: payload.thread_id,
-        msg_id,
-        text: payload.text,
-        timestamp,
-        context,
+    let tenant_ctx = make_tenant_ctx(tenant.into(), Some(team.clone()), user_id.clone());
+    let session_id = payload.thread_id.clone().unwrap_or_else(|| chat_id.clone());
+    let route = adapter.map(|a| a.name.clone());
+    let envelope = ChannelMessage {
+        tenant: tenant_ctx,
+        channel_id: platform.as_str().to_string(),
+        session_id,
+        route,
+        payload: serde_json::json!({
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "thread_id": payload.thread_id,
+            "msg_id": msg_id,
+            "text": payload.text,
+            "timestamp": timestamp,
+            "metadata": context,
+            "headers": headers_to_json(headers),
+        }),
     };
 
-    let subject = state.subject(tenant, &team, envelope.platform.as_str());
-    let payload_bytes = serde_json::to_vec(&envelope)
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let subject = state.subject(tenant, &team, envelope.channel_id.as_str());
 
+    let value =
+        to_value(&envelope).map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))?;
     state
-        .client
-        .publish(subject.clone(), payload_bytes.into())
+        .bus
+        .publish_value(&subject, value)
         .await
-        .map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))?;
+        .map_err(|err| match err {
+            BusError::Publish(e) => {
+                tracing::error!(%subject, error = %e, "failed to publish ingress envelope");
+                (StatusCode::SERVICE_UNAVAILABLE, e.to_string())
+            }
+        })?;
+
+    let _ = counter!(
+        "messaging_ingress_total",
+        "tenant" => tenant.to_string(),
+        "platform" => envelope.channel_id.clone(),
+        "adapter" => adapter.map(|a| a.name.clone()).unwrap_or_else(|| "legacy".into())
+    );
+
+    // TODO: add tracing span per request; include adapter/platform tags.
 
     Ok(subject)
+}
+
+fn resolve_ingress_target(
+    channel: &str,
+    registry: &AdapterRegistry,
+) -> Result<(Platform, Option<AdapterDescriptor>), (StatusCode, String)> {
+    if let Some(adapter) = registry.get(channel) {
+        if !adapter.allows_ingress() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("adapter `{channel}` does not support ingress"),
+            ));
+        }
+        let platform = infer_platform_from_adapter_name(&adapter.name)
+            .or_else(|| Platform::from_str(channel).ok())
+            .ok_or((
+                StatusCode::BAD_REQUEST,
+                format!("adapter `{channel}` does not map to a known platform"),
+            ))?;
+        return Ok((platform, Some(adapter.clone())));
+    }
+    if !registry.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "adapter `{channel}` not found; available: {}",
+                registry.names().join(", ")
+            ),
+        ));
+    }
+    let platform = Platform::from_str(channel).map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("invalid platform name: {err}"),
+        )
+    })?;
+    Ok((platform, None))
+}
+
+#[cfg(test)]
+mod tests_ingress_resolution {
+    use super::*;
+    use gsm_core::MessagingAdapterKind;
+
+    fn adapter(name: &str, kind: MessagingAdapterKind) -> AdapterDescriptor {
+        AdapterDescriptor {
+            pack_id: "test-pack".into(),
+            pack_version: "1.0.0".into(),
+            name: name.into(),
+            kind,
+            component: "comp@1.0.0".into(),
+            default_flow: None,
+            custom_flow: None,
+            capabilities: None,
+            source: None,
+        }
+    }
+
+    #[test]
+    fn resolves_adapter_with_ingress_support() {
+        let mut registry = AdapterRegistry::default();
+        registry
+            .register(adapter("slack-main", MessagingAdapterKind::IngressEgress))
+            .unwrap();
+        let (platform, resolved) =
+            resolve_ingress_target("slack-main", &registry).expect("should resolve");
+        assert_eq!(platform, Platform::Slack);
+        assert_eq!(resolved.unwrap().name, "slack-main");
+    }
+
+    #[test]
+    fn rejects_adapter_without_ingress() {
+        let mut registry = AdapterRegistry::default();
+        registry
+            .register(adapter("slack-main", MessagingAdapterKind::Egress))
+            .unwrap();
+        let err = resolve_ingress_target("slack-main", &registry).unwrap_err();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert!(err.1.contains("does not support ingress"));
+    }
+
+    #[test]
+    fn errors_when_adapter_missing_but_registry_present() {
+        let mut registry = AdapterRegistry::default();
+        registry
+            .register(adapter("slack-main", MessagingAdapterKind::IngressEgress))
+            .unwrap();
+        let err = resolve_ingress_target("unknown", &registry).unwrap_err();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert!(err.1.contains("available: slack-main"));
+    }
+
+    #[test]
+    fn falls_back_to_platform_when_no_registry() {
+        let registry = AdapterRegistry::default();
+        let (platform, resolved) =
+            resolve_ingress_target("slack", &registry).expect("platform should parse");
+        assert_eq!(platform, Platform::Slack);
+        assert!(resolved.is_none());
+    }
 }
 
 fn sanitize_team(team: Option<&str>, default: &str) -> String {
@@ -197,6 +338,16 @@ fn sanitize_team(team: Option<&str>, default: &str) -> String {
         Some(value) if !value.trim().is_empty() => value.trim().to_string(),
         _ => default.to_string(),
     }
+}
+
+fn headers_to_json(headers: &HeaderMap) -> Value {
+    let mut map = serde_json::Map::new();
+    for (key, value) in headers.iter() {
+        if let Ok(val) = value.to_str() {
+            map.insert(key.as_str().to_string(), Value::String(val.to_string()));
+        }
+    }
+    Value::Object(map)
 }
 
 #[cfg(test)]

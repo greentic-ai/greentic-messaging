@@ -44,16 +44,16 @@ pub fn assert_has_block_type(value: &Value, block_type: &str) {
 pub fn has_block_type(value: &Value, block_type: &str) -> bool {
     let mut stack = vec![value];
     while let Some(current) = stack.pop() {
-        if let Some(blocks) = current.get("blocks").and_then(|b| b.as_array()) {
-            if blocks.iter().any(|block| {
+        if let Some(blocks) = current.get("blocks").and_then(|b| b.as_array())
+            && blocks.iter().any(|block| {
                 block
                     .get("type")
                     .and_then(Value::as_str)
                     .map(|kind| kind.eq_ignore_ascii_case(block_type))
                     .unwrap_or(false)
-            }) {
-                return true;
-            }
+            })
+        {
+            return true;
         }
 
         match current {

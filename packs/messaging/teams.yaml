@@ -1,0 +1,12 @@
+id: greentic-messaging-teams
+version: "1.0.0"
+messaging:
+  adapters:
+    - name: teams-main
+      kind: ingress-egress
+      component: teams-adapter@1.0.0
+      default_flow: flows/messaging/teams/default.ygtc
+      custom_flow: flows/messaging/teams/custom.ygtc
+      capabilities:
+        direction: [ingress, egress]
+        features: [threads, attachments, cards, reactions]

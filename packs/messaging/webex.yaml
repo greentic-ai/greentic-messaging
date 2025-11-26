@@ -1,0 +1,12 @@
+id: greentic-messaging-webex
+version: "1.0.0"
+messaging:
+  adapters:
+    - name: webex-main
+      kind: ingress-egress
+      component: webex-adapter@1.0.0
+      default_flow: flows/messaging/webex/default.ygtc
+      custom_flow: flows/messaging/webex/custom.ygtc
+      capabilities:
+        direction: [ingress, egress]
+        features: [threads, attachments, reactions]

@@ -1,0 +1,12 @@
+id: greentic-messaging-slack
+version: "1.0.0"
+messaging:
+  adapters:
+    - name: slack-main
+      kind: ingress-egress
+      component: slack-adapter@1.0.0
+      default_flow: flows/messaging/slack/default.ygtc
+      custom_flow: flows/messaging/slack/custom.ygtc
+      capabilities:
+        direction: [ingress, egress]
+        features: [threads, attachments, reactions]

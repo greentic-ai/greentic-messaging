@@ -1,0 +1,12 @@
+id: greentic-messaging-whatsapp
+version: "1.0.0"
+messaging:
+  adapters:
+    - name: whatsapp-main
+      kind: ingress-egress
+      component: whatsapp-adapter@1.0.0
+      default_flow: flows/messaging/whatsapp/default.ygtc
+      custom_flow: flows/messaging/whatsapp/custom.ygtc
+      capabilities:
+        direction: [ingress, egress]
+        features: [text, media]

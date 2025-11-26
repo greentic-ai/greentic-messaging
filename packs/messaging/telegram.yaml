@@ -1,0 +1,20 @@
+id: greentic-messaging-telegram
+version: "1.0.0"
+messaging:
+  adapters:
+    - name: telegram-ingress
+      kind: ingress
+      component: telegram-ingress-adapter@1.0.0
+      default_flow: flows/messaging/telegram/ingress_default.ygtc
+      custom_flow: flows/messaging/telegram/ingress_custom.ygtc
+      capabilities:
+        direction: [ingress]
+        features: [threads, attachments]
+    - name: telegram-egress
+      kind: egress
+      component: telegram-egress-adapter@1.0.0
+      default_flow: flows/messaging/telegram/egress_default.ygtc
+      custom_flow: flows/messaging/telegram/egress_custom.ygtc
+      capabilities:
+        direction: [egress]
+        features: [text, cards]

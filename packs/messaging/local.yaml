@@ -1,0 +1,12 @@
+id: greentic-messaging-local
+version: "1.0.0"
+messaging:
+  adapters:
+    - name: local-main
+      kind: ingress-egress
+      component: local-adapter@1.0.0
+      default_flow: flows/messaging/local/default.ygtc
+      custom_flow: flows/messaging/local/custom.ygtc
+      capabilities:
+        direction: [ingress, egress]
+        features: [text]

@@ -8,8 +8,7 @@ pub type HostSessionCursor = bindings::greentic::interfaces_types::types::Sessio
 
 // Surface common host-facing modules so callers can import everything via gsm-core.
 pub use greentic_interfaces_host::{
-    events_emitter, http, messaging, messaging_session, oauth, oauth_broker, secrets, state,
-    telemetry,
+    http, messaging, messaging_session, oauth, oauth_broker, secrets, state, telemetry,
 };
 
 /// Map a `TenantCtx` into its WIT host binding representation.
@@ -64,6 +63,7 @@ mod tests {
             attempt: 2,
             idempotency_key: Some("idem".into()),
             impersonation: None,
+            attributes: Default::default(),
         }
     }
 

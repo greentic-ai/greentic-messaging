@@ -124,6 +124,13 @@ async fn oauth_callback_exchanges_code_and_posts_handle() {
     );
 
     let conversations = memory_store();
+    #[cfg(feature = "directline_standalone")]
+    {
+        conversations
+            .create("conversation-123", tenant_ctx("dev", "acme", None))
+            .await
+            .unwrap();
+    }
 
     let state = AppState::new(provider, direct_line, client)
         .with_sessions(Arc::clone(&sessions))
@@ -148,24 +155,27 @@ async fn oauth_callback_exchanges_code_and_posts_handle() {
     let body = to_bytes(response.into_body(), 1024).await.unwrap();
     assert_eq!(body, CLOSE_WINDOW_HTML);
 
-    let page = conversations
-        .activities("conversation-123", None)
-        .await
-        .unwrap();
-    let bot_activity = page.activities.back().unwrap();
-    assert_eq!(
-        bot_activity.activity.text.as_deref(),
-        Some("You're signed in.")
-    );
-    assert_eq!(
-        bot_activity.activity.channel_data.as_ref().unwrap()["oauth_token_handle"],
-        "token-handle-789"
-    );
-    let watermark = bot_activity.watermark;
-    sessions
-        .update_watermark("conversation-123", Some((watermark + 1).to_string()))
-        .await
-        .unwrap();
+    #[cfg(feature = "directline_standalone")]
+    {
+        let page = conversations
+            .activities("conversation-123", None)
+            .await
+            .unwrap();
+        let bot_activity = page.activities.back().unwrap();
+        assert_eq!(
+            bot_activity.activity.text.as_deref(),
+            Some("You're signed in.")
+        );
+        assert_eq!(
+            bot_activity.activity.channel_data.as_ref().unwrap()["oauth_token_handle"],
+            "token-handle-789"
+        );
+        let watermark = bot_activity.watermark;
+        sessions
+            .update_watermark("conversation-123", Some((watermark + 1).to_string()))
+            .await
+            .unwrap();
+    }
 }
 
 struct NoopPoster;

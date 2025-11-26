@@ -9,6 +9,28 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
+/// Normalized inbound channel message used inside messaging.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMessage {
+    pub tenant: TenantCtx,
+    pub channel_id: String,
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
+    pub payload: serde_json::Value,
+}
+
+impl ChannelMessage {
+    pub fn subject(&self, env: &str) -> String {
+        format!(
+            "greentic.messaging.ingress.{env}.{}.{}.{}",
+            self.tenant.tenant.as_str(),
+            self.tenant.team.as_ref().map(|t| t.as_str()).unwrap_or(""),
+            self.channel_id
+        )
+    }
+}
+
 /// Supported messaging platforms (kept small and stable).
 ///
 /// ```

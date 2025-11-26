@@ -211,10 +211,10 @@ async fn run_telegram_e2e(token: String, chat: ChatSpecifier) -> Result<()> {
         .context("failed to verify message in history")?;
 
     for message in &sent_messages {
-        if let Some(message_id) = message.get("message_id").and_then(Value::as_i64) {
-            if let Err(err) = delete_telegram_message(&client, &base, &chat_id, message_id).await {
-                eprintln!("failed to delete telegram message {message_id}: {err:#}");
-            }
+        if let Some(message_id) = message.get("message_id").and_then(Value::as_i64)
+            && let Err(err) = delete_telegram_message(&client, &base, &chat_id, message_id).await
+        {
+            eprintln!("failed to delete telegram message {message_id}: {err:#}");
         }
     }
 

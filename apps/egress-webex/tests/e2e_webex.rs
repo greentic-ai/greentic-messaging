@@ -218,13 +218,13 @@ async fn run_webex_e2e(token: String, room_id: String) -> Result<()> {
         "webex attachment content.type was not AdaptiveCard"
     );
 
-    if let Some(card_value) = first.content.as_ref() {
-        if let Ok(rendered_path) = visual::try_render_adaptive_card_to_png(card_value) {
-            println!(
-                "rendered adaptive card snapshot at {}",
-                rendered_path.display()
-            );
-        }
+    if let Some(card_value) = first.content.as_ref()
+        && let Ok(rendered_path) = visual::try_render_adaptive_card_to_png(card_value)
+    {
+        println!(
+            "rendered adaptive card snapshot at {}",
+            rendered_path.display()
+        );
     }
 
     if let Err(err) = delete_webex_message(&client, &token, &message_id).await {

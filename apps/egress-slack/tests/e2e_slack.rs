@@ -231,10 +231,10 @@ async fn run_slack_e2e(token: String, channel: String) -> Result<()> {
         "expected action text present"
     );
 
-    if let Some(permalink) = fetch_permalink(&client, &token, &channel, &ts).await? {
-        if let Some(image) = visual::try_screenshot(&permalink) {
-            println!("screenshot captured at {}", image.display());
-        }
+    if let Some(permalink) = fetch_permalink(&client, &token, &channel, &ts).await?
+        && let Some(image) = visual::try_screenshot(&permalink)
+    {
+        println!("screenshot captured at {}", image.display());
     }
 
     if let Err(err) = delete_slack_message(&client, &token, &channel, &ts).await {

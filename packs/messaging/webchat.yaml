@@ -1,0 +1,12 @@
+id: greentic-messaging-webchat
+version: "1.0.0"
+messaging:
+  adapters:
+    - name: webchat-main
+      kind: ingress-egress
+      component: webchat-adapter@1.0.0
+      default_flow: flows/messaging/webchat/default.ygtc
+      custom_flow: flows/messaging/webchat/custom.ygtc
+      capabilities:
+        direction: [ingress, egress]
+        features: [attachments, threads]

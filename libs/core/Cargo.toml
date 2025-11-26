@@ -23,6 +23,7 @@ required-features = ["component-host"]
 serde = { workspace = true }
 time = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml_bw = { workspace = true }
 anyhow = { workspace = true }
 greentic-types = { workspace = true }
 jsonschema = { workspace = true }
@@ -47,12 +48,14 @@ metrics = { workspace = true }
 axum = { workspace = true, features = ["macros", "json", "ws", "tokio"] }
 redis = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
-wasmtime = { version = "38", optional = true, default-features = false, features = ["component-model"] }
+wasmtime = { version = "39", optional = true, features = ["component-model"] }
 base64 = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 urlencoding = { workspace = true }
 gsm-telemetry = { workspace = true }
+packc = { workspace = true }
+greentic-pack = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

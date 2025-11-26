@@ -1,4 +1,3 @@
-#![cfg(feature = "component-host")]
 //! Wasmtime linker helpers for the Greentic host bindings.
 use anyhow::Result;
 use greentic_interfaces_host::host_import::v0_6;
