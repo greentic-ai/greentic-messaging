@@ -3,5 +3,5 @@ use anyhow::Result;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    messaging_egress::run().await
+    gsm_egress::run().await
 }

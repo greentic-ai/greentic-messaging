@@ -1979,6 +1979,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "gsm-egress"
+version = "0.4.10"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "axum",
+ "futures",
+ "greentic-types",
+ "gsm-bus",
+ "gsm-core",
+ "gsm-gateway",
+ "metrics",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "gsm-egress-common"
 version = "0.4.10"
 dependencies = [
@@ -3224,28 +3246,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad38eb12aea514a0466ea40a80fd8cc83637065948eb4a426e4aa46261175227"
 dependencies = [
  "rustix",
-]
-
-[[package]]
-name = "messaging-egress"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "axum",
- "futures",
- "greentic-types",
- "gsm-bus",
- "gsm-core",
- "gsm-gateway",
- "metrics",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

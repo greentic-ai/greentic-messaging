@@ -1,7 +1,7 @@
 use gsm_core::{AdapterDescriptor, MessagingAdapterKind};
 use gsm_core::{OutKind, OutMessage, Platform, make_tenant_ctx};
-use messaging_egress::InMemoryBusClient;
-use messaging_egress::adapter_registry::AdapterLookup;
+use gsm_egress::InMemoryBusClient;
+use gsm_egress::adapter_registry::AdapterLookup;
 
 fn adapter(name: &str) -> AdapterDescriptor {
     AdapterDescriptor {
@@ -40,7 +40,7 @@ async fn publishes_outbound_payload_via_bus() {
         meta: Default::default(),
     };
 
-    let cfg = messaging_egress::config::EgressConfig {
+    let cfg = gsm_egress::config::EgressConfig {
         env: "dev".try_into().unwrap(),
         nats_url: "nats://localhost".into(),
         subject_filter: "greentic.messaging.egress.dev.>".into(),
@@ -49,7 +49,7 @@ async fn publishes_outbound_payload_via_bus() {
         egress_prefix: gsm_bus::EGRESS_SUBJECT_PREFIX.to_string(),
     };
 
-    messaging_egress::process_message_internal(&out, &adapter, &bus, &cfg)
+    gsm_egress::process_message_internal(&out, &adapter, &bus, &cfg)
         .await
         .unwrap();
 

@@ -6,11 +6,11 @@ use gsm_core::{
     AdapterDescriptor, ChannelMessage, MessagingAdapterKind, OutKind, OutMessage, Platform,
     make_tenant_ctx,
 };
+use gsm_egress::adapter_registry::AdapterLookup;
+use gsm_egress::process_message_internal;
 use gsm_gateway::config::GatewayConfig;
 use gsm_gateway::http::{GatewayState, NormalizedRequest, handle_ingress};
 use gsm_gateway::load_adapter_registry;
-use messaging_egress::adapter_registry::AdapterLookup;
-use messaging_egress::process_message_internal;
 
 fn test_gateway_config() -> GatewayConfig {
     GatewayConfig {
@@ -99,7 +99,7 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         meta: Default::default(),
     };
 
-    let cfg = messaging_egress::config::EgressConfig {
+    let cfg = gsm_egress::config::EgressConfig {
         env: "dev".try_into().unwrap(),
         nats_url: "nats://localhost".into(),
         subject_filter: "greentic.messaging.egress.dev.>".into(),
