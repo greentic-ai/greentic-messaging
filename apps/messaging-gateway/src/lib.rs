@@ -7,7 +7,7 @@ use anyhow::Result;
 use async_nats::Client as NatsClient;
 pub use gsm_bus::{BusClient, BusError, InMemoryBusClient, NatsBusClient};
 use gsm_core::{
-    AdapterRegistry, DefaultAdapterPacksConfig, adapter_pack_paths_from_env,
+    AdapterRegistry, DefaultAdapterPacksConfig, WorkerClient, adapter_pack_paths_from_env,
     adapter_registry::load_adapters_from_pack_files, default_adapter_pack_paths,
 };
 pub use main_logic::run;
@@ -61,6 +61,7 @@ pub async fn build_router_with_bus<B: BusClient + 'static>(
     config: GatewayConfig,
     adapters: AdapterRegistry,
     bus: Arc<B>,
+    worker: Option<Arc<dyn WorkerClient>>,
 ) -> Result<axum::Router> {
-    http::build_router_with_bus(config, adapters, bus).await
+    http::build_router_with_bus(config, adapters, bus, worker).await
 }

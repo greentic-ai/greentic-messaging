@@ -28,6 +28,7 @@ pub mod subjects;
 pub mod telemetry;
 pub mod types;
 pub mod validate;
+pub mod worker;
 
 pub use adapter_registry::*;
 pub use cards::*;
@@ -71,6 +72,7 @@ pub use subjects::*;
 pub use telemetry::*;
 pub use types::*;
 pub use validate::*;
+pub use worker::*;
 
 /// Returns the semantic version advertised by this crate.
 ///

@@ -11,6 +11,8 @@ pub struct GatewayConfig {
     pub addr: SocketAddr,
     pub default_team: String,
     pub subject_prefix: String,
+    pub worker_routing: Option<gsm_core::WorkerRoutingConfig>,
+    pub worker_egress_subject: Option<String>,
 }
 
 impl GatewayConfig {
@@ -25,13 +27,30 @@ impl GatewayConfig {
             .unwrap_or(8080);
         let ip = IpAddr::from_str(&default_addr).context("invalid MESSAGING_GATEWAY_ADDR")?;
         Ok(Self {
-            env,
+            env: env.clone(),
             nats_url,
             addr: SocketAddr::new(ip, port),
             default_team: std::env::var("MESSAGING_GATEWAY_DEFAULT_TEAM")
                 .unwrap_or_else(|_| "default".into()),
             subject_prefix: std::env::var("MESSAGING_INGRESS_SUBJECT_PREFIX")
                 .unwrap_or_else(|_| gsm_bus::INGRESS_SUBJECT_PREFIX.to_string()),
+            worker_routing: {
+                let enabled = std::env::var("REPO_WORKER_ENABLE")
+                    .ok()
+                    .map(|v| v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+                if enabled {
+                    Some(gsm_core::WorkerRoutingConfig::from_env())
+                } else {
+                    None
+                }
+            },
+            worker_egress_subject: {
+                let base = std::env::var("MESSAGING_EGRESS_SUBJECT")
+                    .unwrap_or_else(|_| format!("greentic.messaging.egress.{}", env.0.clone()));
+                let trimmed = base.trim_end_matches('>').trim_end_matches('.');
+                Some(format!("{trimmed}.repo-worker"))
+            },
         })
     }
 }

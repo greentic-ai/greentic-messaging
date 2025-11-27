@@ -15,8 +15,8 @@ use tracing::{Instrument, warn};
 use crate::config::GatewayConfig;
 use gsm_bus::{BusClient, BusError, to_value};
 use gsm_core::{
-    AdapterDescriptor, AdapterRegistry, ChannelMessage, Platform, infer_platform_from_adapter_name,
-    make_tenant_ctx,
+    AdapterDescriptor, AdapterRegistry, ChannelMessage, Platform, WorkerClient,
+    WorkerRoutingConfig, forward_to_worker, infer_platform_from_adapter_name, make_tenant_ctx,
 };
 use gsm_telemetry::set_current_tenant_ctx;
 
@@ -25,6 +25,9 @@ pub struct GatewayState {
     pub bus: Arc<dyn BusClient>,
     pub config: GatewayConfig,
     pub adapters: AdapterRegistry,
+    pub worker: Option<Arc<dyn WorkerClient>>,
+    pub worker_config: Option<WorkerRoutingConfig>,
+    pub worker_egress_subject: Option<String>,
 }
 
 impl GatewayState {
@@ -62,15 +65,61 @@ pub struct ApiError {
     error: String,
 }
 
+fn outbound_to_out_message(
+    outbound: gsm_core::OutboundEnvelope,
+    platform: Platform,
+    thread_id: Option<String>,
+) -> gsm_core::OutMessage {
+    let mut meta = std::collections::BTreeMap::new();
+    if let Some(obj) = outbound.meta.as_object() {
+        for (k, v) in obj {
+            meta.insert(k.clone(), v.clone());
+        }
+    }
+    if let Some(kind) = outbound
+        .meta
+        .as_object()
+        .and_then(|m| m.get("kind"))
+        .cloned()
+    {
+        meta.insert("worker_kind".into(), kind);
+    }
+
+    let text = outbound
+        .body
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| outbound.body.as_str().map(|s| s.to_string()))
+        .or_else(|| Some(outbound.body.to_string()));
+
+    gsm_core::OutMessage {
+        ctx: outbound.tenant.clone(),
+        tenant: outbound.tenant.tenant.as_str().to_string(),
+        platform,
+        chat_id: outbound.session_id.clone(),
+        thread_id,
+        kind: gsm_core::OutKind::Text,
+        text,
+        message_card: None,
+        adaptive_card: None,
+        meta,
+    }
+}
+
 pub async fn build_router_with_bus(
     config: GatewayConfig,
     adapters: AdapterRegistry,
     bus: Arc<dyn BusClient>,
+    worker: Option<Arc<dyn WorkerClient>>,
 ) -> anyhow::Result<Router> {
     let state = Arc::new(GatewayState {
         bus,
+        worker_config: config.worker_routing.clone(),
+        worker_egress_subject: config.worker_egress_subject.clone(),
         config,
         adapters,
+        worker,
     });
 
     if state.adapters.is_empty() {
@@ -212,7 +261,7 @@ async fn publish(
         to_value(&envelope).map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))?;
     state
         .bus
-        .publish_value(&subject, value)
+        .publish_value(&subject, value.clone())
         .await
         .map_err(|err| match err {
             BusError::Publish(e) => {
@@ -220,6 +269,54 @@ async fn publish(
                 (StatusCode::SERVICE_UNAVAILABLE, e.to_string())
             }
         })?;
+
+    if let (Some(worker), Some(worker_cfg), Some(egress_subject)) = (
+        state.worker.as_ref(),
+        state.worker_config.as_ref(),
+        state.worker_egress_subject.as_ref(),
+    ) {
+        let correlation = Some(msg_id.clone());
+        let worker_payload = envelope.payload.clone();
+        let channel_clone = envelope.clone();
+        let worker_result = forward_to_worker(
+            worker.as_ref(),
+            &channel_clone,
+            worker_payload,
+            worker_cfg,
+            correlation,
+        )
+        .await;
+
+        match worker_result {
+            Ok(outbound) => {
+                let platform =
+                    Platform::from_str(envelope.channel_id.as_str()).unwrap_or(Platform::WebChat);
+                for out in outbound {
+                    let out_msg = outbound_to_out_message(
+                        out,
+                        platform.clone(),
+                        envelope.payload["thread_id"].as_str().map(str::to_string),
+                    );
+                    let out_value = to_value(&out_msg)
+                        .map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))?;
+                    if let Err(err) = state.bus.publish_value(egress_subject, out_value).await {
+                        tracing::error!(
+                            subject = %egress_subject,
+                            error = %err,
+                            "failed to publish worker response to egress"
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    worker_id = %worker_cfg.worker_id,
+                    "failed to forward to repo worker"
+                );
+            }
+        }
+    }
 
     let _ = counter!(
         "messaging_ingress_total",

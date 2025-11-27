@@ -19,6 +19,8 @@ fn test_gateway_config() -> GatewayConfig {
         addr: "127.0.0.1:0".parse().unwrap(),
         default_team: "default".into(),
         subject_prefix: gsm_bus::INGRESS_SUBJECT_PREFIX.to_string(),
+        worker_routing: None,
+        worker_egress_subject: None,
     }
 }
 
@@ -44,6 +46,9 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         bus: bus.clone(),
         config: test_gateway_config(),
         adapters,
+        worker: None,
+        worker_config: None,
+        worker_egress_subject: None,
     });
 
     let payload = NormalizedRequest {
