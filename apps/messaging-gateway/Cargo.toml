@@ -16,7 +16,7 @@ gsm-telemetry = { workspace = true }
 greentic-types = { workspace = true }
 metrics = { workspace = true }
 hyper = { workspace = true }
-gsm-bus = { path = "../../crates/gsm-bus" }
+gsm-bus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }

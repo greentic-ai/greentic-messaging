@@ -120,3 +120,4 @@ redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 url = "2.5"
 gsm-translator = {version = "0.4" , path = "libs/translator"}
+gsm-bus = { path = "crates/gsm-bus", version = "0.4" }
