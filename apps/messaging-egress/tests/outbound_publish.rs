@@ -46,7 +46,7 @@ async fn publishes_outbound_payload_via_bus() {
         subject_filter: "greentic.messaging.egress.dev.>".into(),
         adapter: None,
         packs_root: "packs".into(),
-        egress_prefix: messaging_bus::EGRESS_SUBJECT_PREFIX.to_string(),
+        egress_prefix: gsm_bus::EGRESS_SUBJECT_PREFIX.to_string(),
     };
 
     messaging_egress::process_message_internal(&out, &adapter, &bus, &cfg)

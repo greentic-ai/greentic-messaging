@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 
 use crate::adapter_registry::AdapterLookup;
 use crate::config::EgressConfig;
-use messaging_bus::{BusClient, NatsBusClient, egress_subject_with_prefix, to_value};
+use gsm_bus::{BusClient, NatsBusClient, egress_subject_with_prefix, to_value};
 
 pub async fn run() -> Result<()> {
     let config = EgressConfig::from_env()?;

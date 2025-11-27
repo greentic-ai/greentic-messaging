@@ -18,7 +18,7 @@ greentic-types = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true, optional = true }
 thiserror = { workspace = true }
-messaging-bus = { path = "../../crates/messaging-bus" }
+gsm-bus = { path = "../../crates/gsm-bus" }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["macros", "json"] }
@@ -26,4 +26,4 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde_json = { workspace = true }
 futures = { workspace = true }
 messaging-gateway = { path = "../messaging-gateway" }
-messaging-bus = { path = "../../crates/messaging-bus" }
+gsm-bus = { path = "../../crates/gsm-bus" }

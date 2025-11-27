@@ -1,0 +1,19 @@
+[package]
+name = "gsm-bus"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Bus client trait with NATS and in-memory implementations, plus subject helpers for Greentic messaging ingress/egress."
+repository = "https://github.com/greentic-ai/greentic-messaging"
+homepage = "https://github.com/greentic-ai/greentic-messaging"
+readme = "../../README.md"
+
+[dependencies]
+anyhow = { workspace = true }
+async-nats = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }

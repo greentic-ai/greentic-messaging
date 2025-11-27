@@ -5,12 +5,12 @@ mod main_logic;
 use crate::config::GatewayConfig;
 use anyhow::Result;
 use async_nats::Client as NatsClient;
+pub use gsm_bus::{BusClient, BusError, InMemoryBusClient, NatsBusClient};
 use gsm_core::{
     AdapterRegistry, DefaultAdapterPacksConfig, adapter_pack_paths_from_env,
     adapter_registry::load_adapters_from_pack_files, default_adapter_pack_paths,
 };
 pub use main_logic::run;
-pub use messaging_bus::{BusClient, BusError, InMemoryBusClient, NatsBusClient};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;

@@ -1,11 +1,11 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use gsm_bus::InMemoryBusClient;
 use gsm_core::{
     AdapterDescriptor, ChannelMessage, MessagingAdapterKind, OutKind, OutMessage, Platform,
     make_tenant_ctx,
 };
-use messaging_bus::InMemoryBusClient;
 use messaging_egress::adapter_registry::AdapterLookup;
 use messaging_egress::process_message_internal;
 use messaging_gateway::config::GatewayConfig;
@@ -18,7 +18,7 @@ fn test_gateway_config() -> GatewayConfig {
         nats_url: "nats://localhost".into(),
         addr: "127.0.0.1:0".parse().unwrap(),
         default_team: "default".into(),
-        subject_prefix: messaging_bus::INGRESS_SUBJECT_PREFIX.to_string(),
+        subject_prefix: gsm_bus::INGRESS_SUBJECT_PREFIX.to_string(),
     }
 }
 
@@ -99,7 +99,7 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         subject_filter: "greentic.messaging.egress.dev.>".into(),
         adapter: None,
         packs_root: "packs".into(),
-        egress_prefix: messaging_bus::EGRESS_SUBJECT_PREFIX.to_string(),
+        egress_prefix: gsm_bus::EGRESS_SUBJECT_PREFIX.to_string(),
     };
 
     process_message_internal(&out, &adapter, bus.as_ref(), &cfg)

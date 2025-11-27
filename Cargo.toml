@@ -43,7 +43,7 @@ members = [
   "tools/dev-viewer",
   "crates/greentic-messaging-cli",
   "crates/messaging-test",
-  "crates/messaging-bus",
+  "crates/gsm-bus",
 ]
 resolver = "2"
 

@@ -13,12 +13,12 @@ use time::OffsetDateTime;
 use tracing::{Instrument, warn};
 
 use crate::config::GatewayConfig;
+use gsm_bus::{BusClient, BusError, to_value};
 use gsm_core::{
     AdapterDescriptor, AdapterRegistry, ChannelMessage, Platform, infer_platform_from_adapter_name,
     make_tenant_ctx,
 };
 use gsm_telemetry::set_current_tenant_ctx;
-use messaging_bus::{BusClient, BusError, to_value};
 
 #[derive(Clone)]
 pub struct GatewayState {
@@ -29,7 +29,7 @@ pub struct GatewayState {
 
 impl GatewayState {
     fn subject(&self, tenant: &str, team: &str, platform: &str) -> String {
-        messaging_bus::ingress_subject_with_prefix(
+        gsm_bus::ingress_subject_with_prefix(
             self.config.subject_prefix.as_str(),
             self.config.env.0.as_str(),
             tenant,

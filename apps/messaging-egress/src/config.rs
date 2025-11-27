@@ -16,7 +16,7 @@ impl EgressConfig {
         let env = EnvId(std::env::var("GREENTIC_ENV").unwrap_or_else(|_| "dev".into()));
         let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
         let egress_prefix = std::env::var("MESSAGING_EGRESS_OUT_PREFIX")
-            .unwrap_or_else(|_| messaging_bus::EGRESS_SUBJECT_PREFIX.to_string());
+            .unwrap_or_else(|_| gsm_bus::EGRESS_SUBJECT_PREFIX.to_string());
         let base = std::env::var("MESSAGING_EGRESS_SUBJECT")
             .unwrap_or_else(|_| format!("greentic.messaging.egress.{}", env.0));
 

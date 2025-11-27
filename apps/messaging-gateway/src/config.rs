@@ -31,7 +31,7 @@ impl GatewayConfig {
             default_team: std::env::var("MESSAGING_GATEWAY_DEFAULT_TEAM")
                 .unwrap_or_else(|_| "default".into()),
             subject_prefix: std::env::var("MESSAGING_INGRESS_SUBJECT_PREFIX")
-                .unwrap_or_else(|_| messaging_bus::INGRESS_SUBJECT_PREFIX.to_string()),
+                .unwrap_or_else(|_| gsm_bus::INGRESS_SUBJECT_PREFIX.to_string()),
         })
     }
 }

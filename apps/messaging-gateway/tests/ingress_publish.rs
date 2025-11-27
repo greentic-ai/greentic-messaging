@@ -11,7 +11,7 @@ fn test_config() -> GatewayConfig {
         nats_url: "nats://localhost".into(),
         addr: "127.0.0.1:0".parse().unwrap(),
         default_team: "default".into(),
-        subject_prefix: messaging_bus::INGRESS_SUBJECT_PREFIX.to_string(),
+        subject_prefix: gsm_bus::INGRESS_SUBJECT_PREFIX.to_string(),
     }
 }
 
