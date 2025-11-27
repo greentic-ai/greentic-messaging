@@ -170,7 +170,11 @@ pub fn load_default_adapter_packs_from(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use once_cell::sync::Lazy;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    static ENV_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     struct GuardEnv;
     impl GuardEnv {
@@ -190,6 +194,7 @@ mod tests {
 
     #[test]
     fn adapter_pack_paths_env_parses_list() {
+        let _lock = ENV_GUARD.lock().unwrap();
         let _guard = GuardEnv::new();
         unsafe {
             env::set_var(
@@ -209,6 +214,7 @@ mod tests {
 
     #[test]
     fn config_parses_env() {
+        let _lock = ENV_GUARD.lock().unwrap();
         let _guard = GuardEnv::new();
         unsafe {
             env::set_var("MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS", "true");
