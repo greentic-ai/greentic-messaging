@@ -115,12 +115,12 @@ pub fn worker_routes_from_env() -> BTreeMap<String, WorkerRoutingConfig> {
     };
     let mut map = BTreeMap::new();
     for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        if let Some((id, spec)) = entry.split_once('=') {
-            if let Some((transport_raw, target)) = spec.split_once(':') {
-                let transport = WorkerTransport::from_env(Some(transport_raw.to_string()));
-                let cfg = WorkerRoutingConfig::from_route_spec(id.trim(), transport, target.trim());
-                map.insert(id.trim().to_string(), cfg);
-            }
+        if let Some((id, spec)) = entry.split_once('=')
+            && let Some((transport_raw, target)) = spec.split_once(':')
+        {
+            let transport = WorkerTransport::from_env(Some(transport_raw.to_string()));
+            let cfg = WorkerRoutingConfig::from_route_spec(id.trim(), transport, target.trim());
+            map.insert(id.trim().to_string(), cfg);
         }
     }
     map
