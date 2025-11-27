@@ -122,12 +122,12 @@ by the bespoke telemetry shim are no longer emitted.)
 
 The new default deployment is a pair of binaries that consolidate every ingress adapter behind a single HTTP facade and dispatch all outbound traffic through one JetStream consumer.
 
-1. `messaging-gateway` accepts HTTP `POST` requests on `/api/{tenant}/{channel}` or `/api/{tenant}/{team}/{channel}`. Provide a small JSON body with `chatId`, `userId`, `text`, optional `threadId`, and an optional `metadata` map. The gateway injects `TenantCtx` (reading `GREENTIC_ENV`, the tenant/team from the path, and `x-greentic-user` if present), normalizes the payload into a `MessageEnvelope`, and publishes it to `greentic.messaging.ingress.{env}.{tenant}.{team}.{channel}`.
+1. `gsm-gateway` accepts HTTP `POST` requests on `/api/{tenant}/{channel}` or `/api/{tenant}/{team}/{channel}`. Provide a small JSON body with `chatId`, `userId`, `text`, optional `threadId`, and an optional `metadata` map. The gateway injects `TenantCtx` (reading `GREENTIC_ENV`, the tenant/team from the path, and `x-greentic-user` if present), normalizes the payload into a `MessageEnvelope`, and publishes it to `greentic.messaging.ingress.{env}.{tenant}.{team}.{channel}`.
 2. `messaging-egress` subscribes to `greentic.messaging.egress.{env}.>` (configurable via `MESSAGING_EGRESS_SUBJECT`) and routes each `OutMessage` through the translator/sender stack. The runtime reuses `DefaultResolver`, `TenantCtx`, and the existing provider senders so the gateways can be wired up to real Slack/Teams/Webex/Telegram/WebChat credentials without per-provider binaries.
 
 Run locally with:
 ```bash
-GREENTIC_ENV=dev NATS_URL=nats://127.0.0.1:4222 cargo run -p messaging-gateway
+GREENTIC_ENV=dev NATS_URL=nats://127.0.0.1:4222 cargo run -p gsm-gateway
 TENANT=acme NATS_URL=nats://127.0.0.1:4222 cargo run -p messaging-egress
 ```
 Point your test client at `http://localhost:8080/api/acme/default/webchat` with a JSON payload such as `{"chatId":"chat-1","userId":"user-42","text":"hi","metadata":{"channelData":{"env":"dev","tenant":"acme"}}}` and watch the gateway publish to NATS. The egress log will print the normalized `OutMessage` that would be sent to the downstream provider. This flow makes it easy to reason about the runtime without maintaining one binary per platform.

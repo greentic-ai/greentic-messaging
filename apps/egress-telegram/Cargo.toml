@@ -2,6 +2,11 @@
 name = "egress-telegram"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Greentic messaging package: egress telegram."
+readme = "../../README.md"
+repository = "https://github.com/greentic-ai/greentic-messaging"
+homepage = "https://github.com/greentic-ai/greentic-messaging"
 publish = false
 
 [features]

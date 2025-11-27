@@ -2,6 +2,11 @@
 name = "messaging-tenants"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+description = "Greentic messaging package: messaging tenants."
+readme = "../../README.md"
+repository = "https://github.com/greentic-ai/greentic-messaging"
+homepage = "https://github.com/greentic-ai/greentic-messaging"
 
 [dependencies]
 anyhow = { workspace = true }

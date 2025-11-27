@@ -61,7 +61,7 @@ pub async fn build_router_with_bus<B: BusClient + 'static>(
     config: GatewayConfig,
     adapters: AdapterRegistry,
     bus: Arc<B>,
-    worker: Option<Arc<dyn WorkerClient>>,
+    workers: std::collections::BTreeMap<String, Arc<dyn WorkerClient>>,
 ) -> Result<axum::Router> {
-    http::build_router_with_bus(config, adapters, bus, worker).await
+    http::build_router_with_bus(config, adapters, bus, workers).await
 }

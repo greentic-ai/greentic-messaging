@@ -25,8 +25,8 @@ pub struct GatewayState {
     pub bus: Arc<dyn BusClient>,
     pub config: GatewayConfig,
     pub adapters: AdapterRegistry,
-    pub worker: Option<Arc<dyn WorkerClient>>,
-    pub worker_config: Option<WorkerRoutingConfig>,
+    pub workers: BTreeMap<String, Arc<dyn WorkerClient>>,
+    pub worker_default: Option<WorkerRoutingConfig>,
     pub worker_egress_subject: Option<String>,
 }
 
@@ -117,19 +117,19 @@ pub async fn build_router_with_bus(
     config: GatewayConfig,
     adapters: AdapterRegistry,
     bus: Arc<dyn BusClient>,
-    worker: Option<Arc<dyn WorkerClient>>,
+    workers: BTreeMap<String, Arc<dyn WorkerClient>>,
 ) -> anyhow::Result<Router> {
     let state = Arc::new(GatewayState {
         bus,
-        worker_config: config.worker_routing.clone(),
+        worker_default: config.worker_routing.clone(),
         worker_egress_subject: config.worker_egress_subject.clone(),
         config,
         adapters,
-        worker,
+        workers,
     });
 
     if state.adapters.is_empty() {
-        warn!("messaging-gateway running with no adapter packs; legacy platform names only");
+        warn!("gsm-gateway running with no adapter packs; legacy platform names only");
     }
 
     let router = Router::new()
@@ -276,50 +276,61 @@ async fn publish(
             }
         })?;
 
-    if let (Some(worker), Some(worker_cfg), Some(egress_subject)) = (
-        state.worker.as_ref(),
-        state.worker_config.as_ref(),
-        state.worker_egress_subject.as_ref(),
-    ) {
-        let correlation = Some(msg_id.clone());
-        let worker_payload = envelope.payload.clone();
-        let channel_clone = envelope.clone();
-        let worker_result = forward_to_worker(
-            worker.as_ref(),
-            &channel_clone,
-            worker_payload,
-            worker_cfg,
-            correlation,
-        )
-        .await;
+    let selected_cfg = state
+        .config
+        .worker_routing
+        .clone()
+        .or_else(|| state.config.worker_routes.values().next().cloned())
+        .or_else(|| state.worker_default.clone());
 
-        match worker_result {
-            Ok(outbound) => {
-                let platform =
-                    Platform::from_str(envelope.channel_id.as_str()).unwrap_or(Platform::WebChat);
-                for out in outbound {
-                    let out_msg = outbound_to_out_message(
-                        out,
-                        platform.clone(),
-                        envelope.payload["thread_id"].as_str().map(str::to_string),
-                    );
-                    let out_value = to_value(&out_msg)
-                        .map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))?;
-                    if let Err(err) = state.bus.publish_value(egress_subject, out_value).await {
-                        tracing::error!(
-                            subject = %egress_subject,
-                            error = %err,
-                            "failed to publish worker response to egress"
+    if let (Some(cfg), Some(egress_subject)) = (selected_cfg, state.worker_egress_subject.as_ref())
+    {
+        let worker = state
+            .workers
+            .get(cfg.worker_id.as_str())
+            .or_else(|| state.workers.values().next());
+
+        if let Some(worker) = worker {
+            let correlation = Some(msg_id.clone());
+            let worker_payload = envelope.payload.clone();
+            let channel_clone = envelope.clone();
+            let worker_result = forward_to_worker(
+                worker.as_ref(),
+                &channel_clone,
+                worker_payload,
+                &cfg,
+                correlation,
+            )
+            .await;
+
+            match worker_result {
+                Ok(outbound) => {
+                    let platform = Platform::from_str(envelope.channel_id.as_str())
+                        .unwrap_or(Platform::WebChat);
+                    for out in outbound {
+                        let out_msg = outbound_to_out_message(
+                            out,
+                            platform.clone(),
+                            envelope.payload["thread_id"].as_str().map(str::to_string),
                         );
+                        let out_value = to_value(&out_msg)
+                            .map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))?;
+                        if let Err(err) = state.bus.publish_value(egress_subject, out_value).await {
+                            tracing::error!(
+                                subject = %egress_subject,
+                                error = %err,
+                                "failed to publish worker response to egress"
+                            );
+                        }
                     }
                 }
-            }
-            Err(err) => {
-                tracing::error!(
-                    error = %err,
-                    worker_id = %worker_cfg.worker_id,
-                    "failed to forward to repo worker"
-                );
+                Err(err) => {
+                    tracing::error!(
+                        error = %err,
+                        worker_id = %cfg.worker_id,
+                        "failed to forward to repo worker"
+                    );
+                }
             }
         }
     }

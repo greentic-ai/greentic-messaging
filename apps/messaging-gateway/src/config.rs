@@ -12,6 +12,7 @@ pub struct GatewayConfig {
     pub default_team: String,
     pub subject_prefix: String,
     pub worker_routing: Option<gsm_core::WorkerRoutingConfig>,
+    pub worker_routes: std::collections::BTreeMap<String, gsm_core::WorkerRoutingConfig>,
     pub worker_egress_subject: Option<String>,
 }
 
@@ -45,6 +46,7 @@ impl GatewayConfig {
                     None
                 }
             },
+            worker_routes: gsm_core::worker_routes_from_env(),
             worker_egress_subject: {
                 let base = std::env::var("MESSAGING_EGRESS_SUBJECT")
                     .unwrap_or_else(|_| format!("greentic.messaging.egress.{}", env.0.clone()));

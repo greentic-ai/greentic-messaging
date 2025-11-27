@@ -6,11 +6,11 @@ use gsm_core::{
     AdapterDescriptor, ChannelMessage, MessagingAdapterKind, OutKind, OutMessage, Platform,
     make_tenant_ctx,
 };
+use gsm_gateway::config::GatewayConfig;
+use gsm_gateway::http::{GatewayState, NormalizedRequest, handle_ingress};
+use gsm_gateway::load_adapter_registry;
 use messaging_egress::adapter_registry::AdapterLookup;
 use messaging_egress::process_message_internal;
-use messaging_gateway::config::GatewayConfig;
-use messaging_gateway::http::{GatewayState, NormalizedRequest, handle_ingress};
-use messaging_gateway::load_adapter_registry;
 
 fn test_gateway_config() -> GatewayConfig {
     GatewayConfig {
@@ -20,6 +20,7 @@ fn test_gateway_config() -> GatewayConfig {
         default_team: "default".into(),
         subject_prefix: gsm_bus::INGRESS_SUBJECT_PREFIX.to_string(),
         worker_routing: None,
+        worker_routes: std::collections::BTreeMap::new(),
         worker_egress_subject: None,
     }
 }
@@ -46,8 +47,8 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         bus: bus.clone(),
         config: test_gateway_config(),
         adapters,
-        worker: None,
-        worker_config: None,
+        workers: std::collections::BTreeMap::new(),
+        worker_default: None,
         worker_egress_subject: None,
     });
 

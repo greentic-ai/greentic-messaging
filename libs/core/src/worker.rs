@@ -83,6 +83,47 @@ impl WorkerRoutingConfig {
             max_retries,
         }
     }
+
+    pub fn from_route_spec(worker_id: &str, transport: WorkerTransport, target: &str) -> Self {
+        match transport {
+            WorkerTransport::Nats => WorkerRoutingConfig {
+                transport,
+                worker_id: worker_id.to_string(),
+                nats_subject: target.to_string(),
+                http_url: None,
+                max_retries: 2,
+            },
+            WorkerTransport::Http => WorkerRoutingConfig {
+                transport,
+                worker_id: worker_id.to_string(),
+                nats_subject: DEFAULT_WORKER_NATS_SUBJECT.to_string(),
+                http_url: Some(target.to_string()),
+                max_retries: 2,
+            },
+        }
+    }
+}
+
+/// Parse a simple worker route map from the `WORKER_ROUTES` env var.
+///
+/// Format: `worker_id=transport:target,worker_id2=http:https://example`
+/// transport: `nats` uses `target` as subject; `http` uses `target` as URL.
+pub fn worker_routes_from_env() -> BTreeMap<String, WorkerRoutingConfig> {
+    let raw = match std::env::var("WORKER_ROUTES") {
+        Ok(v) => v,
+        Err(_) => return BTreeMap::new(),
+    };
+    let mut map = BTreeMap::new();
+    for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some((id, spec)) = entry.split_once('=') {
+            if let Some((transport_raw, target)) = spec.split_once(':') {
+                let transport = WorkerTransport::from_env(Some(transport_raw.to_string()));
+                let cfg = WorkerRoutingConfig::from_route_spec(id.trim(), transport, target.trim());
+                map.insert(id.trim().to_string(), cfg);
+            }
+        }
+    }
+    map
 }
 
 /// Inbound request sent to the repo worker.

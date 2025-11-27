@@ -1,10 +1,15 @@
 [package]
-name = "messaging-gateway"
+name = "gsm-gateway"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+description = "Greentic messaging gateway: ingress normalization and worker forwarding."
+readme = "../../README.md"
+repository = "https://github.com/greentic-ai/greentic-messaging"
+homepage = "https://github.com/greentic-ai/greentic-messaging"
 
 [lib]
-name = "messaging_gateway"
+name = "gsm_gateway"
 path = "src/lib.rs"
 
 [dependencies]
