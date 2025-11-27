@@ -108,9 +108,6 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "std"] }
 tracing-test = "0.2"
-gsm-core = { version = "0.4", path = "libs/core" }
-gsm-telemetry = { version = "0.4", path = "libs/telemetry" }
-gsm-session = { version = "0.4", path = "libs/session" }
 security = { package = "greentic-messaging-security", version = "0.4", path = "libs/security" }
 unicode-segmentation = "1"
 urlencoding = "2"
@@ -119,6 +116,13 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 url = "2.5"
-gsm-translator = {version = "0.4" , path = "libs/translator"}
+gsm-core = { version = "0.4", path = "libs/core" }
+gsm-telemetry = { version = "0.4", path = "libs/telemetry" }
+gsm-session = { version = "0.4", path = "libs/session" }
+gsm-dlq = { version = "0.4", path = "libs/dlq" }
+gsm-backpressure = { version = "0.4", path = "libs/backpressure" }
+gsm-idempotency = { version = "0.4", path = "libs/idempotency" }
+gsm-translator = { version = "0.4", path = "libs/translator" }
 gsm-bus = { path = "crates/gsm-bus", version = "0.4" }
 gsm-gateway = { path = "apps/messaging-gateway", version = "0.4" }
+gsm-testutil = { version = "0.4", path = "libs/testutil" }

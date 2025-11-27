@@ -27,9 +27,9 @@ regex = { workspace = true }
 uuid = { workspace = true }
 reqwest = { workspace = true }
 time = { workspace = true }
-gsm-core = { path = "../../libs/core" }
-gsm-session = { path = "../../libs/session" }
-gsm-dlq = { path = "../../libs/dlq" }
+gsm-core = { workspace = true }
+gsm-session = { workspace = true }
+gsm-dlq = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
 gsm-telemetry = { workspace = true }
