@@ -71,20 +71,12 @@ fn outbound_to_out_message(
     thread_id: Option<String>,
 ) -> gsm_core::OutMessage {
     let mut meta = std::collections::BTreeMap::new();
-    if let Some(obj) = outbound.meta.as_object() {
-        for (k, v) in obj {
-            meta.insert(k.clone(), v.clone());
-        }
-    }
-    if let Some(kind) = outbound
+    let kind = outbound
         .meta
         .as_object()
         .and_then(|m| m.get("kind"))
-        .cloned()
-    {
-        meta.insert("worker_kind".into(), kind);
-    }
-
+        .and_then(|v| v.as_str())
+        .unwrap_or("text");
     let text = outbound
         .body
         .get("text")
@@ -92,6 +84,12 @@ fn outbound_to_out_message(
         .map(|s| s.to_string())
         .or_else(|| outbound.body.as_str().map(|s| s.to_string()))
         .or_else(|| Some(outbound.body.to_string()));
+    if let Some(obj) = outbound.meta.as_object() {
+        for (k, v) in obj {
+            meta.insert(k.clone(), v.clone());
+        }
+    }
+    meta.insert("worker_payload".into(), outbound.body.clone());
 
     gsm_core::OutMessage {
         ctx: outbound.tenant.clone(),
@@ -99,8 +97,16 @@ fn outbound_to_out_message(
         platform,
         chat_id: outbound.session_id.clone(),
         thread_id,
-        kind: gsm_core::OutKind::Text,
-        text,
+        kind: if kind.eq_ignore_ascii_case("card") {
+            gsm_core::OutKind::Card
+        } else {
+            gsm_core::OutKind::Text
+        },
+        text: if kind.eq_ignore_ascii_case("card") {
+            None
+        } else {
+            text
+        },
         message_card: None,
         adaptive_card: None,
         meta,

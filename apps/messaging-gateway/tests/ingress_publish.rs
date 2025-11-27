@@ -72,6 +72,7 @@ async fn forwards_to_worker_when_configured() {
         version: req.version.clone(),
         tenant: req.tenant.clone(),
         worker_id: req.worker_id.clone(),
+        metadata: Default::default(),
         correlation_id: req.correlation_id.clone(),
         session_id: req.session_id.clone(),
         thread_id: req.thread_id.clone(),

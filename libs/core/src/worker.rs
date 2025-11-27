@@ -2,6 +2,7 @@ use crate::{ChannelMessage, OutboundEnvelope, TenantCtx};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -90,6 +91,8 @@ pub struct WorkerRequest {
     pub version: String,
     pub tenant: TenantCtx,
     pub worker_id: String,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,11 +111,13 @@ impl WorkerRequest {
         session_id: Option<String>,
         thread_id: Option<String>,
         correlation_id: Option<String>,
+        metadata: BTreeMap<String, Value>,
     ) -> Self {
         Self {
             version: WORKER_ENVELOPE_VERSION.to_string(),
             tenant,
             worker_id,
+            metadata,
             correlation_id,
             session_id,
             thread_id,
@@ -129,6 +134,14 @@ impl WorkerRequest {
         config: &WorkerRoutingConfig,
         correlation_id: Option<String>,
     ) -> Self {
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            "channel_id".into(),
+            Value::String(channel.channel_id.clone()),
+        );
+        if let Some(route) = &channel.route {
+            metadata.insert("route".into(), Value::String(route.clone()));
+        }
         Self::new(
             channel.tenant.clone(),
             config.worker_id.clone(),
@@ -136,6 +149,7 @@ impl WorkerRequest {
             Some(channel.session_id.clone()),
             None,
             correlation_id,
+            metadata,
         )
     }
 }
@@ -153,6 +167,8 @@ pub struct WorkerResponse {
     pub version: String,
     pub tenant: TenantCtx,
     pub worker_id: String,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -170,6 +186,7 @@ impl WorkerResponse {
             version: request.version.clone(),
             tenant: request.tenant.clone(),
             worker_id: request.worker_id.clone(),
+            metadata: request.metadata.clone(),
             correlation_id: request.correlation_id.clone(),
             session_id: request.session_id.clone(),
             thread_id: request.thread_id.clone(),
@@ -199,6 +216,9 @@ pub fn worker_messages_to_outbound(
                 meta.insert("correlation_id".into(), Value::String(corr.clone()));
             }
             meta.insert("kind".into(), Value::String(msg.kind.clone()));
+            for (k, v) in &response.metadata {
+                meta.insert(k.clone(), v.clone());
+            }
 
             OutboundEnvelope {
                 tenant: channel.tenant.clone(),
@@ -419,19 +439,13 @@ mod tests {
             assert_eq!(req.worker_id, DEFAULT_WORKER_ID);
             assert_eq!(req.session_id.as_deref(), Some("sess-1"));
             assert_eq!(req.correlation_id.as_deref(), Some("corr-1"));
-            WorkerResponse {
-                version: req.version.clone(),
-                tenant: req.tenant.clone(),
-                worker_id: req.worker_id.clone(),
-                correlation_id: req.correlation_id.clone(),
-                session_id: req.session_id.clone(),
-                thread_id: req.thread_id.clone(),
-                messages: vec![WorkerMessage {
-                    kind: "text".into(),
-                    payload: serde_json::json!({"reply": "pong"}),
-                }],
-                timestamp_utc: req.timestamp_utc.clone(),
-            }
+            let mut resp = WorkerResponse::empty_for(&req);
+            resp.metadata = req.metadata.clone();
+            resp.messages = vec![WorkerMessage {
+                kind: "text".into(),
+                payload: serde_json::json!({"reply": "pong"}),
+            }];
+            resp
         });
 
         let outbound = forward_to_worker(&client, &channel, payload, &config, corr)
