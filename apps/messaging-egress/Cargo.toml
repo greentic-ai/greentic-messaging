@@ -24,12 +24,12 @@ async-trait = { workspace = true }
 axum = { workspace = true, optional = true }
 thiserror = { workspace = true }
 gsm-bus = { workspace = true }
-gsm-gateway = { path = "../messaging-gateway" }
+gsm-gateway = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true, features = ["macros", "json"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde_json = { workspace = true }
 futures = { workspace = true }
-gsm-gateway = { path = "../messaging-gateway" }
+gsm-gateway = { workspace = true }
 gsm-bus = { workspace = true }

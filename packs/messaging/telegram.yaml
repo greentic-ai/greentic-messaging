@@ -1,4 +1,5 @@
 id: greentic-messaging-telegram
+packVersion: 1
 version: "1.0.0"
 messaging:
   adapters:

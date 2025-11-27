@@ -121,3 +121,4 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 url = "2.5"
 gsm-translator = {version = "0.4" , path = "libs/translator"}
 gsm-bus = { path = "crates/gsm-bus", version = "0.4" }
+gsm-gateway = { path = "apps/messaging-gateway", version = "0.4" }

@@ -1679,9 +1679,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-pack"
-version = "0.4.4"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "275fb0b35453211a1c64e0903c3b948a3b0e48ba611dc6302e2373e2274bb1fe"
+checksum = "6bc4ed941fc93f923113f91c992d37a6738fac9927f65087f13a7a6b77af28b6"
 dependencies = [
  "anyhow",
  "base64",
@@ -1808,9 +1808,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be51e96c56b3d53286a6ebb436a70c199bca19946782aca2ea8d9b7ca9bd5608"
+checksum = "cf697b153b042da7ecc1666de13b853bfa73c803bde51976b77f90e12cfd4a5e"
 dependencies = [
  "chrono",
  "fnv",
@@ -1831,9 +1831,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types-macros"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "159ac89de01687b5342b88ed43794698d539ef22cb1dfcf804b869bdd74817d5"
+checksum = "09e6edf5bfaf4a24c014a8dc0617175edac53baf18cf04857d5df2e5092d9efa"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-gateway"
-version = "0.1.0"
+version = "0.4.10"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2972,9 +2972,9 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.44.1"
+version = "1.44.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8732d3774162a0851e3f2b150eb98f31a9885dd75985099421d393385a01dfd"
+checksum = "dfd3461e1f00283105bdf97c3a1aca2b3f8456eb809a96938d2b190cd4dbc6d2"
 dependencies = [
  "console",
  "once_cell",
@@ -3061,9 +3061,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.37.1"
+version = "0.37.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae66e2951b8570591298ab528f9f457bcc38cdc24ee927cece9310248aa32a74"
+checksum = "6c33d245afd3bbc45407ae9a059f3d0251d29db64d44f20934f4f8b776172df2"
 dependencies = [
  "ahash",
  "bytecount",
@@ -3349,9 +3349,9 @@ dependencies = [
 
 [[package]]
 name = "moxcms"
-version = "0.7.9"
+version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fbdd3d7436f8b5e892b8b7ea114271ff0fa00bc5acae845d53b07d498616ef6"
+checksum = "80986bbbcf925ebd3be54c26613d861255284584501595cf418320c078945608"
 dependencies = [
  "num-traits",
  "pxfm",
@@ -3688,15 +3688,15 @@ dependencies = [
 
 [[package]]
 name = "pack_component_template"
-version = "0.4.4"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9990e94d7a032a4e54df06fa3f8d165c97766cb427ad2cb721b34f95baa484b4"
+checksum = "8e73c75c6aaf517cfd8e39a93c60fd6c317194c2ca59fd47bb834c8fa66b219c"
 
 [[package]]
 name = "packc"
-version = "0.4.4"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e160ec7eeaf7a392af0d4b77effdc7fc3615a345fea2c7b3e4239c083c05eea"
+checksum = "41d5e3e464d0006fca09fc38922739bf6ca30da2db6fbbe032f68992f8c9a47d"
 dependencies = [
  "anyhow",
  "base64",
@@ -4024,9 +4024,9 @@ dependencies = [
 
 [[package]]
 name = "pxfm"
-version = "0.1.25"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3cbdf373972bf78df4d3b518d07003938e2c7d1fb5891e55f9cb6df57009d84"
+checksum = "b3502d6155304a4173a5f2c34b52b7ed0dd085890326cb50fd625fdf39e86b3b"
 dependencies = [
  "num-traits",
 ]
@@ -4269,9 +4269,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.37.1"
+version = "0.37.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1efd6958dfa348f532982eaa367ffbf78e077bc8f1f7a0173778914ec647437"
+checksum = "4c35d80755d8089d2dea219b9e4a8e88c19328000c8bdc6f9447ad3d0b65f68a"
 dependencies = [
  "ahash",
  "fluent-uri",
