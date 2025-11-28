@@ -70,15 +70,18 @@ async fn forwards_multiple_worker_messages_including_card() {
     config.worker_egress_subject = Some("greentic.messaging.egress.dev.repo-worker".into());
     let worker_cfg = gsm_core::WorkerRoutingConfig::default();
     let worker = gsm_core::InMemoryWorkerClient::new(|req| {
-        let mut resp = gsm_core::WorkerResponse::empty_for(&req);
+        let mut resp = gsm_core::empty_worker_response_for(&req);
         resp.messages = vec![
             gsm_core::WorkerMessage {
                 kind: "text".into(),
-                payload: serde_json::json!({ "text": "one" }),
+                payload_json: serde_json::to_string(&serde_json::json!({ "text": "one" })).unwrap(),
             },
             gsm_core::WorkerMessage {
                 kind: "card".into(),
-                payload: serde_json::json!({ "card": { "title": "two" } }),
+                payload_json: serde_json::to_string(&serde_json::json!({
+                    "card": { "title": "two" }
+                }))
+                .unwrap(),
             },
         ];
         resp
@@ -204,13 +207,12 @@ async fn forwards_to_worker_when_configured() {
         version: req.version.clone(),
         tenant: req.tenant.clone(),
         worker_id: req.worker_id.clone(),
-        metadata: Default::default(),
         correlation_id: req.correlation_id.clone(),
         session_id: req.session_id.clone(),
         thread_id: req.thread_id.clone(),
         messages: vec![gsm_core::WorkerMessage {
             kind: "text".into(),
-            payload: serde_json::json!({ "text": "ok" }),
+            payload_json: serde_json::to_string(&serde_json::json!({ "text": "ok" })).unwrap(),
         }],
         timestamp_utc: req.timestamp_utc.clone(),
     });

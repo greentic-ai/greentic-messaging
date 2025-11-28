@@ -50,6 +50,7 @@ reference.
 
 ## Design Docs
 
+- [Generic worker envelopes](docs/repo_worker_envelopes.md)
 - [Telemetry, secrets, and session wiring](docs/DESIGN-telemetry-secrets.md)
 
 ## Releases & Publishing

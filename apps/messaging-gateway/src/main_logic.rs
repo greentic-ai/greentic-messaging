@@ -1,6 +1,6 @@
 use crate::config::GatewayConfig;
 use crate::{NatsBusClient, build_router_with_bus, load_adapter_registry};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use axum::serve;
 use gsm_core::{
     HttpWorkerClient, NatsWorkerClient, WorkerClient, WorkerRoutingConfig, WorkerTransport,
@@ -37,8 +37,11 @@ pub async fn run(config: GatewayConfig) -> Result<()> {
                 let url = routing
                     .http_url
                     .as_ref()
+                    .filter(|u| !u.is_empty())
                     .cloned()
-                    .unwrap_or_else(|| "http://localhost:8081/worker".into());
+                    .ok_or_else(|| {
+                        anyhow!("REPO_WORKER_HTTP_URL must be set when REPO_WORKER_TRANSPORT=http")
+                    })?;
                 let client = HttpWorkerClient::new(url, routing.max_retries);
                 std::sync::Arc::new(client)
             }
