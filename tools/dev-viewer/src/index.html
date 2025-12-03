@@ -193,9 +193,14 @@
       async function bootstrap() {
         try {
           fixtures = await fetchJSON('/fixtures');
-          fixtureSelect.innerHTML = fixtures
-            .map((name) => `<option value="${name}">${name}</option>`)
-            .join('');
+          fixtureSelect.replaceChildren(
+            ...fixtures.map((name) => {
+              const opt = document.createElement('option');
+              opt.value = name;
+              opt.textContent = name;
+              return opt;
+            }),
+          );
           if (fixtures.length) {
             await loadFixture(fixtures[0]);
           }
@@ -241,36 +246,59 @@
       }
 
       function renderPlatforms(map) {
-        platformGrid.innerHTML = '';
+        platformGrid.replaceChildren();
         Object.entries(map).forEach(([name, details]) => {
           const card = document.createElement('div');
           card.className = 'card';
-          const warnings = (details.warnings || []).map((w) => `<li>${w}</li>`).join('');
-          card.innerHTML = `
-            <h3>${name}
-              <span class="badge">${details.tier}</span>
-              ${details.downgraded ? '<span class="badge" style="background:#fef3c7;color:#92400e;">DOWNGRADED</span>' : ''}
-            </h3>
-            <div class="meta">
-              <span>target: ${details.target_tier}</span>
-              <span>modal: ${details.used_modal}</span>
-              <span>warnings: ${details.warnings.length}</span>
-              <span>limit: ${details.limit_exceeded}</span>
-              <span>sanitized: ${details.sanitized_count}</span>
-              <span>urls blocked: ${details.url_blocked_count}</span>
-            </div>
-            ${warnings ? `<ul>${warnings}</ul>` : ''}
-            <pre>${escapeHtml(JSON.stringify(details.payload, null, 2))}</pre>
-          `;
+
+          const header = document.createElement('h3');
+          header.textContent = name;
+          const tierBadge = document.createElement('span');
+          tierBadge.className = 'badge';
+          tierBadge.textContent = details.tier;
+          header.appendChild(tierBadge);
+          if (details.downgraded) {
+            const downgraded = document.createElement('span');
+            downgraded.className = 'badge';
+            downgraded.style.background = '#fef3c7';
+            downgraded.style.color = '#92400e';
+            downgraded.textContent = 'DOWNGRADED';
+            header.appendChild(downgraded);
+          }
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          [
+            ['target', details.target_tier],
+            ['modal', details.used_modal],
+            ['warnings', details.warnings.length],
+            ['limit', details.limit_exceeded],
+            ['sanitized', details.sanitized_count],
+            ['urls blocked', details.url_blocked_count],
+          ].forEach(([label, value]) => {
+            const span = document.createElement('span');
+            span.textContent = `${label}: ${value}`;
+            meta.appendChild(span);
+          });
+
+          const warningsList = document.createElement('ul');
+          (details.warnings || []).forEach((w) => {
+            const li = document.createElement('li');
+            li.textContent = w;
+            warningsList.appendChild(li);
+          });
+
+          const pre = document.createElement('pre');
+          pre.textContent = JSON.stringify(details.payload, null, 2);
+
+          card.appendChild(header);
+          card.appendChild(meta);
+          if (warningsList.childElementCount > 0) {
+            card.appendChild(warningsList);
+          }
+          card.appendChild(pre);
           platformGrid.appendChild(card);
         });
-      }
-
-      function escapeHtml(str) {
-        return str
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
       }
 
       async function fetchJSON(url, init) {

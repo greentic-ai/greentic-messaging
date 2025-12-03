@@ -9,21 +9,29 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "botframework-webchat": "^4.17.2",
+    "botframework-webchat": "^4.18.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@vitejs/plugin-react": "^5.0.4",
     "browserify-zlib": "^0.2.0",
     "path-browserify": "^1.0.1",
     "process": "^0.11.10",
     "stream-browserify": "^3.0.0",
     "typescript": "^5.5.4",
     "util": "^0.12.5",
-    "vite": "^5.4.1",
+    "vite": "^7.2.6",
     "vite-plugin-node-polyfills": "^0.24.0"
+  },
+  "overrides": {
+    "@babel/runtime": "^7.24.8",
+    "@babel/runtime-corejs3": "^7.24.8",
+    "inflight": "^1.0.6",
+    "@angular/common": "^20.3.14",
+    "@angular/core": "^20.3.14",
+    "esbuild": "^0.27.0"
   }
 }

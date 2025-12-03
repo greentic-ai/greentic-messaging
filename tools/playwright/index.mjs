@@ -22,21 +22,22 @@ function parseArgs(argv) {
 }
 
 async function tryLogin(page, email, password) {
+  // Selector hints only; no credentials are embedded in the codebase.
   const attempts = [
     {
-      email: 'input[name="email"]',
-      password: 'input[name="password"]',
+      emailSelector: 'input[name="email"]',
+      passwordSelector: 'input[name="password"]',
     },
     {
-      email: 'input[type="email"]',
-      password: 'input[type="password"]',
+      emailSelector: 'input[type="email"]',
+      passwordSelector: 'input[type="password"]',
     },
   ];
 
   for (const attempt of attempts) {
     try {
-      const emailField = await page.$(attempt.email);
-      const passwordField = await page.$(attempt.password);
+      const emailField = await page.$(attempt.emailSelector);
+      const passwordField = await page.$(attempt.passwordSelector);
       if (!emailField || !passwordField) {
         continue;
       }
