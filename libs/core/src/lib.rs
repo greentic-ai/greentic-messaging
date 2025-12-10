@@ -18,6 +18,7 @@ pub mod interfaces;
 pub mod messaging_card;
 pub mod oauth;
 pub mod outbound;
+pub mod path_safety;
 pub mod platforms;
 pub mod prelude;
 pub mod provider;

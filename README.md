@@ -370,7 +370,6 @@ sequenceDiagram
   ```
 - Rotate secrets per tenant/app and keep the TTL short so deeplinks remain ephemeral; receivers should verify the JWT before honoring the action.
 
-
 ## Telegram Integration
 
 1. Create a Telegram bot via BotFather and obtain the bot token; configure the webhook secret if desired.

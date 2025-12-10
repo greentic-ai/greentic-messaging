@@ -9,5 +9,3 @@ description = "Session store abstractions for Greentic messaging surfaces."
 anyhow = { workspace = true }
 greentic-session = { workspace = true }
 greentic-types = { workspace = true }
-redis = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt"] }

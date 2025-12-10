@@ -11,8 +11,8 @@ and documentation only—no Rust crate is built from here.
 - **Standalone Direct Line** (`directline_standalone`) — runs a self-contained
   Direct Line server inside Greentic with no Azure dependency. This is the
   default for local demos and the WC2–WC7 prompts.
-- **Persistence** (`store_sqlite`, `store_redis`) — optional features that keep
-  conversations across restarts; otherwise an in-memory store is used.
+- **Persistence** (`store_sqlite`) — optional feature that keeps conversations
+  across restarts; otherwise an in-memory store is used.
 
 Additional `/webchat/...` routes (OAuth, proactive admin API, health checks)
 remain available in both modes.
@@ -54,9 +54,8 @@ let app = standalone_router(Arc::clone(&state));
 cargo test -p gsm-core --features directline_standalone
 ```
 
-Add `store_sqlite` and/or `store_redis` to exercise the persistence backends.
-`cargo clippy -p gsm-core --all-features` ensures the optional code paths stay
-clean.
+Add `store_sqlite` to exercise the persistence backend. `cargo clippy -p
+gsm-core --all-features` ensures the optional code paths stay clean.
 
 The demo app in `examples/webchat-demo/` points at the standalone endpoints. See
 its README for usage.

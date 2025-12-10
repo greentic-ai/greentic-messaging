@@ -25,10 +25,12 @@ pub async fn run() -> Result<()> {
     let mut pack_paths =
         default_adapter_pack_paths(PathBuf::from(&config.packs_root).as_path(), &default_cfg);
     pack_paths.extend(adapter_pack_paths_from_env());
-    let registry = AdapterRegistry::load_from_paths(&pack_paths).unwrap_or_else(|err| {
-        warn!(error = %err, "failed to load adapter packs; proceeding without registry");
-        AdapterRegistry::default()
-    });
+    let packs_root = PathBuf::from(&config.packs_root);
+    let registry = AdapterRegistry::load_from_paths(packs_root.as_path(), &pack_paths)
+        .unwrap_or_else(|err| {
+            warn!(error = %err, "failed to load adapter packs; proceeding without registry");
+            AdapterRegistry::default()
+        });
     let adapters = AdapterLookup::new(&registry);
     let bus = NatsBusClient::new(client.clone());
 

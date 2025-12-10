@@ -172,11 +172,6 @@ mod sqlite;
 #[cfg(feature = "store_sqlite")]
 pub use sqlite::sqlite_store;
 
-#[cfg(feature = "store_redis")]
-mod redis;
-#[cfg(feature = "store_redis")]
-pub use redis::redis_store;
-
 #[derive(Clone)]
 pub struct InMemoryConversationStore {
     inner: Arc<RwLock<HashMap<String, ConversationRecord>>>,

@@ -31,8 +31,6 @@ pub use bus::NatsBus;
 pub use bus::{EventBus, NoopBus, SharedBus, Subject};
 pub use circuit::{CircuitBreaker, CircuitLabels, CircuitSettings};
 pub use config::{Config, OAuthProviderConfig, SigningKeys};
-#[cfg(feature = "store_redis")]
-pub use conversation::redis_store;
 #[cfg(feature = "store_sqlite")]
 pub use conversation::sqlite_store;
 pub use conversation::{

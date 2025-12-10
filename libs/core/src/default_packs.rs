@@ -3,6 +3,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::path_safety::normalize_under_root;
+
 /// Configuration controlling which default messaging adapter packs to load.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefaultAdapterPacksConfig {
@@ -121,7 +123,7 @@ pub fn load_default_adapter_registry(
     config: &DefaultAdapterPacksConfig,
 ) -> anyhow::Result<crate::AdapterRegistry> {
     let paths = default_adapter_pack_paths(packs_root, config);
-    crate::adapter_registry::load_adapters_from_pack_files(&paths)
+    crate::adapter_registry::load_adapters_from_pack_files(packs_root, &paths)
         .map_err(|err| err.context("failed to load default messaging adapter packs"))
 }
 
@@ -156,11 +158,12 @@ pub fn load_default_adapter_packs_from(
     let resolved = resolve_default_adapter_packs(config);
     let mut out = Vec::with_capacity(resolved.len());
     for pack in resolved {
-        let path = packs_root.join("messaging").join(pack.filename);
-        let raw = fs::read_to_string(&path)?;
+        let relative = Path::new("messaging").join(pack.filename);
+        let safe = normalize_under_root(packs_root, &relative).map_err(std::io::Error::other)?;
+        let raw = fs::read_to_string(&safe)?;
         out.push(LoadedPack {
             id: pack.id.to_string(),
-            path,
+            path: safe,
             raw,
         });
     }

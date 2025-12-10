@@ -36,8 +36,8 @@ checks) remain available in both modes.
 - Tokens embed `{ ctx: { env, tenant, team? } }` along with an optional
   conversation binding (`conv`). Conversation access checks compare the JWT
   context with the locally stored `TenantCtx`.
-- Persistence options: enable `store_sqlite` or `store_redis` to keep
-  conversations across restarts; otherwise an in-memory store is used.
+- Persistence option: enable `store_sqlite` to keep conversations across
+  restarts; otherwise an in-memory store is used.
 - Backpressure: per-conversation quotas cap backlog size. The server returns
   HTTP 429 once the quota is exceeded.
 

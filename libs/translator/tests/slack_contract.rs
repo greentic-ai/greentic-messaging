@@ -19,14 +19,14 @@ fn base_out_message() -> OutMessage {
 }
 
 fn load_card_fixture(name: &str) -> MessageCard {
-    let path = format!("../cards/samples/{name}.json");
+    let path = format!("libs/cards/samples/{name}.json");
     let value = load_card!(&path);
     serde_json::from_value(value).expect("card fixture to deserialize")
 }
 
 #[test]
 fn slack_card_contract() {
-    const SCHEMA: &str = "../cards/schema/slack-blockkit.schema.json";
+    const SCHEMA: &str = "libs/cards/schema/slack-blockkit.schema.json";
     let cases = ["hello", "weather", "approval", "error"];
 
     for case in cases {

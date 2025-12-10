@@ -23,7 +23,7 @@ pub fn load_adapter_registry() -> AdapterRegistry {
     let extra_paths = adapter_pack_paths_from_env();
     let mut pack_paths = default_adapter_pack_paths(packs_root.as_path(), &default_packs_cfg);
     pack_paths.extend(extra_paths.clone());
-    match load_adapters_from_pack_files(&pack_paths) {
+    match load_adapters_from_pack_files(packs_root.as_path(), &pack_paths) {
         Ok(registry) => {
             let names: Vec<_> = registry.all().into_iter().map(|a| a.name).collect();
             if names.is_empty() {

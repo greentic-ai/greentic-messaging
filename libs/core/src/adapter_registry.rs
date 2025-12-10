@@ -3,9 +3,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::Platform;
+use crate::path_safety::normalize_under_root;
 use anyhow::{Context, Result, bail};
-use greentic_pack::messaging::{MessagingAdapterCapabilities, MessagingAdapterKind};
-use packc::manifest::PackSpec;
+use greentic_pack::messaging::{
+    MessagingAdapterCapabilities, MessagingAdapterKind, MessagingSection,
+};
+
+#[derive(Debug, serde::Deserialize)]
+struct PackSpec {
+    id: String,
+    version: String,
+    #[serde(default)]
+    messaging: Option<MessagingSection>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct AdapterDescriptor {
@@ -49,8 +59,8 @@ pub struct AdapterRegistry {
 }
 
 impl AdapterRegistry {
-    pub fn load_from_paths(paths: &[PathBuf]) -> Result<Self> {
-        load_adapters_from_pack_files(paths)
+    pub fn load_from_paths(root: &Path, paths: &[PathBuf]) -> Result<Self> {
+        load_adapters_from_pack_files(root, paths)
     }
 
     pub fn register(&mut self, adapter: AdapterDescriptor) -> Result<()> {
@@ -86,10 +96,13 @@ impl AdapterRegistry {
     }
 }
 
-pub fn load_adapters_from_pack_files(paths: &[PathBuf]) -> Result<AdapterRegistry> {
+pub fn load_adapters_from_pack_files(root: &Path, paths: &[PathBuf]) -> Result<AdapterRegistry> {
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("failed to canonicalize packs root {}", root.display()))?;
     let mut registry = AdapterRegistry::default();
     for path in paths {
-        let adapters = adapters_from_pack_file(path)
+        let adapters = adapters_from_pack_file(&root, path)
             .with_context(|| format!("failed to load pack {}", path.display()))?;
         for adapter in adapters {
             registry
@@ -100,13 +113,28 @@ pub fn load_adapters_from_pack_files(paths: &[PathBuf]) -> Result<AdapterRegistr
     Ok(registry)
 }
 
-pub fn adapters_from_pack_file(path: &Path) -> Result<Vec<AdapterDescriptor>> {
-    let raw = fs::read_to_string(path)
-        .with_context(|| format!("failed to read pack file {}", path.display()))?;
+pub fn adapters_from_pack_file(root: &Path, path: &Path) -> Result<Vec<AdapterDescriptor>> {
+    let safe_path = if path.is_absolute() {
+        let canonical_path = path
+            .canonicalize()
+            .with_context(|| format!("failed to canonicalize {}", path.display()))?;
+        if !canonical_path.starts_with(root) {
+            bail!(
+                "pack path {} must be under {}",
+                canonical_path.display(),
+                root.display()
+            );
+        }
+        canonical_path
+    } else {
+        normalize_under_root(root, path)?
+    };
+    let raw = fs::read_to_string(&safe_path)
+        .with_context(|| format!("failed to read pack file {}", safe_path.display()))?;
     let spec: PackSpec = serde_yaml_bw::from_str(&raw)
-        .with_context(|| format!("{} is not a valid pack spec", path.display()))?;
+        .with_context(|| format!("{} is not a valid pack spec", safe_path.display()))?;
     validate_pack_spec(&spec)?;
-    extract_adapters(&spec, Some(path))
+    extract_adapters(&spec, Some(&safe_path))
 }
 
 fn validate_pack_spec(spec: &PackSpec) -> Result<()> {
@@ -176,12 +204,17 @@ pub fn infer_platform_from_adapter_name(name: &str) -> Option<Platform> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn loads_slack_pack() {
-        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/messaging/slack.yaml");
-        let registry = load_adapters_from_pack_files(std::slice::from_ref(&base)).unwrap();
+        let packs_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs");
+        let base = packs_root
+            .join("messaging/slack.yaml")
+            .canonicalize()
+            .expect("canonicalize pack path");
+        let registry =
+            load_adapters_from_pack_files(packs_root.as_path(), std::slice::from_ref(&base))
+                .unwrap();
         let adapter = registry.get("slack-main").expect("adapter registered");
         assert_eq!(adapter.pack_id, "greentic-messaging-slack");
         assert_eq!(adapter.kind, MessagingAdapterKind::IngressEgress);
@@ -195,11 +228,18 @@ mod tests {
 
     #[test]
     fn by_kind_filters() {
+        let packs_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs");
         let paths = vec![
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/messaging/slack.yaml"),
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/messaging/telegram.yaml"),
+            packs_root
+                .join("messaging/slack.yaml")
+                .canonicalize()
+                .expect("canonicalize pack path"),
+            packs_root
+                .join("messaging/telegram.yaml")
+                .canonicalize()
+                .expect("canonicalize pack path"),
         ];
-        let registry = load_adapters_from_pack_files(&paths).unwrap();
+        let registry = load_adapters_from_pack_files(packs_root.as_path(), &paths).unwrap();
         let ingress = registry.by_kind(MessagingAdapterKind::Ingress);
         assert!(ingress.iter().any(|a| a.name == "telegram-ingress"));
         let egress = registry.by_kind(MessagingAdapterKind::Egress);

@@ -8,6 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+mod path_safety;
+
 #[cfg(feature = "e2e")]
 mod assertions;
 #[cfg(feature = "e2e")]
@@ -16,6 +18,15 @@ pub mod e2e;
 pub mod secrets;
 #[cfg(feature = "visual")]
 pub mod visual;
+
+fn workspace_root() -> PathBuf {
+    // workspace root is two levels up from this crate's manifest (libs/testutil)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .to_path_buf()
+}
 
 #[derive(Debug, Clone)]
 pub struct TestConfig {
@@ -81,10 +92,12 @@ fn load_env_credentials(key: &str) -> Result<Option<Value>> {
 
     let path_var = format!("MESSAGING_{key}_CREDENTIALS_PATH");
     if let Ok(path) = std::env::var(&path_var) {
-        let content =
-            fs::read_to_string(&path).with_context(|| format!("failed to read {path}"))?;
-        let json =
-            serde_json::from_str(&content).with_context(|| format!("failed to parse {path}"))?;
+        let credentials_path = PathBuf::from(path);
+        let safe_path = absolute_path(credentials_path)?;
+        let content = fs::read_to_string(&safe_path)
+            .with_context(|| format!("failed to read {}", safe_path.display()))?;
+        let json = serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse {}", safe_path.display()))?;
         return Ok(Some(json));
     }
 
@@ -113,12 +126,15 @@ fn load_secret_credentials(
             Err(_) => return Ok(None),
         };
 
-    let file = Path::new(&root)
-        .join(env)
+    let root = PathBuf::from(root)
+        .canonicalize()
+        .with_context(|| "failed to canonicalize secrets root")?;
+    let relative = Path::new(env)
         .join(tenant)
         .join(team)
         .join("messaging")
         .join(format!("{platform}-{team}-credentials.json"));
+    let file = path_safety::normalize_under_root(&root, &relative)?;
 
     if !file.exists() {
         return Ok(None);
@@ -172,23 +188,23 @@ fn absolute_path<P>(path: P) -> Result<PathBuf>
 where
     P: AsRef<Path>,
 {
+    let root = workspace_root();
     let relative = path.as_ref();
     if relative.is_absolute() {
-        return Ok(relative.to_path_buf());
-    }
-
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut current = Some(manifest_dir.to_path_buf());
-    while let Some(dir) = current {
-        let candidate = dir.join(relative);
-        if candidate.exists() {
-            let canonical = candidate.canonicalize().unwrap_or(candidate);
-            return Ok(canonical);
+        let canonical = relative
+            .canonicalize()
+            .with_context(|| format!("failed to canonicalize {}", relative.display()))?;
+        if !canonical.starts_with(&root) {
+            anyhow::bail!(
+                "absolute path escapes workspace root ({}): {}",
+                root.display(),
+                canonical.display()
+            );
         }
-        current = dir.parent().map(|p| p.to_path_buf());
+        return Ok(canonical);
     }
 
-    Ok(manifest_dir.join(relative))
+    path_safety::normalize_under_root(&root, relative)
 }
 
 pub fn assert_matches_schema<P>(schema_path: P, value: &Value) -> Result<()>
