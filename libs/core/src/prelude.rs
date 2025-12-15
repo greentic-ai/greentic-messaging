@@ -4,25 +4,35 @@ pub use greentic_types::{
 };
 pub use secrets_core::DefaultResolver;
 use secrets_core::{embedded::SecretsError, errors::Error as CoreError};
+pub use greentic_secrets::spec::{Scope as SecretScope, SecretUri};
 
 #[derive(Clone, Debug)]
-pub struct SecretPath(pub String);
+pub struct SecretPath {
+    uri: SecretUri,
+    repr: String,
+}
 
 impl SecretPath {
+    pub fn new(uri: SecretUri) -> Self {
+        let repr = uri.to_string();
+        Self { uri, repr }
+    }
+
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.repr
     }
 
     pub fn to_uri(&self) -> String {
-        let trimmed = self.0.trim_start_matches('/');
-        format!("secret://{trimmed}")
+        self.repr.clone()
+    }
+
+    pub fn uri(&self) -> &SecretUri {
+        &self.uri
     }
 }
 
 #[async_trait]
 pub trait SecretsResolver: Send + Sync {
-    // TODO(greentic-core): keep this aligned with greentic-secrets abstractions
-    // (docs/DESIGN-telemetry-secrets.md) instead of growing bespoke features.
     async fn get_json<T>(&self, path: &SecretPath, ctx: &TenantCtx) -> NodeResult<Option<T>>
     where
         T: serde::de::DeserializeOwned + Send;
@@ -44,7 +54,7 @@ impl SecretsResolver for DefaultResolver {
             Err(SecretsError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(err) => Err(NodeError::new(
                 "secrets_read",
-                format!("failed to fetch secret {}", path.as_str()),
+                format!("failed to fetch secret {}", uri),
             )
             .with_source(err)),
         }
@@ -62,7 +72,7 @@ impl SecretsResolver for DefaultResolver {
             .map_err(|err| {
                 NodeError::new(
                     "secrets_write",
-                    format!("failed to store secret {}", path.as_str()),
+                    format!("failed to store secret {}", uri),
                 )
                 .with_source(err)
             })

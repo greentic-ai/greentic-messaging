@@ -35,7 +35,6 @@ async fn main() -> Result<()> {
     tracing::info!("egress-telegram booting");
 
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     let translator = TelegramTranslator::new();
     let client = reqwest::Client::new();
     let api_base =
@@ -66,7 +65,7 @@ async fn main() -> Result<()> {
     let js = async_nats::jetstream::new(nats.clone());
     let limiter = HybridLimiter::new(Some(&js)).await?;
     let (mut messages, stream_name, consumer_name) =
-        init_consumer(&js, &tenant, Platform::Telegram.as_str()).await?;
+        init_consumer(&js, Platform::Telegram.as_str()).await?;
     tracing::info!(
         stream = %stream_name,
         consumer = %consumer_name,
@@ -107,13 +106,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn init_consumer(
-    js: &JsContext,
-    tenant: &str,
-    platform: &str,
-) -> Result<(Messages, String, String)> {
-    let subject = format!("greentic.msg.out.{tenant}.{platform}.>");
-    let stream_name = format!("msg-out-{tenant}-{platform}");
+async fn init_consumer(js: &JsContext, platform: &str) -> Result<(Messages, String, String)> {
+    let subject = format!("greentic.msg.out.*.{platform}.>");
+    let stream_name = format!("msg-out-{platform}");
     let stream_cfg = StreamConfig {
         name: stream_name.clone(),
         subjects: vec![subject.clone()],
@@ -127,15 +122,15 @@ async fn init_consumer(
         .get_or_create_stream(stream_cfg)
         .await
         .with_context(|| format!("ensure stream {stream_name}"))?;
-    let deliver = format!("deliver.egress.{tenant}.{platform}");
-    let consumer_name = format!("egress-{tenant}-{platform}");
+    let deliver = format!("deliver.egress.{platform}");
+    let consumer_name = format!("egress-{platform}");
     let consumer = stream
         .get_or_create_consumer(
             &consumer_name,
             PushConfig {
                 durable_name: Some(consumer_name.clone()),
                 deliver_subject: deliver.clone(),
-                deliver_group: Some(format!("egress-{tenant}")),
+                deliver_group: Some(format!("egress-{platform}")),
                 filter_subject: subject.clone(),
                 ack_policy: AckPolicy::Explicit,
                 max_ack_pending: 256,

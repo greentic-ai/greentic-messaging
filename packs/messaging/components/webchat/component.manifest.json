@@ -1,0 +1,37 @@
+{
+  "name": "webchat-adapter",
+  "version": "1.0.0",
+  "description": "WebChat ingress/egress adapter for greentic-messaging.",
+  "secret_requirements": [
+    {
+      "key": "webchat/jwt_signing_key",
+      "required": true,
+      "description": "Signing key used to mint Direct Line tokens.",
+      "scope": {
+        "env": "global",
+        "tenant": "webchat",
+        "team": null
+      },
+      "format": "Text",
+      "schema": null,
+      "examples": [
+        "replace-with-strong-key"
+      ]
+    },
+    {
+      "key": "webchat/channel_token",
+      "required": false,
+      "description": "Direct Line channel token (proxy mode only).",
+      "scope": {
+        "env": "dev",
+        "tenant": "example",
+        "team": "default"
+      },
+      "format": "Text",
+      "schema": null,
+      "examples": [
+        "directline-token"
+      ]
+    }
+  ]
+}

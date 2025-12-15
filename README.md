@@ -29,9 +29,15 @@ cargo tarpaulin --workspace --all-features --out Lcov --output-dir coverage
 The generated `coverage/` directory contains the LCOV output that mirrors the
 artifact uploaded by GitHub Actions.
 
-## Quickstart via greentic-messaging CLI
+## Quickstart via greentic-secrets + greentic-messaging CLI
 
-The workspace ships with a thin orchestration CLI. Start with:
+Bootstrap secrets first (dev-only) using the canonical CLI:
+
+```bash
+greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env dev --tenant acme --team default --non-interactive
+```
+
+Then run the messaging orchestration CLI:
 
 ```bash
 cargo run -p greentic-messaging-cli -- info
@@ -42,11 +48,9 @@ cargo run -p greentic-messaging-cli -- test fixtures
 cargo run -p greentic-messaging-cli -- admin guard-rails show
 ```
 
-The CLI inspects `GREENTIC_ENV`, detects tenants/teams from your local secrets
-directory (defaults to `./secrets`), and wraps the existing Makefile targets so
-you can bring up ingress/egress/subscription services without memorising every
-command. Refer to [docs/cli.md](docs/cli.md) for the expanding command
-reference.
+The CLI now assumes secrets are managed through `greentic-secrets` (ctx/seed/apply);
+legacy env/`./secrets` layouts are deprecated. Refer to [docs/cli.md](docs/cli.md)
+for the updated command reference.
 
 ## Design Docs
 
@@ -64,9 +68,9 @@ reference.
 
 - `GREENTIC_ENV` selects the environment scope for a deployment (`dev`, `test`, `prod`). When unset, the runtime defaults to `dev` so local flows continue to work without extra configuration.
 - Every ingress normalises requests into an `InvocationEnvelope` carrying a full `TenantCtx` (`env`, `tenant`, optional `team`/`user`, tracing metadata). Downstream services (runner, egress) now receive the same shape regardless of source platform.
-- Export `TENANT` (and optionally `TEAM`) alongside channel-specific secrets when running locally so worker subjects resolve correctly.
+- Set `TENANT` (and optionally `TEAM`) to route messages locally, but secret material must come from `greentic-secrets` (ctx + seed/apply), not ad hoc env vars.
 - Secrets resolvers and egress senders consume the shared context, making it safe to host multiple environments or teams within a single process.
-- Provider credentials live under `secret://{env}/{tenant}/{team|default}/messaging/{platform}-{team|default}-credentials.json`, so each environment stays isolated by design.
+- Provider credentials are seeded via `greentic-secrets` using pack-declared secret requirements (see `fixtures/packs/messaging_secrets_smoke` for an example).
 
 ## Telemetry
 
@@ -129,41 +133,21 @@ The new default deployment is a pair of binaries that consolidate every ingress 
 Run locally with:
 ```bash
 GREENTIC_ENV=dev NATS_URL=nats://127.0.0.1:4222 cargo run -p gsm-gateway
-TENANT=acme NATS_URL=nats://127.0.0.1:4222 cargo run -p gsm-egress
+NATS_URL=nats://127.0.0.1:4222 cargo run -p gsm-egress
 ```
 Point your test client at `http://localhost:8080/api/acme/default/webchat` with a JSON payload such as `{"chatId":"chat-1","userId":"user-42","text":"hi","metadata":{"channelData":{"env":"dev","tenant":"acme"}}}` and watch the gateway publish to NATS. The egress log will print the normalized `OutMessage` that would be sent to the downstream provider. This flow makes it easy to reason about the runtime without maintaining one binary per platform.
 
 ## Tenant bootstrap CLI
 
-`messaging-tenants` is the helper CLI that writes tenant/platform credentials into `greentic-secrets` so humans don’t have to hand-craft URIs.
+`messaging-tenants` is now a convenience wrapper around the canonical `greentic-secrets` CLI. Use it to call `greentic-secrets init/scaffold/wizard/apply` for messaging packs; it no longer writes secrets directly or maintains its own tree layout. `greentic-secrets` remains the source of truth.
 
-1. Prepare your env/tenant/team:
-   ```bash
-   cargo run -p messaging-tenants -- init-env --env dev
-   cargo run -p messaging-tenants -- add-tenant --env dev --tenant acme --team support
-   ```
-2. Write credentials JSON for each platform:
-   ```bash
-   cargo run -p messaging-tenants -- set-credentials \
-     --env dev --tenant acme --team support \
-     --platform slack --file ./slack-creds.json
-   ```
-   Each invocation stores a secret at `secret://{env}/{tenant}/{team}/messaging/{platform}-{team}-credentials.json`, so the runtime can lift the correct credential bundle from `DefaultResolver` without extra wiring.
+Example (dev scaffolding):
 
-3. Point `messaging-egress` at the same `GREENTIC_ENV`/`TENANT` and the credentials walk through to the downstream providers automatically.
+```bash
+cargo run -p messaging-tenants -- init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env dev --tenant acme --team support --non-interactive
+```
 
-Real sends require all adapter credentials to be exported (dry-run is the default). The required environment variables are:
-
-| Adapter | Env vars |
-| --- | --- |
-| `teams` | `MS_GRAPH_TOKEN` |
-| `webex` | `WEBEX_BOT_TOKEN` |
-| `slack` | `SLACK_BOT_TOKEN` |
-| `webchat` | `WEBCHAT_SECRET` (optionally `WEBCHAT_ENDPOINT`) |
-| `telegram` | `TELEGRAM_BOT_TOKEN` |
-| `whatsapp` | `WHATSAPP_TOKEN` |
-
-The tool never references an email adapter, and the WebChat adapter is always named `webchat` (never “DirectLine”). Use the artifacts alongside the built-in smoke test (`cargo test -p greentic-messaging-test`) or the CI job to keep the translated payloads aligned with the goldens.
+Point `messaging-egress` at the same `GREENTIC_ENV`/`TENANT` and the credentials flow through automatically once seeded via `greentic-secrets`.
 
 ## Sending Messages
 
@@ -233,7 +217,7 @@ mock-http`).
    export MS_GRAPH_CLIENT_ID=...
    export MS_GRAPH_CLIENT_SECRET=...
    export TEAMS_WEBHOOK_URL=https://<public>/teams/webhook
-   export TENANT=acme
+   export TENANT=acme  # ingress default; egress uses the tenant on each message
    export NATS_URL=nats://127.0.0.1:4222
    ```
 3. Start the services (ingress, egress, subscription manager):
@@ -376,7 +360,7 @@ sequenceDiagram
 2. Export environment variables:
    ```bash
    export TELEGRAM_SECRET_TOKEN=dev
-   export TENANT=acme
+   export TENANT=acme  # ingress default; egress uses the tenant carried in the message
    # Optional: point to a tenants.yaml file if you manage multiple tenants
    # export TENANT_CONFIG=config/tenants.yaml
    # TELEGRAM_PUBLIC_WEBHOOK_BASE will fall back to http://localhost:8080/telegram/webhook
@@ -417,11 +401,11 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    <script src="https://<your-ingress>/widget.js" data-tenant="acme" data-team="support" data-env="dev"></script>
    ```
    The widget automatically includes these values in `channelData` when posting to the ingress.
-2. Export the runtime variables (egress still uses `TENANT` to select the outbound subject):
+2. Export the runtime variables:
    ```bash
    export NATS_URL=nats://127.0.0.1:4222
-   export TENANT=acme
    ```
+   Egress reads tenant/team from each message context, so there is no per-tenant env override.
 3. Launch the services:
    ```bash
    make run-ingress-webchat
@@ -448,7 +432,7 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
 1. Create a WhatsApp Business App, obtain the phone number ID, and generate a permanent user access token. Pick a webhook verify token and note the app secret.
 2. Store the credentials in your secrets backend (example uses `greentic-secrets` and the `dev` environment):
    ```bash
-   cat <<'JSON' | greentic-secrets put secret://dev/messaging/whatsapp/acme/credentials.json
+   cat <<'JSON' | greentic-secrets put secrets://dev/acme/_/messaging/whatsapp.credentials.json
    {
      "phone_id": "1234567890",
      "wa_user_token": "EAA...",
@@ -461,7 +445,6 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    ```bash
    export WA_TEMPLATE_NAME=weather_update
    export WA_TEMPLATE_LANG=en
-   export TENANT=acme
    export NATS_URL=nats://127.0.0.1:4222
    ```
 4. Run ingress and egress (pass `--features mock-http` to the binaries if you want to stub outbound calls during testing):
@@ -485,7 +468,6 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    ```bash
    export WEBEX_WEBHOOK_SECRET=super-secret
    export WEBEX_BOT_TOKEN=BearerTokenFromStep1
-   export TENANT=acme
    export NATS_URL=nats://127.0.0.1:4222
    ```
 3. Start the ingress and egress services:

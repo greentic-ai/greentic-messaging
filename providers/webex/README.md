@@ -1,5 +1,7 @@
 # Webex Provider Quickstart
 
+> Seed credentials via `greentic-secrets` (ctx + scaffold/wizard/apply). The env-var examples below are legacy and will be removed; prefer `greentic-secrets init --pack <pack>` with the messaging pack metadata.
+
 The Webex adapter posts Adaptive Cards to rooms via the Webex REST API. Follow
 these steps to validate the integration locally.
 
@@ -10,6 +12,19 @@ these steps to validate the integration locally.
 - A space (room) where the bot is a member.
 
 ## Configure secrets
+
+Preferred (greentic-secrets):
+
+```bash
+greentic-secrets scaffold --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --out /tmp/webex-seed.yaml --env dev --tenant acme --team default
+# Edit /tmp/webex-seed.yaml to include:
+# messaging/webex.credentials.json:
+#   bot_token: ZjQyY...
+#   room_id: Y2lzY29zcGFyazovL3VzL1JPT00v...
+greentic-secrets apply -f /tmp/webex-seed.yaml
+```
+
+Legacy (deprecated) env setup:
 
 1. Copy the bot access token from the Webex developer dashboard.
 2. Open the target space in a browser and copy the Room ID from the URL (the

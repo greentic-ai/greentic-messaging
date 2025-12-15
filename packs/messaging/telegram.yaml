@@ -1,6 +1,15 @@
 id: greentic-messaging-telegram
 packVersion: 1
 version: "1.0.0"
+secret_requirements:
+  - key: messaging/telegram.credentials.json
+    required: true
+    description: Telegram bot token, chat id, and optional secret token.
+    scope:
+      env: dev
+      tenant: example
+      team: default
+    format: Json
 messaging:
   adapters:
     - name: telegram-ingress

@@ -168,7 +168,9 @@ impl SecretsBackend for StaticSecretsBackend {
         &self,
         _record: greentic_secrets::spec::SecretRecord,
     ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
-        unimplemented!("static backend does not support write operations")
+        Err(greentic_secrets::spec::Error::Backend(
+            "static backend is read-only".into(),
+        ))
     }
 
     fn get(
@@ -194,15 +196,31 @@ impl SecretsBackend for StaticSecretsBackend {
         _category_prefix: Option<&str>,
         _name_prefix: Option<&str>,
     ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
-        unimplemented!("static backend does not support list operations")
+        let uri = SecretUri::new(
+            _scope.clone(),
+            "webchat".to_string(),
+            "jwt_signing_key".to_string(),
+        )
+        .expect("uri");
+            Ok(vec![greentic_secrets::spec::SecretListItem {
+                uri,
+                visibility: greentic_secrets::spec::Visibility::Tenant,
+                latest_version: Some("1".into()),
+                content_type: greentic_secrets::spec::ContentType::Opaque,
+            }])
     }
 
     fn delete(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {
-        unimplemented!("static backend does not support delete operations")
+        Err(greentic_secrets::spec::Error::Backend(
+            "static backend is read-only".into(),
+        ))
     }
 
     fn versions(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<Vec<SecretVersion>> {
-        unimplemented!("static backend does not support version operations")
+        Ok(vec![SecretVersion {
+            version: 1,
+            deleted: false,
+        }])
     }
 
     fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {

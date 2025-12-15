@@ -1,6 +1,15 @@
 id: greentic-messaging-teams
 packVersion: 1
 version: "1.0.0"
+secret_requirements:
+  - key: messaging/teams.credentials.json
+    required: true
+    description: Teams client credentials and tenant id.
+    scope:
+      env: dev
+      tenant: example
+      team: default
+    format: Json
 messaging:
   adapters:
     - name: teams-main

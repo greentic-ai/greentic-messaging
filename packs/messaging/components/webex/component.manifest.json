@@ -1,0 +1,25 @@
+{
+  "name": "webex-adapter",
+  "version": "1.0.0",
+  "description": "Webex ingress/egress adapter for greentic-messaging.",
+  "secret_requirements": [
+    {
+      "key": "messaging/webex.credentials.json",
+      "required": true,
+      "description": "Webex bot token and default room identifier.",
+      "scope": {
+        "env": "dev",
+        "tenant": "example",
+        "team": "default"
+      },
+      "format": "Json",
+      "schema": null,
+      "examples": [
+        {
+          "bot_token": "ZjQyY...",
+          "room_id": "Y2lzY29zcGFyazovL3VzL1JPT00v..."
+        }
+      ]
+    }
+  ]
+}

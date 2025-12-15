@@ -1,6 +1,7 @@
 id: greentic-messaging-local
 packVersion: 1
 version: "1.0.0"
+secret_requirements: []
 messaging:
   adapters:
     - name: local-main

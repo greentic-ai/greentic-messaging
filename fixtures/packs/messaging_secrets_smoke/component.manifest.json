@@ -1,0 +1,22 @@
+{
+  "name": "messaging-secrets-smoke",
+  "version": "0.0.1",
+  "description": "Fixture component used to validate greentic-secrets seed/apply workflows for messaging credentials.",
+  "secret_requirements": [
+    {
+      "key": "messaging/test_api_token",
+      "required": true,
+      "description": "Token required to call the messaging smoke adapter.",
+      "scope": {
+        "env": "dev",
+        "tenant": "example",
+        "team": "default"
+      },
+      "format": "Text",
+      "schema": null,
+      "examples": [
+        "dev-token-placeholder"
+      ]
+    }
+  ]
+}

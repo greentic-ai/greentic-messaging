@@ -1,6 +1,15 @@
 id: greentic-messaging-whatsapp
 packVersion: 1
 version: "1.0.0"
+secret_requirements:
+  - key: messaging/whatsapp.credentials.json
+    required: true
+    description: WhatsApp Cloud API token, phone id, and default recipient.
+    scope:
+      env: dev
+      tenant: example
+      team: default
+    format: Json
 messaging:
   adapters:
     - name: whatsapp-main

@@ -1,0 +1,26 @@
+{
+  "name": "slack-adapter",
+  "version": "1.0.0",
+  "description": "Slack ingress/egress adapter for greentic-messaging.",
+  "secret_requirements": [
+    {
+      "key": "messaging/slack.credentials.json",
+      "required": true,
+      "description": "Slack bot token + optional signing secret for the workspace.",
+      "scope": {
+        "env": "dev",
+        "tenant": "example",
+        "team": "default"
+      },
+      "format": "Json",
+      "schema": null,
+      "examples": [
+        {
+          "bot_token": "xoxb-...",
+          "signing_secret": "optional",
+          "channel_id": "C1234567890"
+        }
+      ]
+    }
+  ]
+}

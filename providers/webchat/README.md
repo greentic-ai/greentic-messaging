@@ -1,5 +1,7 @@
 # WebChat Direct Line Gateway
 
+> Seed credentials via `greentic-secrets` (ctx + scaffold/wizard/apply). The env-var examples below are legacy and will be removed; prefer `greentic-secrets init --pack <pack>` with the messaging pack metadata.
+
 WebChat's Direct Line runtime now ships from `gsm-core::platforms::webchat`. The
 `providers/webchat` directory is kept for registry metadata (`provider.json`)
 and documentation only—no Rust crate is built from here.
@@ -20,7 +22,7 @@ remain available in both modes.
 ### Configuration
 
 All configuration flows through an injected `Arc<dyn SecretsBackend>` provided
-when constructing `WebChatProvider`. Secrets are resolved per scope:
+when constructing `WebChatProvider`. Seed secrets via `greentic-secrets` (ctx + scaffold/wizard/apply); the categories/names to populate are:
 
 | Scope | Category / name | Purpose |
 | ----- | ---------------- | ------- |

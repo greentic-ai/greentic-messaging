@@ -405,7 +405,7 @@ mod tests {
             .expect_err("missing conversation");
         assert_eq!(
             err.to_string(),
-            "teams_missing_conversation: no conversation for channel 'missing' under /test/messaging/teams/tenant-a/team-a/conversations.json"
+            "teams_missing_conversation: no conversation for channel 'missing' under secrets://test/tenant-a/team-a/messaging/teams.conversations.json"
         );
 
         if let Some(env) = prev_env {

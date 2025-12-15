@@ -5,6 +5,10 @@ Makefile and Cargo flows. It inspects the current environment, shells out to the
 existing ingress/egress/runner targets, proxies the fixture/test tooling, and now
 exposes a first wave of admin helpers.
 
+Secrets are now managed via the `greentic-secrets` CLI (ctx + scaffold/wizard/apply).
+Use `messaging-tenants` or `greentic-secrets` directly to seed credentials; legacy
+env/`./secrets` helpers are being phased out.
+
 ## Installation
 
 `cargo run -p greentic-messaging-cli -- <command>` from the repo root is the
@@ -18,8 +22,7 @@ decide if a `cargo install` workflow makes sense.
 Inspect the current workspace:
 
 - Detects `GREENTIC_ENV` (defaults to `dev`).
-- Locates the secrets directory (`GREENTIC_SECRETS_DIR`, `SECRETS_ROOT`, or `./secrets`).
-- Lists tenants/teams discovered under that secrets path.
+- Prints the current `greentic-secrets` context (via `greentic-secrets ctx show`) and hints at `greentic-secrets init --pack ...` for seeding.
 - Shows the ingress/egress/subscription binaries that are available via the Makefile targets.
 
 Example:

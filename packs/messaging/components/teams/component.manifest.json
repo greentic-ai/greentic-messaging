@@ -1,0 +1,26 @@
+{
+  "name": "teams-adapter",
+  "version": "1.0.0",
+  "description": "Microsoft Teams ingress/egress adapter for greentic-messaging.",
+  "secret_requirements": [
+    {
+      "key": "messaging/teams.credentials.json",
+      "required": true,
+      "description": "Client credentials for the Teams application.",
+      "scope": {
+        "env": "dev",
+        "tenant": "example",
+        "team": "default"
+      },
+      "format": "Json",
+      "schema": null,
+      "examples": [
+        {
+          "tenant_id": "00000000-0000-0000-0000-000000000000",
+          "client_id": "11111111-1111-1111-1111-111111111111",
+          "client_secret": "super-secret"
+        }
+      ]
+    }
+  ]
+}

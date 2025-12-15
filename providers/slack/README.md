@@ -1,5 +1,7 @@
 # Slack Provider Quickstart
 
+> Seed credentials via `greentic-secrets` (ctx + scaffold/wizard/apply). The env-var examples below are legacy and will be removed; prefer `greentic-secrets init --pack <pack>` with the messaging pack metadata.
+
 The Slack egress adapter sends rich cards into a Slack channel using the Web API.
 Follow these steps to run the contract test locally.
 
@@ -11,21 +13,29 @@ Follow these steps to run the contract test locally.
 
 ## Configure secrets
 
-1. From the Slack app dashboard, copy the **Bot User OAuth Token** (starts with
-   `xoxb-`).
-2. Open the target channel in Slack → channel header → **View channel details** →
-   **More** → **Copy channel ID**.
-3. Export the values (or place them in `.env`):
+Preferred (greentic-secrets):
+
+1. From the Slack app dashboard, copy the **Bot User OAuth Token** (starts with `xoxb-`) and the channel ID.
+2. Scaffold and apply a seed via `greentic-secrets`:
 
    ```bash
-   export SLACK_BOT_TOKEN=xoxb-your-token
-   export SLACK_CHANNEL_ID=C1234567890
+   greentic-secrets scaffold --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --out /tmp/slack-seed.yaml --env dev --tenant acme --team default
+   # Edit /tmp/slack-seed.yaml to include:
+   # messaging/slack.credentials.json:
+   #   bot_token: xoxb-...
+   #   channel_id: C1234567890
+   #   signing_secret: optional
+   greentic-secrets apply -f /tmp/slack-seed.yaml
    ```
 
-Optional extras:
+Legacy (deprecated) env setup:
 
-- `SLACK_SIGNING_SECRET` enables ingress request verification when running the
-  webhook services.
+```bash
+export SLACK_BOT_TOKEN=xoxb-your-token
+export SLACK_CHANNEL_ID=C1234567890
+# optional
+export SLACK_SIGNING_SECRET=your-signing-secret
+```
 
 ## Run the contract test
 

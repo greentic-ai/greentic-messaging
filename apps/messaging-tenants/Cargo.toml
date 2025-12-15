@@ -11,8 +11,4 @@ homepage = "https://github.com/greentic-ai/greentic-messaging"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-gsm-core = { workspace = true }
-greentic-secrets = { workspace = true, features = ["core", "spec"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "macros"] }

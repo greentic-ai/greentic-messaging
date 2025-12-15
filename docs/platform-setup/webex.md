@@ -2,6 +2,8 @@
 
 This guide walks you through creating a Webex bot, wiring a webhook to the Greentic ingress service, and providing the credentials required by the Webex egress worker. Following the steps below should get you to a working webhook URL in a few minutes.
 
+> Secrets should be provisioned via the `greentic-secrets` CLI (ctx + scaffold/wizard/apply). The env-var snippets below are legacy; prefer `greentic-secrets init --pack <pack>` for new setups (see `fixtures/packs/messaging_secrets_smoke` for a deterministic pack example).
+
 ## Prerequisites
 
 - Webex developer account with access to <https://developer.webex.com>
@@ -32,7 +34,6 @@ This guide walks you through creating a Webex bot, wiring a webhook to the Green
 Greentic expects secrets to be provided through environment variables or your secret manager. Minimum configuration:
 
 ```bash
-export TENANT=acme
 export NATS_URL=nats://127.0.0.1:4222
 export WEBEX_WEBHOOK_SECRET=super-secret
 export WEBEX_BOT_TOKEN=BearerTokenFromStep1
@@ -54,7 +55,7 @@ TENANT=acme WEBEX_WEBHOOK_SECRET=super-secret WEBEX_SIG_ALGO=sha1 \
   WEBEX_SIG_HEADER=X-Webex-Signature make run-ingress-webex
 
 # Terminal 2 – egress
-TENANT=acme WEBEX_BOT_TOKEN=BearerTokenFromStep1 make run-egress-webex
+WEBEX_BOT_TOKEN=BearerTokenFromStep1 make run-egress-webex
 
 # Terminal 3 – runner (see example flow below)
 FLOW=examples/flows/weather_webex.yaml PLATFORM=webex make run-runner

@@ -30,14 +30,13 @@ const MAX_ATTEMPTS: usize = 3;
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     #[cfg(feature = "mock-http")]
     // Short-circuit outbound Webex traffic during tests.
     let api_base = Some("mock://webex".into());
     #[cfg(not(feature = "mock-http"))]
     let api_base = std::env::var("WEBEX_API_BASE").ok();
 
-    let queue = bootstrap(&nats_url, &tenant, Platform::Webex.as_str()).await?;
+    let queue = bootstrap(&nats_url, Platform::Webex.as_str()).await?;
     info!(stream = %queue.stream, consumer = %queue.consumer, "egress-webex consuming from JetStream");
 
     let dlq = Arc::new(DlqPublisher::new("egress", queue.client()).await?);
@@ -75,7 +74,6 @@ async fn main() -> Result<()> {
         };
 
         if let Err(err) = handle_message(
-            &tenant,
             limiter.as_ref(),
             sender.as_ref(),
             dlq.as_ref(),
@@ -146,7 +144,6 @@ impl DeliveryMessage for jetstream::Message {
 }
 
 async fn handle_message(
-    tenant: &str,
     limiter: &dyn BackpressureLimiter,
     sender: &(dyn EgressSender + Send + Sync),
     dlq: &(dyn DlqSink + Send + Sync),
@@ -237,17 +234,12 @@ async fn handle_message(
         }
         Err(err) => {
             if err.retryable {
-                warn!(
-                    tenant = tenant,
-                    chat_id = %out.chat_id,
-                    "webex retryable failure, nacking"
-                );
+                warn!(chat_id = %out.chat_id, "webex retryable failure, nacking");
                 msg.ack_with(AckKind::Nak(None)).await?;
             } else {
                 let code = err.code.clone();
                 let message = err.message.clone();
                 error!(
-                    tenant = tenant,
                     chat_id = %out.chat_id,
                     code = %code,
                     %message,
@@ -259,7 +251,7 @@ async fn handle_message(
                     stage: None,
                 };
                 dlq.publish_dlq(
-                    tenant,
+                    &out.tenant,
                     out.platform.as_str(),
                     &out.message_id(),
                     dlq_err,
@@ -454,7 +446,7 @@ mod tests {
         let out = sample_out();
         let message = MockMessage::new(&out);
 
-        handle_message("acme", lim.as_ref(), &sender, &dlq, None, &message)
+        handle_message(lim.as_ref(), &sender, &dlq, None, &message)
             .await
             .unwrap();
 
@@ -471,7 +463,7 @@ mod tests {
         let out = sample_out();
         let message = MockMessage::new(&out);
 
-        handle_message("acme", lim.as_ref(), &sender, &dlq, None, &message)
+        handle_message(lim.as_ref(), &sender, &dlq, None, &message)
             .await
             .unwrap();
 

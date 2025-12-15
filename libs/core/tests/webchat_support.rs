@@ -43,9 +43,20 @@ impl TestSecretsBackend {
 impl SecretsBackend for TestSecretsBackend {
     fn put(
         &self,
-        _record: greentic_secrets::spec::SecretRecord,
+        record: greentic_secrets::spec::SecretRecord,
     ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
-        unimplemented!("test backend does not support writes")
+        self.inner
+            .lock()
+            .expect("lock secrets map")
+            .insert(record.meta.uri.to_string(), VersionedSecret {
+                version: 1,
+                deleted: false,
+                record: Some(record),
+            });
+        Ok(greentic_secrets::spec::SecretVersion {
+            version: 1,
+            deleted: false,
+        })
     }
 
     fn get(
@@ -63,19 +74,57 @@ impl SecretsBackend for TestSecretsBackend {
 
     fn list(
         &self,
-        _scope: &Scope,
-        _category_prefix: Option<&str>,
-        _name_prefix: Option<&str>,
+        scope: &Scope,
+        category_prefix: Option<&str>,
+        name_prefix: Option<&str>,
     ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
-        unimplemented!("test backend does not support list")
+        let items = self
+            .inner
+            .lock()
+            .expect("lock secrets map")
+            .values()
+            .filter_map(|secret| secret.record.as_ref())
+            .filter(|record| {
+                record.meta.uri.scope() == scope
+                    && category_prefix.map_or(true, |p| record.meta.uri.category().starts_with(p))
+                    && name_prefix.map_or(true, |p| record.meta.uri.name().starts_with(p))
+            })
+            .map(|record| greentic_secrets::spec::SecretListItem::from_meta(
+                &record.meta,
+                Some("1".into()),
+            ))
+            .collect();
+        Ok(items)
     }
 
-    fn delete(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {
-        unimplemented!("test backend does not support delete")
+    fn delete(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {
+        let removed = self
+            .inner
+            .lock()
+            .expect("lock secrets map")
+            .remove(&uri.to_string());
+        match removed {
+            Some(secret) => Ok(SecretVersion {
+                version: secret.version,
+                deleted: secret.deleted,
+            }),
+            None => Err(greentic_secrets::spec::Error::NotFound {
+                entity: uri.to_string(),
+            }),
+        }
     }
 
-    fn versions(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<Vec<SecretVersion>> {
-        unimplemented!("test backend does not support versions")
+    fn versions(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<Vec<SecretVersion>> {
+        Ok(self
+            .inner
+            .lock()
+            .expect("lock secrets map")
+            .get(&uri.to_string())
+            .map(|secret| vec![SecretVersion {
+                version: secret.version,
+                deleted: secret.deleted,
+            }])
+            .unwrap_or_default())
     }
 
     fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {

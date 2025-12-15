@@ -1,5 +1,7 @@
 # Telegram Provider Quickstart
 
+> Seed credentials via `greentic-secrets` (ctx + scaffold/wizard/apply). The env-var examples below are legacy and will be removed; prefer `greentic-secrets init --pack <pack>` with the messaging pack metadata.
+
 This adapter delivers Adaptive Cards through the Telegram Bot API. Use the
 instructions below to get the Telegram contract test green locally.
 
@@ -11,6 +13,20 @@ instructions below to get the Telegram contract test green locally.
   channel).
 
 ## Configure secrets
+
+Preferred (greentic-secrets):
+
+```bash
+greentic-secrets scaffold --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --out /tmp/telegram-seed.yaml --env dev --tenant acme --team default
+# Edit /tmp/telegram-seed.yaml to include:
+# messaging/telegram.credentials.json:
+#   bot_token: 123456:ABCDEF
+#   chat_id: -100123456   # or resolve via the helper below
+#   secret_token: optional
+greentic-secrets apply -f /tmp/telegram-seed.yaml
+```
+
+Legacy (deprecated) env setup:
 
 1. Copy the bot token and export it:
 

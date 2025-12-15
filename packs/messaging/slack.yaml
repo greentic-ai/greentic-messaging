@@ -1,6 +1,15 @@
 id: greentic-messaging-slack
 packVersion: 1
 version: "1.0.0"
+secret_requirements:
+  - key: messaging/slack.credentials.json
+    required: true
+    description: Slack bot token, signing secret (optional), and default channel id.
+    scope:
+      env: dev
+      tenant: example
+      team: default
+    format: Json
 messaging:
   adapters:
     - name: slack-main

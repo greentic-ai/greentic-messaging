@@ -1,7 +1,6 @@
 use std::{
-    collections::BTreeMap,
-    env, fs,
-    path::{Path, PathBuf},
+    env,
+    path::PathBuf,
     process::{Command as ProcessCommand, Stdio},
 };
 
@@ -184,38 +183,19 @@ enum ServeKind {
     Subscriptions,
 }
 
-#[derive(Default, Debug)]
-struct TenantInfo {
-    tenant: String,
-    teams: Vec<String>,
-}
-
 fn handle_info() -> Result<()> {
     let env = current_env();
     println!("Environment : {env}");
 
-    match secrets_root()? {
-        Some(root) => {
-            println!("Secrets dir  : {}", root.display());
-            let tenants = discover_tenants(&root, &env)?;
-            if tenants.is_empty() {
-                println!("Tenants      : (none detected for {env})");
-            } else {
-                println!("Tenants      :");
-                for t in tenants {
-                    if t.teams.is_empty() {
-                        println!("  - {} (no teams found)", t.tenant);
-                    } else {
-                        let teams = t.teams.join(", ");
-                        println!("  - {} [teams: {teams}]", t.tenant);
-                    }
-                }
-            }
-        }
+    match secrets_ctx()? {
+        Some(ctx) => println!("Secrets ctx  : {ctx}"),
         None => println!(
-            "Secrets dir  : not configured (set GREENTIC_SECRETS_DIR or provide ./secrets)"
+            "Secrets ctx  : (use `greentic-secrets ctx set --env <env> --tenant <tenant> [--team <team>]`)"
         ),
-    }
+    };
+    println!(
+        "Seed/apply   : greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env {env} --tenant <tenant> --team <team> --non-interactive"
+    );
 
     println!("\nAvailable services:");
     println!("  ingress       : {}", INGRESS_PLATFORMS.join(", "));
@@ -334,72 +314,29 @@ fn handle_admin(command: AdminCommand) -> Result<()> {
     }
 }
 
-fn secrets_root() -> Result<Option<PathBuf>> {
-    if let Ok(path) = env::var("GREENTIC_SECRETS_DIR").or_else(|_| env::var("SECRETS_ROOT")) {
-        let path = PathBuf::from(path);
-        if path.exists() {
-            return Ok(Some(path));
-        }
-    }
-
-    let cwd = env::current_dir().context("failed to resolve current directory")?;
-    let candidate = cwd.join("secrets");
-    if candidate.exists() {
-        return Ok(Some(candidate));
-    }
-
-    Ok(None)
+fn greentic_secrets_binary() -> String {
+    env::var("GREENTIC_SECRETS_CLI").unwrap_or_else(|_| "greentic-secrets".into())
 }
 
-fn discover_tenants(root: &Path, env: &str) -> Result<Vec<TenantInfo>> {
-    let env_dir = root.join(env);
-    if !env_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut tenants: BTreeMap<String, TenantInfo> = BTreeMap::new();
-    for tenant_entry in fs::read_dir(&env_dir)
-        .with_context(|| format!("failed to enumerate tenants under {}", env_dir.display()))?
-    {
-        let tenant_entry = tenant_entry?;
-        if !tenant_entry.file_type()?.is_dir() {
-            continue;
+fn secrets_ctx() -> Result<Option<String>> {
+    let bin = greentic_secrets_binary();
+    let output = ProcessCommand::new(&bin)
+        .args(["ctx", "show"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+    match output {
+        Ok(out) if out.status.success() => {
+            let body = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if body.is_empty() {
+                Ok(Some("(ctx configured, empty output)".into()))
+            } else {
+                Ok(Some(body))
+            }
         }
-        let tenant_name = tenant_entry
-            .file_name()
-            .into_string()
-            .unwrap_or_else(|_| "unknown".into());
-        let tenant_dir = tenant_entry.path();
-        let teams = collect_teams(&tenant_dir)?;
-        tenants.insert(
-            tenant_name.clone(),
-            TenantInfo {
-                tenant: tenant_name,
-                teams,
-            },
-        );
+        Ok(_) => Ok(None),
+        Err(_) => Ok(None),
     }
-
-    Ok(tenants.into_values().collect())
-}
-
-fn collect_teams(tenant_dir: &Path) -> Result<Vec<String>> {
-    let mut teams = Vec::new();
-    for team_entry in fs::read_dir(tenant_dir)
-        .with_context(|| format!("failed to read {}", tenant_dir.display()))?
-    {
-        let team_entry = team_entry?;
-        if !team_entry.file_type()?.is_dir() {
-            continue;
-        }
-        let name = team_entry
-            .file_name()
-            .into_string()
-            .unwrap_or_else(|_| "unknown".into());
-        teams.push(name);
-    }
-    teams.sort();
-    Ok(teams)
 }
 
 const INGRESS_PLATFORMS: &[&str] = &["slack", "telegram", "webchat", "whatsapp", "teams"];

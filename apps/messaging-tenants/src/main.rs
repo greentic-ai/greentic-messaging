@@ -1,65 +1,87 @@
-mod platform;
-mod uri;
-
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use greentic_secrets::core::embedded::SecretsCore;
-use serde_json::Value;
-use tokio::io::{self, AsyncRead, AsyncReadExt};
-
-use crate::platform::PlatformArg;
-use crate::uri::{build_credentials_uri, build_placeholder_uri};
+use tokio::process::Command;
 
 #[derive(Parser)]
 #[command(
     name = "messaging-tenants",
     version,
-    about = "Bootstrap tenants in greentic-secrets"
+    about = "Convenience wrapper around the greentic-secrets CLI for messaging packs"
 )]
 struct Cli {
+    /// Path to the greentic-secrets binary (default: looks up 'greentic-secrets' in PATH).
+    #[arg(long, env = "GREENTIC_SECRETS_CLI", default_value = "greentic-secrets")]
+    secrets_cli: String,
+
     #[command(subcommand)]
-    command: Command,
+    command: CommandKind,
 }
 
 #[derive(Subcommand)]
-enum Command {
-    /// Ensure an environment can be referenced in the secrets backend.
-    InitEnv {
-        /// Environment identifier (e.g. dev, test, prod).
+enum CommandKind {
+    /// Run greentic-secrets init for a messaging pack.
+    Init {
         #[arg(long)]
-        env: String,
-    },
-    /// Create placeholder secrets for a tenant/team combination.
-    AddTenant {
-        /// Environment identifier.
+        pack: PathBuf,
         #[arg(long)]
-        env: String,
-        /// Tenant identifier.
+        env: Option<String>,
         #[arg(long)]
-        tenant: String,
-        /// Team identifier. Repeatable; default is 'default'.
-        #[arg(long)]
-        team: Vec<String>,
-    },
-    /// Write credentials JSON for a platform.
-    SetCredentials {
-        /// Environment identifier.
-        #[arg(long)]
-        env: String,
-        /// Tenant identifier.
-        #[arg(long)]
-        tenant: String,
-        /// Team identifier.
+        tenant: Option<String>,
         #[arg(long)]
         team: Option<String>,
-        /// Platform (slack, teams, telegram, whatsapp, webchat, webex).
-        #[arg(value_enum)]
-        platform: PlatformArg,
-        /// File containing the credentials JSON. Defaults to STDIN when omitted.
-        #[arg(short, long, value_name = "FILE")]
-        file: Option<PathBuf>,
+        #[arg(long)]
+        non_interactive: bool,
+        #[arg(long)]
+        from_dotenv: Option<PathBuf>,
+    },
+    /// Scaffold a seed file from a pack.
+    Scaffold {
+        #[arg(long)]
+        pack: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        env: Option<String>,
+        #[arg(long)]
+        tenant: Option<String>,
+        #[arg(long)]
+        team: Option<String>,
+    },
+    /// Fill a seed file interactively or from dotenv.
+    Wizard {
+        #[arg(short = 'i', long)]
+        input: PathBuf,
+        #[arg(short = 'o', long)]
+        output: PathBuf,
+        #[arg(long)]
+        from_dotenv: Option<PathBuf>,
+    },
+    /// Apply a filled seed file to the configured backend.
+    Apply {
+        #[arg(short = 'f', long)]
+        file: PathBuf,
+        #[arg(long)]
+        broker: Option<String>,
+    },
+    /// greentic-secrets ctx set
+    CtxSet {
+        #[arg(long)]
+        env: String,
+        #[arg(long)]
+        tenant: String,
+        #[arg(long)]
+        team: Option<String>,
+    },
+    /// greentic-secrets ctx show
+    CtxShow,
+    /// greentic-secrets dev up
+    DevUp,
+    /// greentic-secrets dev down
+    DevDown {
+        #[arg(long)]
+        destroy: bool,
     },
 }
 
@@ -67,102 +89,129 @@ enum Command {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::InitEnv { env } => init_env(env).await,
-        Command::AddTenant { env, tenant, team } => add_tenant(env, tenant, team).await,
-        Command::SetCredentials {
+        CommandKind::Init {
+            pack,
             env,
             tenant,
             team,
-            platform,
-            file,
-        } => set_credentials(env, tenant, team, platform, file).await,
+            non_interactive,
+            from_dotenv,
+        } => {
+            let mut args = vec![
+                "init".to_string(),
+                "--pack".to_string(),
+                pack.display().to_string(),
+            ];
+            push_opt(&mut args, "--env", env.as_deref());
+            push_opt(&mut args, "--tenant", tenant.as_deref());
+            push_opt(&mut args, "--team", team.as_deref());
+            if non_interactive {
+                args.push("--non-interactive".to_string());
+            }
+            if let Some(path) = from_dotenv {
+                args.push("--from-dotenv".to_string());
+                args.push(path.display().to_string());
+            }
+            run_secrets(&cli.secrets_cli, &args).await
+        }
+        CommandKind::Scaffold {
+            pack,
+            out,
+            env,
+            tenant,
+            team,
+        } => {
+            let mut args = vec![
+                "scaffold".to_string(),
+                "--pack".to_string(),
+                pack.display().to_string(),
+                "--out".to_string(),
+                out.display().to_string(),
+            ];
+            push_opt(&mut args, "--env", env.as_deref());
+            push_opt(&mut args, "--tenant", tenant.as_deref());
+            push_opt(&mut args, "--team", team.as_deref());
+            run_secrets(&cli.secrets_cli, &args).await
+        }
+        CommandKind::Wizard {
+            input,
+            output,
+            from_dotenv,
+        } => {
+            let mut args = vec![
+                "wizard".to_string(),
+                "--input".to_string(),
+                input.display().to_string(),
+                "--output".to_string(),
+                output.display().to_string(),
+            ];
+            if let Some(path) = from_dotenv {
+                args.push("--from-dotenv".to_string());
+                args.push(path.display().to_string());
+            }
+            run_secrets(&cli.secrets_cli, &args).await
+        }
+        CommandKind::Apply { file, broker } => {
+            let mut args = vec![
+                "apply".to_string(),
+                "--file".to_string(),
+                file.display().to_string(),
+            ];
+            if let Some(url) = broker {
+                args.push("--broker".to_string());
+                args.push(url);
+            }
+            run_secrets(&cli.secrets_cli, &args).await
+        }
+        CommandKind::CtxSet { env, tenant, team } => {
+            let mut args = vec![
+                "ctx".to_string(),
+                "set".to_string(),
+                "--env".to_string(),
+                env,
+                "--tenant".to_string(),
+                tenant,
+            ];
+            if let Some(team) = team {
+                args.push("--team".to_string());
+                args.push(team);
+            }
+            run_secrets(&cli.secrets_cli, &args).await
+        }
+        CommandKind::CtxShow => run_secrets(&cli.secrets_cli, &["ctx", "show"]).await,
+        CommandKind::DevUp => run_secrets(&cli.secrets_cli, &["dev", "up"]).await,
+        CommandKind::DevDown { destroy } => {
+            let mut args = vec!["dev".to_string(), "down".to_string()];
+            if destroy {
+                args.push("--destroy".to_string());
+            }
+            run_secrets(&cli.secrets_cli, &args).await
+        }
     }
 }
 
-async fn init_env(env: String) -> Result<()> {
-    let env = normalize(&env);
-    let core = build_core("default").await?;
-    let prefix = format!("secret://{env}/default/_/messaging");
-    core.list(&prefix)
+async fn run_secrets<S, I, A>(binary: S, args: I) -> Result<()>
+where
+    S: AsRef<str>,
+    I: IntoIterator<Item = A>,
+    A: AsRef<str>,
+{
+    let binary = binary.as_ref();
+    let display_args: Vec<String> = args.into_iter().map(|a| a.as_ref().to_string()).collect();
+    let status = Command::new(binary)
+        .args(&display_args)
+        .status()
         .await
-        .context("failed to probe secrets backend for environment")?;
-    println!("Environment '{env}' is reachable in the secrets backend.");
-    Ok(())
-}
-
-async fn add_tenant(env: String, tenant: String, teams: Vec<String>) -> Result<()> {
-    let env = normalize(&env);
-    let tenant = normalize(&tenant);
-    let teams = if teams.is_empty() {
-        vec!["default".into()]
-    } else {
-        teams
-    };
-
-    let core = build_core(&tenant).await?;
-
-    for raw_team in teams {
-        let team = normalize(&raw_team);
-        let uri = build_placeholder_uri(&env, &tenant, &team)?;
-        core.put_json(&uri, &Value::Object(Default::default()))
-            .await
-            .with_context(|| format!("failed to create placeholder for team '{team}'"))?;
-        println!("Created placeholder secret for team '{team}'.");
+        .with_context(|| format!("failed to spawn {binary}"))?;
+    if !status.success() {
+        bail!("{binary} exited with status {status}");
     }
     Ok(())
 }
 
-async fn set_credentials(
-    env: String,
-    tenant: String,
-    team: Option<String>,
-    platform: PlatformArg,
-    file: Option<PathBuf>,
-) -> Result<()> {
-    let env = normalize(&env);
-    let tenant = normalize(&tenant);
-    let team_name = team
-        .as_deref()
-        .map(normalize)
-        .unwrap_or_else(|| "default".into());
-
-    let mut source: Box<dyn AsyncRead + Unpin + Send> = if let Some(path) = file {
-        Box::new(
-            tokio::fs::File::open(path)
-                .await
-                .context("failed to open credentials file")?,
-        )
-    } else {
-        Box::new(io::stdin())
-    };
-    let mut buffer = Vec::new();
-    source
-        .read_to_end(&mut buffer)
-        .await
-        .context("failed to read credentials payload")?;
-    let value: Value = serde_json::from_slice(&buffer).context("failed to parse JSON payload")?;
-
-    let uri = build_credentials_uri(&env, &tenant, Some(team_name.as_str()), platform.into())?;
-    let core = build_core(&tenant).await?;
-    core.put_json(&uri, &value)
-        .await
-        .context("failed to write credentials secret")?;
-    println!(
-        "Stored credentials for platform '{}' at '{}'.",
-        platform.as_str(),
-        uri
-    );
-    Ok(())
-}
-
-async fn build_core(tenant: &str) -> Result<SecretsCore> {
-    SecretsCore::builder()
-        .tenant(tenant.to_string())
-        .build()
-        .await
-        .map_err(Into::into)
-}
-
-fn normalize(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
+fn push_opt(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        args.push(flag.to_string());
+        args.push(value.to_string());
+    }
 }

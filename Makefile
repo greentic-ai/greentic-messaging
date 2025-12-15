@@ -2,6 +2,7 @@
 	conformance conformance-slack conformance-telegram conformance-webex \
 	conformance-whatsapp conformance-teams conformance-webchat
 
+# Secrets are managed via greentic-secrets (init/scaffold/wizard/apply); these targets no longer seed env-based credentials.
 STACK_FILE ?= docker/stack.yml
 
 ifeq ($(wildcard $(STACK_FILE)),)

@@ -34,7 +34,6 @@ const MAX_ATTEMPTS: usize = 3;
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
     #[cfg(feature = "mock-http")]
     // Mock the Microsoft Graph endpoints during local and CI runs.
     let auth_base = Some("mock://auth".into());
@@ -46,7 +45,7 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "mock-http"))]
     let api_base = std::env::var("MS_GRAPH_API_BASE").ok();
 
-    let queue = bootstrap(&nats_url, &tenant, Platform::Teams.as_str()).await?;
+    let queue = bootstrap(&nats_url, Platform::Teams.as_str()).await?;
     tracing::info!(
         stream = %queue.stream,
         consumer = %queue.consumer,

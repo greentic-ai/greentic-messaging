@@ -342,7 +342,13 @@ async fn publish(
         "adapter" => adapter.map(|a| a.name.clone()).unwrap_or_else(|| "legacy".into())
     );
 
-    // TODO: add tracing span per request; include adapter/platform tags.
+    tracing::info_span!(
+        "ingress_request",
+        tenant = %tenant,
+        platform = %envelope.channel_id,
+        adapter = %adapter.as_ref().map(|a| a.name.as_str()).unwrap_or("legacy")
+    )
+    .in_scope(|| tracing::trace!("ingress request dispatched"));
 
     Ok(subject)
 }

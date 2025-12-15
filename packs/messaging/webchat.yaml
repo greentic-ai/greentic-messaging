@@ -1,6 +1,23 @@
 id: greentic-messaging-webchat
 packVersion: 1
 version: "1.0.0"
+secret_requirements:
+  - key: webchat/jwt_signing_key
+    required: true
+    description: HS256 signing key used to mint Direct Line tokens.
+    scope:
+      env: global
+      tenant: webchat
+      team: null
+    format: Text
+  - key: webchat/channel_token
+    required: false
+    description: Direct Line channel token (proxy mode).
+    scope:
+      env: dev
+      tenant: example
+      team: default
+    format: Text
 messaging:
   adapters:
     - name: webchat-main

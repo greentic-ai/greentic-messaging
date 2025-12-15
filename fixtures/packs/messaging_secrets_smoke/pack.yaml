@@ -1,0 +1,12 @@
+id: greentic-messaging-secrets-smoke
+packVersion: 1
+version: "0.0.1"
+description: Minimal pack fixture to exercise greentic-secrets integration for messaging adapters.
+messaging:
+  adapters:
+    - name: secrets-smoke
+      kind: ingress-egress
+      component: messaging-secrets-smoke@0.0.1
+      capabilities:
+        direction: [ingress, egress]
+        features: [text]

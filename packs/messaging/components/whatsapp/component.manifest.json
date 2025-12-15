@@ -1,0 +1,26 @@
+{
+  "name": "whatsapp-adapter",
+  "version": "1.0.0",
+  "description": "WhatsApp ingress/egress adapter for greentic-messaging.",
+  "secret_requirements": [
+    {
+      "key": "messaging/whatsapp.credentials.json",
+      "required": true,
+      "description": "WhatsApp Cloud API token, phone id, and default recipient.",
+      "scope": {
+        "env": "dev",
+        "tenant": "example",
+        "team": "default"
+      },
+      "format": "Json",
+      "schema": null,
+      "examples": [
+        {
+          "token": "EAAGm0PX4ZCpsBA...",
+          "phone_id": "123456789012345",
+          "recipient": "15551234567"
+        }
+      ]
+    }
+  ]
+}

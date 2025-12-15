@@ -1,0 +1,26 @@
+{
+  "name": "telegram-adapter",
+  "version": "1.0.0",
+  "description": "Telegram ingress/egress adapter for greentic-messaging.",
+  "secret_requirements": [
+    {
+      "key": "messaging/telegram.credentials.json",
+      "required": true,
+      "description": "Telegram bot token and default chat metadata.",
+      "scope": {
+        "env": "dev",
+        "tenant": "example",
+        "team": "default"
+      },
+      "format": "Json",
+      "schema": null,
+      "examples": [
+        {
+          "bot_token": "123456:ABCDEF",
+          "chat_id": "-100123456",
+          "secret_token": "optional"
+        }
+      ]
+    }
+  ]
+}

@@ -16,10 +16,10 @@ aligning with the shared `greentic-*` crates.
 ## Secrets Resolution
 
 - `libs/core/src/prelude.rs` defines the `SecretPath` helper plus the
-  `SecretsResolver` trait.
-- Most binaries depend on `secrets_core::DefaultResolver`, which wraps the
-  workspace’s greentic-secrets client. All reads use URIs such as
-  `secret://{env}/{tenant}/{team|default}/messaging/{platform}-...-credentials.json`.
+  `SecretsResolver` trait, both backed by `greentic-secrets` types (`SecretUri`,
+  `DefaultResolver`).
+- Reads/writes use canonical greentic-secrets URIs such as
+  `secrets://{env}/{tenant}/{team|_}/messaging/{platform}.credentials.json`.
 - Writes follow the same pattern (e.g. admin helpers storing OAuth tokens).
 - Platform-specific modules take `&impl SecretsResolver` so they stay agnostic to
   the concrete backend.

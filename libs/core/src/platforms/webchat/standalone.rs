@@ -1002,7 +1002,9 @@ mod tests {
             &self,
             _record: greentic_secrets::spec::SecretRecord,
         ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
-            unimplemented!("test backend does not support writes")
+            Err(greentic_secrets::spec::Error::Backend(
+                "test backend is read-only".into(),
+            ))
         }
 
         fn get(
@@ -1028,21 +1030,37 @@ mod tests {
             _category_prefix: Option<&str>,
             _name_prefix: Option<&str>,
         ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
-            unimplemented!("test backend does not support listing")
+            let uri = SecretUri::new(
+                Scope::new("global", "webchat", None).expect("scope"),
+                "webchat".to_string(),
+                "jwt_signing_key".to_string(),
+            )
+            .expect("uri");
+            Ok(vec![greentic_secrets::spec::SecretListItem {
+                uri,
+                visibility: greentic_secrets::spec::Visibility::Tenant,
+                latest_version: Some("1".into()),
+                content_type: greentic_secrets::spec::ContentType::Opaque,
+            }])
         }
 
         fn delete(
             &self,
             _uri: &SecretUri,
         ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
-            unimplemented!("test backend does not support delete")
+            Err(greentic_secrets::spec::Error::Backend(
+                "test backend is read-only".into(),
+            ))
         }
 
         fn versions(
             &self,
             _uri: &SecretUri,
         ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretVersion>> {
-            unimplemented!("test backend does not support versions")
+            Ok(vec![greentic_secrets::spec::SecretVersion {
+                version: 1,
+                deleted: false,
+            }])
         }
 
         fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {

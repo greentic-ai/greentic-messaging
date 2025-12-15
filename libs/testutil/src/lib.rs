@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -43,10 +44,23 @@ impl TestConfig {
         // Load .env files when present so local credentials become available in tests.
         dotenvy::dotenv().ok();
 
-        let env = std::env::var("GREENTIC_ENV").ok();
-        let tenant = std::env::var("TENANT").ok();
-        let team = std::env::var("TEAM").ok();
+        let env = env::var("GREENTIC_ENV").ok();
+        let tenant = env::var("TENANT").ok();
+        let team = env::var("TEAM").ok();
         let upper = platform.to_ascii_uppercase();
+
+        if let Some(credentials) = load_seed_credentials(platform)? {
+            let secret_uri =
+                build_secret_uri(env.as_deref(), tenant.as_deref(), team.as_deref(), platform);
+            return Ok(Some(Self {
+                platform: platform.to_string(),
+                env,
+                tenant,
+                team,
+                credentials: Some(credentials),
+                secret_uri,
+            }));
+        }
 
         if let Some(credentials) = load_env_credentials(&upper)? {
             let secret_uri =
@@ -82,7 +96,7 @@ impl TestConfig {
 
 fn load_env_credentials(key: &str) -> Result<Option<Value>> {
     let var = format!("MESSAGING_{key}_CREDENTIALS");
-    if let Ok(raw) = std::env::var(&var) {
+    if let Ok(raw) = env::var(&var) {
         if raw.trim().is_empty() {
             return Ok(None);
         }
@@ -91,7 +105,7 @@ fn load_env_credentials(key: &str) -> Result<Option<Value>> {
     }
 
     let path_var = format!("MESSAGING_{key}_CREDENTIALS_PATH");
-    if let Ok(path) = std::env::var(&path_var) {
+    if let Ok(path) = env::var(&path_var) {
         let credentials_path = PathBuf::from(path);
         let safe_path = absolute_path(credentials_path)?;
         let content = fs::read_to_string(&safe_path)
@@ -120,31 +134,104 @@ fn load_secret_credentials(
     };
     let team = team.unwrap_or("default");
 
-    let root =
-        match std::env::var("GREENTIC_SECRETS_DIR").or_else(|_| std::env::var("SECRETS_ROOT")) {
-            Ok(value) => value,
-            Err(_) => return Ok(None),
-        };
+    let root = match env::var("GREENTIC_SECRETS_DIR").or_else(|_| env::var("SECRETS_ROOT")) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
 
     let root = PathBuf::from(root)
         .canonicalize()
         .with_context(|| "failed to canonicalize secrets root")?;
-    let relative = Path::new(env)
-        .join(tenant)
-        .join(team)
-        .join("messaging")
-        .join(format!("{platform}-{team}-credentials.json"));
-    let file = path_safety::normalize_under_root(&root, &relative)?;
+    let base = Path::new(env).join(tenant).join(team).join("messaging");
 
-    if !file.exists() {
+    // Preferred filename (post-migration): messaging/<platform>.credentials.json
+    let primary = path_safety::normalize_under_root(
+        &root,
+        &base.join(format!("{platform}.credentials.json")),
+    )?;
+    // Legacy filename (pre-migration): messaging/<platform>-<team>-credentials.json
+    let legacy = path_safety::normalize_under_root(
+        &root,
+        &base.join(format!("{platform}-{team}-credentials.json")),
+    )?;
+
+    let file = if primary.exists() {
+        primary
+    } else if legacy.exists() {
+        eprintln!(
+            "warning: using legacy secrets path {}; prefer messaging/<platform>.credentials.json",
+            legacy.display()
+        );
+        legacy
+    } else {
         return Ok(None);
-    }
+    };
 
     let content =
         fs::read_to_string(&file).with_context(|| format!("failed to read {}", file.display()))?;
     let json = serde_json::from_str(&content)
         .with_context(|| format!("failed to parse {}", file.display()))?;
     Ok(Some(json))
+}
+
+/// Load credentials from a greentic-secrets seed file when specified.
+/// Supported formats:
+/// - SeedDoc with `entries: [{ uri, value, ... }]`
+/// - Flat map `{ "uri": "...", "value": ... }` (single entry)
+/// The seed file path is provided via `MESSAGING_SEED_FILE` (YAML or JSON).
+fn load_seed_credentials(platform: &str) -> Result<Option<Value>> {
+    let path = match env::var("MESSAGING_SEED_FILE") {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => return Ok(None),
+    };
+    let absolute = absolute_path(path)?;
+    let content = fs::read_to_string(&absolute)
+        .with_context(|| format!("failed to read seed file {}", absolute.display()))?;
+    let value: Value = if absolute
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"))
+        .unwrap_or(false)
+    {
+        let yaml: serde_yaml_bw::Value = serde_yaml_bw::from_str(&content)
+            .with_context(|| format!("failed to parse yaml {}", absolute.display()))?;
+        serde_json::to_value(yaml)
+            .with_context(|| format!("failed to convert yaml {}", absolute.display()))?
+    } else {
+        serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse json {}", absolute.display()))?
+    };
+
+    if let Some(entry) = value
+        .get("entries")
+        .and_then(|entries| entries.as_array())
+        .and_then(|entries| {
+            entries.iter().find(|entry| {
+                entry
+                    .get("uri")
+                    .and_then(|uri| uri.as_str())
+                    .map(|uri| uri.ends_with(&format!("{platform}.credentials.json")))
+                    .unwrap_or(false)
+            })
+        })
+    {
+        if let Some(val) = entry.get("value") {
+            return Ok(Some(val.clone()));
+        }
+    }
+
+    if value
+        .get("uri")
+        .and_then(|uri| uri.as_str())
+        .map(|uri| uri.ends_with(&format!("{platform}.credentials.json")))
+        .unwrap_or(false)
+    {
+        if let Some(val) = value.get("value") {
+            return Ok(Some(val.clone()));
+        }
+    }
+
+    Ok(None)
 }
 
 fn build_secret_uri(
@@ -157,7 +244,7 @@ fn build_secret_uri(
     let tenant = tenant?;
     let team = team.unwrap_or("default");
     Some(format!(
-        "secret://{env}/{tenant}/{team}/messaging/{platform}-{team}-credentials.json"
+        "secrets://{env}/{tenant}/{team}/messaging/{platform}.credentials.json"
     ))
 }
 

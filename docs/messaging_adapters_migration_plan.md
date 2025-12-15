@@ -17,9 +17,9 @@ Pack/Component convention: for each row, `pack_name` is a pack YAML (e.g., `pack
 
 Notes:
 - Schema: extend pack v1 `messaging.adapters` (optional) mirroring `events.providers`; keep existing configs working until migrated.
-- Components: identifiers above are logical stubs to be provided by greentic-pack defaults; greentic-messaging should load them via greentic-runner/greentic-interfaces host bindings.
+- Components: identifiers above are provided by greentic-pack defaults and loaded via greentic-runner/greentic-interfaces host bindings.
 - Flows: paths are placeholders under `flows/messaging/<adapter>/`; defaults can be shipped with packs, custom paths allow overrides.
 - Telegram: keep two adapter entries (ingress + egress) for now, mirroring existing separate apps; a unified ingress-egress adapter can be added later if needed.
 - Migration direction: adapters should be discovered via packs and invoked via greentic-runner using greentic-interfaces host bindings. New adapter components can wrap or reuse logic from `gsm-provider-registry`, but greentic-messaging should stop depending on the registry directly over time.
-- Secrets/env: migrate credentials to greentic-secrets messaging conventions (`messaging/{adapter}/{tenant}/...`); keep current env vars as legacy bootstrap inputs and prefer seeding secrets/config from them at startup.
+- Secrets/env: credentials must be seeded via the `greentic-secrets` CLI (ctx + scaffold/wizard/apply) using pack-declared `secret_requirements` (e.g. `messaging/{adapter}.credentials.json`). Legacy env vars are deprecated and should only be used as migration-time inputs to the secrets wizard.
 - Default packs: this table is the canonical list of default messaging packs; startup config should support “install all defaults” or a selectable subset (e.g., `MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS` / `MESSAGING_DEFAULT_ADAPTER_PACKS`).

@@ -1,5 +1,7 @@
 # WhatsApp Provider Quickstart
 
+> Seed credentials via `greentic-secrets` (ctx + scaffold/wizard/apply). The env-var examples below are legacy and will be removed; prefer `greentic-secrets init --pack <pack>` with the messaging pack metadata.
+
 The WhatsApp adapter targets the Meta Business Cloud API. The contract test sends
 an interactive button message to a verified recipient and checks delivery status.
 
@@ -13,7 +15,19 @@ an interactive button message to a verified recipient and checks delivery status
 
 ## Configure secrets
 
-Export the required values (store them in `.env` if you prefer):
+Preferred (greentic-secrets):
+
+```bash
+greentic-secrets scaffold --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --out /tmp/whatsapp-seed.yaml --env dev --tenant acme --team default
+# Edit /tmp/whatsapp-seed.yaml to include:
+# messaging/whatsapp.credentials.json:
+#   token: EAAGm0PX4ZCpsBA...
+#   phone_id: 123456789012345
+#   recipient: 15551234567
+greentic-secrets apply -f /tmp/whatsapp-seed.yaml
+```
+
+Legacy (deprecated) env setup:
 
 ```bash
 export WHATSAPP_TOKEN=EAAGm0PX4ZCpsBA...

@@ -1,5 +1,7 @@
 # Microsoft Teams Provider Quickstart
 
+> Seed credentials via `greentic-secrets` (ctx + scaffold/wizard/apply). The env-var examples below are legacy and will be removed; prefer `greentic-secrets init --pack <pack>` with the messaging pack metadata.
+
 The Teams adapter posts Adaptive Cards through Microsoft Graph. The contract test
 expects a service principal with application permissions to send messages into a
 chat.
@@ -13,7 +15,19 @@ chat.
 
 ## Configure secrets
 
-Export the values or place them in a `.env` file:
+Preferred (greentic-secrets):
+
+```bash
+greentic-secrets scaffold --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --out /tmp/teams-seed.yaml --env dev --tenant acme --team default
+# Edit /tmp/teams-seed.yaml to include:
+# messaging/teams.credentials.json:
+#   tenant_id: 00000000-0000-0000-0000-000000000000
+#   client_id: 11111111-1111-1111-1111-111111111111
+#   client_secret: super-secret
+greentic-secrets apply -f /tmp/teams-seed.yaml
+```
+
+Legacy (deprecated) env setup:
 
 ```bash
 export TEAMS_TENANT_ID=00000000-0000-0000-0000-000000000000
