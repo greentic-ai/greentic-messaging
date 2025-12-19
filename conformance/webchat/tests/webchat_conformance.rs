@@ -107,15 +107,15 @@ impl SecretsBackend for TestSecretsBackend {
         for secret in self.inner.lock().expect("lock secrets map").values() {
             if let Some(record) = &secret.record {
                 let uri = &record.meta.uri;
-                if let Some(prefix) = category_prefix {
-                    if !uri.category().starts_with(prefix) {
-                        continue;
-                    }
+                if let Some(prefix) = category_prefix
+                    && !uri.category().starts_with(prefix)
+                {
+                    continue;
                 }
-                if let Some(prefix) = name_prefix {
-                    if !uri.name().starts_with(prefix) {
-                        continue;
-                    }
+                if let Some(prefix) = name_prefix
+                    && !uri.name().starts_with(prefix)
+                {
+                    continue;
                 }
                 items.push(greentic_secrets::spec::SecretListItem::from_meta(
                     &record.meta,

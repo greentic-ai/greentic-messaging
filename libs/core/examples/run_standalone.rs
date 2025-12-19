@@ -202,12 +202,12 @@ impl SecretsBackend for StaticSecretsBackend {
             "jwt_signing_key".to_string(),
         )
         .expect("uri");
-            Ok(vec![greentic_secrets::spec::SecretListItem {
-                uri,
-                visibility: greentic_secrets::spec::Visibility::Tenant,
-                latest_version: Some("1".into()),
-                content_type: greentic_secrets::spec::ContentType::Opaque,
-            }])
+        Ok(vec![greentic_secrets::spec::SecretListItem {
+            uri,
+            visibility: greentic_secrets::spec::Visibility::Tenant,
+            latest_version: Some("1".into()),
+            content_type: greentic_secrets::spec::ContentType::Opaque,
+        }])
     }
 
     fn delete(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {

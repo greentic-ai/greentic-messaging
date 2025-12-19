@@ -1,10 +1,10 @@
 use async_trait::async_trait;
+pub use greentic_secrets::spec::{Scope as SecretScope, SecretUri};
 pub use greentic_types::{
     EnvId, InvocationEnvelope, NodeError, NodeResult, TeamId, TenantCtx, TenantId, UserId,
 };
 pub use secrets_core::DefaultResolver;
 use secrets_core::{embedded::SecretsError, errors::Error as CoreError};
-pub use greentic_secrets::spec::{Scope as SecretScope, SecretUri};
 
 #[derive(Clone, Debug)]
 pub struct SecretPath {
@@ -70,11 +70,8 @@ impl SecretsResolver for DefaultResolver {
             .await
             .map(|_| ())
             .map_err(|err| {
-                NodeError::new(
-                    "secrets_write",
-                    format!("failed to store secret {}", uri),
-                )
-                .with_source(err)
+                NodeError::new("secrets_write", format!("failed to store secret {}", uri))
+                    .with_source(err)
             })
     }
 }

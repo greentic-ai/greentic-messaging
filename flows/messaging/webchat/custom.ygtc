@@ -1,1 +1,14 @@
-# placeholder flow for webchat custom; replace with real flow when available
+id: greentic-messaging-webchat-custom
+title: WebChat custom smoke
+description: Custom WebChat flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "WebChat custom flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed (custom)"
+    routes:
+      - end

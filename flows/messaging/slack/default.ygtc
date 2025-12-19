@@ -1,1 +1,14 @@
-# placeholder flow for slack default; replace with real flow when available
+id: greentic-messaging-slack-default
+title: Slack default smoke
+description: Minimal Slack flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Slack flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed"
+    routes:
+      - end

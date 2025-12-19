@@ -10,3 +10,4 @@ Pack generation:
 
 - Placeholder flows live under `flows/messaging/**`; replace them with real flows when available.
 - Use `tools/generate_packs.sh` to regenerate `.gtpack` artifacts into `target/packs/` once component artifacts and flows are ready (requires `packc` in PATH). See `docs/pack_generation.md` for details.
+- Seeded secrets for smoke testing live under `fixtures/seeds/messaging_all_smoke.yaml`; set `MESSAGING_SEED_FILE` and disable env fallbacks (`MESSAGING_DISABLE_ENV=1`, `MESSAGING_DISABLE_SECRETS_ROOT=1`) when running pack smoke tests.

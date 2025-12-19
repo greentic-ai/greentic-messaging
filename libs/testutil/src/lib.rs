@@ -62,7 +62,17 @@ impl TestConfig {
             }));
         }
 
-        if let Some(credentials) = load_env_credentials(&upper)? {
+        let disable_env = env::var("MESSAGING_DISABLE_ENV")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let disable_secrets_root = env::var("MESSAGING_DISABLE_SECRETS_ROOT")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        if !disable_env && let Some(credentials) = load_env_credentials(&upper)? {
+            eprintln!(
+                "warning: using env-based credentials for {platform}; prefer greentic-secrets seed files (set MESSAGING_DISABLE_ENV=1 to forbid)"
+            );
             let secret_uri =
                 build_secret_uri(env.as_deref(), tenant.as_deref(), team.as_deref(), platform);
             return Ok(Some(Self {
@@ -75,9 +85,17 @@ impl TestConfig {
             }));
         }
 
-        if let Some(credentials) =
-            load_secret_credentials(platform, env.as_deref(), tenant.as_deref(), team.as_deref())?
+        if !disable_secrets_root
+            && let Some(credentials) = load_secret_credentials(
+                platform,
+                env.as_deref(),
+                tenant.as_deref(),
+                team.as_deref(),
+            )?
         {
+            eprintln!(
+                "warning: using GREENTIC_SECRETS_DIR/SECRETS_ROOT fallback for {platform}; prefer greentic-secrets seed files (set MESSAGING_DISABLE_SECRETS_ROOT=1 to forbid)"
+            );
             let secret_uri =
                 build_secret_uri(env.as_deref(), tenant.as_deref(), team.as_deref(), platform);
             return Ok(Some(Self {
@@ -88,6 +106,13 @@ impl TestConfig {
                 credentials: Some(credentials),
                 secret_uri,
             }));
+        }
+
+        if disable_env || disable_secrets_root {
+            eprintln!(
+                "info: env/SECRETS_ROOT fallbacks disabled via MESSAGING_DISABLE_ENV={} MESSAGING_DISABLE_SECRETS_ROOT={}",
+                disable_env, disable_secrets_root
+            );
         }
 
         Ok(None)
@@ -178,6 +203,7 @@ fn load_secret_credentials(
 /// Supported formats:
 /// - SeedDoc with `entries: [{ uri, value, ... }]`
 /// - Flat map `{ "uri": "...", "value": ... }` (single entry)
+///
 /// The seed file path is provided via `MESSAGING_SEED_FILE` (YAML or JSON).
 fn load_seed_credentials(platform: &str) -> Result<Option<Value>> {
     let path = match env::var("MESSAGING_SEED_FILE") {
@@ -214,10 +240,9 @@ fn load_seed_credentials(platform: &str) -> Result<Option<Value>> {
                     .unwrap_or(false)
             })
         })
+        && let Some(val) = entry.get("value")
     {
-        if let Some(val) = entry.get("value") {
-            return Ok(Some(val.clone()));
-        }
+        return Ok(Some(val.clone()));
     }
 
     if value
@@ -225,10 +250,9 @@ fn load_seed_credentials(platform: &str) -> Result<Option<Value>> {
         .and_then(|uri| uri.as_str())
         .map(|uri| uri.ends_with(&format!("{platform}.credentials.json")))
         .unwrap_or(false)
+        && let Some(val) = value.get("value")
     {
-        if let Some(val) = value.get("value") {
-            return Ok(Some(val.clone()));
-        }
+        return Ok(Some(val.clone()));
     }
 
     Ok(None)

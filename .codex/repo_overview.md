@@ -68,4 +68,4 @@
   **Likely cause / nature of issue:** N/A.
 
 ## 5. Notes for Future Work
-- None at this time
+- Provider migration to WASM components is tracked via parity dossiers under `.codex/providers/PROVIDER_PARITY_INDEX.md`.

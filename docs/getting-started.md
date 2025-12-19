@@ -32,6 +32,18 @@ greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml \
 
 Replace `env`/`tenant`/`team` and the seed values as needed for your setup. Avoid the legacy `./secrets` folder and ad hoc env vars; `greentic-secrets` is the canonical workflow.
 
+### Testing with seed files
+
+When running tests or local helpers, you can point at a seed file instead of env/`SECRETS_ROOT`:
+
+```bash
+export MESSAGING_SEED_FILE=fixtures/seeds/messaging_secrets_smoke.yaml
+export MESSAGING_DISABLE_ENV=1
+export MESSAGING_DISABLE_SECRETS_ROOT=1
+```
+
+This forces test utilities to use the seed and ignore legacy env/dir fallbacks.
+
 ## Choose Your Platform
 
 | Platform | Setup Guide | Example Flow | Notes |

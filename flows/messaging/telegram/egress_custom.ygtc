@@ -1,1 +1,14 @@
-# placeholder flow for telegram egress custom; replace with real flow when available
+id: greentic-messaging-telegram-egress-custom
+title: Telegram egress custom smoke
+description: Custom egress flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Telegram egress custom flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed (egress custom)"
+    routes:
+      - end

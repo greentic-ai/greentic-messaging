@@ -144,7 +144,10 @@ fn messaging_credentials_path_includes_env() {
     let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), Some("user-9".into()));
     let secret = messaging_credentials("telegram", &ctx);
     let rendered = secret.to_uri();
-    assert!(rendered.contains("messaging"), "path missing messaging segment: {rendered}");
+    assert!(
+        rendered.contains("messaging"),
+        "path missing messaging segment: {rendered}"
+    );
     assert!(rendered.contains("/test/"));
     assert!(rendered.contains("/acme/"));
     assert!(rendered.contains("/team-1/"));
@@ -198,11 +201,11 @@ fn webex_credentials_path_includes_scope() {
     let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
     let path = webex_credentials(&ctx);
     let rendered = path.uri().to_string();
-        assert_eq!(
-            rendered,
-            "secrets://dev/acme/team-1/messaging/webex.credentials.json"
-        );
-    }
+    assert_eq!(
+        rendered,
+        "secrets://dev/acme/team-1/messaging/webex.credentials.json"
+    );
+}
 
 #[test]
 fn whatsapp_credentials_path_includes_scope() {

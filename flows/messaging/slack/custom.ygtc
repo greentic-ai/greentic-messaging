@@ -1,1 +1,14 @@
-# placeholder flow for slack custom; replace with real flow when available
+id: greentic-messaging-slack-custom
+title: Slack custom smoke
+description: Custom Slack flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Slack custom flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed (custom)"
+    routes:
+      - end

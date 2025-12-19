@@ -1,1 +1,14 @@
-# placeholder flow for teams custom; replace with real flow when available
+id: greentic-messaging-teams-custom
+title: Teams custom smoke
+description: Custom Teams flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Teams custom flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed (custom)"
+    routes:
+      - end

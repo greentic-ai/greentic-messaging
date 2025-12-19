@@ -1,1 +1,14 @@
-# placeholder flow for webex custom; replace with real flow when available
+id: greentic-messaging-webex-custom
+title: Webex custom smoke
+description: Custom Webex flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Webex custom flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed (custom)"
+    routes:
+      - end

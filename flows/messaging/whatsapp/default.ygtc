@@ -1,1 +1,14 @@
-# placeholder flow for whatsapp default; replace with real flow when available
+id: greentic-messaging-whatsapp-default
+title: WhatsApp default smoke
+description: Minimal WhatsApp flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "WhatsApp flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed"
+    routes:
+      - end

@@ -1,0 +1,43 @@
+entries:
+  - uri: secrets://dev/example/default/messaging/slack.credentials.json
+    format: Json
+    value:
+      bot_token: "xoxb-smoke"
+      signing_secret: "secret"
+      channel_id: "C123"
+    description: Slack smoke credentials
+  - uri: secrets://dev/example/default/messaging/teams.credentials.json
+    format: Json
+    value:
+      tenant_id: "00000000-0000-0000-0000-000000000000"
+      client_id: "11111111-1111-1111-1111-111111111111"
+      client_secret: "teams-secret"
+    description: Teams smoke credentials
+  - uri: secrets://dev/example/default/messaging/telegram.credentials.json
+    format: Json
+    value:
+      bot_token: "telegram-token"
+      chat_id: "-100123"
+      secret_token: "telegram-secret"
+    description: Telegram smoke credentials
+  - uri: secrets://global/webchat/_/webchat/jwt_signing_key
+    format: Text
+    value: "webchat-signing-key"
+    description: WebChat signing key
+  - uri: secrets://dev/example/default/webchat/channel_token
+    format: Text
+    value: "webchat-channel-token"
+    description: WebChat Direct Line token (optional)
+  - uri: secrets://dev/example/default/messaging/webex.credentials.json
+    format: Json
+    value:
+      bot_token: "webex-token"
+      room_id: "room-id"
+    description: Webex smoke credentials
+  - uri: secrets://dev/example/default/messaging/whatsapp.credentials.json
+    format: Json
+    value:
+      token: "whatsapp-token"
+      phone_id: "123456789"
+      recipient: "15551234567"
+    description: WhatsApp smoke credentials

@@ -1,1 +1,14 @@
-# placeholder flow for telegram ingress default; replace with real flow when available
+id: greentic-messaging-telegram-ingress-default
+title: Telegram ingress default smoke
+description: Minimal ingress flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Telegram ingress flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed (ingress default)"
+    routes:
+      - end

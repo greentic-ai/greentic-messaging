@@ -8,7 +8,7 @@ pub type HostSessionCursor = bindings::greentic::interfaces_types::types::Sessio
 
 // Surface common host-facing modules so callers can import everything via gsm-core.
 pub use greentic_interfaces_host::{
-    component, events_bridge, events_broker, events_sink, events_source, host_import, http_client,
+    component, events_bridge, events_broker, events_sink, events_source, http_client,
     messaging_session, pack_exports, secrets, state, telemetry, types, validate,
 };
 

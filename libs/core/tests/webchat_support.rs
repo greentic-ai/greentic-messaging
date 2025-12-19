@@ -45,14 +45,14 @@ impl SecretsBackend for TestSecretsBackend {
         &self,
         record: greentic_secrets::spec::SecretRecord,
     ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
-        self.inner
-            .lock()
-            .expect("lock secrets map")
-            .insert(record.meta.uri.to_string(), VersionedSecret {
+        self.inner.lock().expect("lock secrets map").insert(
+            record.meta.uri.to_string(),
+            VersionedSecret {
                 version: 1,
                 deleted: false,
                 record: Some(record),
-            });
+            },
+        );
         Ok(greentic_secrets::spec::SecretVersion {
             version: 1,
             deleted: false,
@@ -86,13 +86,12 @@ impl SecretsBackend for TestSecretsBackend {
             .filter_map(|secret| secret.record.as_ref())
             .filter(|record| {
                 record.meta.uri.scope() == scope
-                    && category_prefix.map_or(true, |p| record.meta.uri.category().starts_with(p))
-                    && name_prefix.map_or(true, |p| record.meta.uri.name().starts_with(p))
+                    && category_prefix.is_none_or(|p| record.meta.uri.category().starts_with(p))
+                    && name_prefix.is_none_or(|p| record.meta.uri.name().starts_with(p))
             })
-            .map(|record| greentic_secrets::spec::SecretListItem::from_meta(
-                &record.meta,
-                Some("1".into()),
-            ))
+            .map(|record| {
+                greentic_secrets::spec::SecretListItem::from_meta(&record.meta, Some("1".into()))
+            })
             .collect();
         Ok(items)
     }
@@ -120,10 +119,12 @@ impl SecretsBackend for TestSecretsBackend {
             .lock()
             .expect("lock secrets map")
             .get(&uri.to_string())
-            .map(|secret| vec![SecretVersion {
-                version: secret.version,
-                deleted: secret.deleted,
-            }])
+            .map(|secret| {
+                vec![SecretVersion {
+                    version: secret.version,
+                    deleted: secret.deleted,
+                }]
+            })
             .unwrap_or_default())
     }
 

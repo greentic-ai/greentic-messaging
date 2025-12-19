@@ -11,6 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACK_DIR="$ROOT/packs/messaging"
 OUT_DIR="$ROOT/target/packs"
+ARTIFACT_DIR="$ROOT/target/components"
 
 mkdir -p "$OUT_DIR"
 
@@ -19,11 +20,25 @@ if ! command -v packc >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "Checking component artifacts under ${ARTIFACT_DIR}..."
+missing=0
+for manifest in "$PACK_DIR"/components/*/component.manifest.json; do
+  name="$(basename "$(dirname "$manifest")")"
+  wasm="$ARTIFACT_DIR/${name}.wasm"
+  if [ ! -f "$wasm" ]; then
+    echo "missing component artifact: $wasm (build or fetch before packing)"
+    missing=1
+  fi
+done
+
+if [ "$missing" -ne 0 ]; then
+  echo "Aborting pack generation due to missing component artifacts."
+  exit 1
+fi
+
 for pack in "$PACK_DIR"/*.yaml; do
   name="$(basename "${pack%.yaml}")"
   out="$OUT_DIR/${name}.gtpack"
   echo "Packing $pack -> $out"
-  # This invocation assumes packc can resolve component manifests and flows referenced in the pack.
-  # Adjust flags as needed when integrating with real component artifacts.
-  packc pack "$pack" --out "$out"
+  packc pack "$pack" --out "$out" --component-dir "$ARTIFACT_DIR"
 done

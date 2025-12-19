@@ -1,1 +1,14 @@
-# placeholder flow for webchat default; replace with real flow when available
+id: greentic-messaging-webchat-default
+title: WebChat default smoke
+description: Minimal WebChat flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "WebChat flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed"
+    routes:
+      - end

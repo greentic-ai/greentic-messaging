@@ -1,1 +1,14 @@
-# placeholder flow for webex default; replace with real flow when available
+id: greentic-messaging-webex-default
+title: Webex default smoke
+description: Minimal Webex flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Webex flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed"
+    routes:
+      - end

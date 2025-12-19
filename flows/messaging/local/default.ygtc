@@ -1,1 +1,14 @@
-# placeholder flow for local default; replace with real flow when available
+id: greentic-messaging-local-default
+title: Local default smoke
+description: Minimal local flow to validate pack wiring.
+type: messaging
+in: start
+nodes:
+  start:
+    card:
+      title: "Local flow loaded"
+      body:
+        - type: text
+          text: "smoke flow executed"
+    routes:
+      - end
