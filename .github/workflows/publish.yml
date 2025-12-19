@@ -9,6 +9,8 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       CARGO_BUILD_JOBS: 1
       RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=mold"
@@ -26,6 +28,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: lint
     env:
       CARGO_BUILD_JOBS: 1
