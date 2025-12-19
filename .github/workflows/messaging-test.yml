@@ -1,5 +1,8 @@
 name: messaging-test
 
+permissions:
+  contents: read
+
 on:
   push:
     paths:
