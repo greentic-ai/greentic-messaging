@@ -3,77 +3,32 @@
 #[cfg(feature = "component-host")]
 mod demo {
     use anyhow::Result;
-    use greentic_interfaces_host::host_import::v0_6;
-    use greentic_interfaces_host::host_import::v0_6::{http, iface_types, state, types};
+    use greentic_interfaces_host::runner_host_v1;
+    use greentic_interfaces_host::runner_host_v1::http_v1;
     use gsm_core::add_host_imports;
     use wasmtime::component::Linker;
     use wasmtime::{Config, Engine};
 
     pub struct DemoHost;
 
-    impl v0_6::HostImports for DemoHost {
-        fn secrets_get(
+    impl runner_host_v1::RunnerHost for DemoHost {
+        fn http_request(
             &mut self,
-            _key: String,
-            _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
-            Ok(Err(unavailable("secrets_get")))
+            _method: String,
+            _url: String,
+            _headers: Vec<String>,
+            _body: Option<Vec<u8>>,
+        ) -> wasmtime::Result<Result<Vec<u8>, String>> {
+            Ok(Err("http_request unavailable".into()))
         }
 
-        fn telemetry_emit(
-            &mut self,
-            _span_json: String,
-            _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<()> {
+        fn kv_get(&mut self, _ns: String, _key: String) -> wasmtime::Result<Option<String>> {
+            Ok(None)
+        }
+
+        fn kv_put(&mut self, _ns: String, _key: String, _val: String) -> wasmtime::Result<()> {
             Ok(())
         }
-
-        fn http_fetch(
-            &mut self,
-            _req: http::HttpRequest,
-            _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<http::HttpResponse, types::IfaceError>> {
-            Ok(Err(unavailable("http_fetch")))
-        }
-
-        fn mcp_exec(
-            &mut self,
-            _component: String,
-            _action: String,
-            _args_json: String,
-            _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
-            Ok(Err(unavailable("mcp_exec")))
-        }
-
-        fn state_get(
-            &mut self,
-            _key: iface_types::StateKey,
-            _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
-            Ok(Err(unavailable("state_get")))
-        }
-
-        fn state_set(
-            &mut self,
-            _key: iface_types::StateKey,
-            _value_json: String,
-            _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<state::OpAck, types::IfaceError>> {
-            Ok(Err(unavailable("state_set")))
-        }
-
-        fn session_update(
-            &mut self,
-            _cursor: iface_types::SessionCursor,
-            _ctx: Option<types::TenantCtx>,
-        ) -> wasmtime::Result<Result<String, types::IfaceError>> {
-            Ok(Err(unavailable("session_update")))
-        }
-    }
-
-    fn unavailable(_op: &str) -> types::IfaceError {
-        types::IfaceError::Unavailable
     }
 
     pub fn run() -> Result<()> {
