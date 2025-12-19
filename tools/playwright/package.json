@@ -7,6 +7,6 @@
     "screenshot": "node index.mjs"
   },
   "dependencies": {
-    "@playwright/test": "^1.46.0"
+    "@playwright/test": "^1.57.0"
   }
 }
