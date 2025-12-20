@@ -33,6 +33,7 @@ greentic-interfaces-wasmtime = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 http = { workspace = true }
+schemars = { workspace = true, features = ["derive"] }
 dashmap = { workspace = true }
 reqwest = { workspace = true }
 jsonwebtoken = { workspace = true }

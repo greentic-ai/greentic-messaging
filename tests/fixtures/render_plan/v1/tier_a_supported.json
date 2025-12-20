@@ -1,0 +1,22 @@
+{
+  "capabilities": {
+    "supports_adaptive_cards": true,
+    "supports_markdown": false,
+    "supports_html": false,
+    "supports_images": true,
+    "supports_buttons": true,
+    "supports_threads": false
+  },
+  "input": {
+    "title": "Adaptive",
+    "text": "Fully supported",
+    "images": [
+      "https://example.com/ok.png"
+    ],
+    "actions": [
+      { "title": "Go", "url": "https://example.com" }
+    ]
+  },
+  "expected_tier": "tier_a",
+  "expected_warnings": []
+}

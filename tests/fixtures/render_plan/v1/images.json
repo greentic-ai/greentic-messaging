@@ -1,0 +1,35 @@
+{
+  "input": {
+    "title": "Gallery",
+    "text": "See images",
+    "images": [
+      "https://example.com/img1.png",
+      "https://example.com/img2.png"
+    ]
+  },
+  "expected": {
+    "tier": "tier_d",
+    "summary_text": "Gallery\nSee images",
+    "actions": [],
+    "attachments": [
+      "https://example.com/img1.png",
+      "https://example.com/img2.png"
+    ],
+    "warnings": [
+      {
+        "code": "images_not_supported",
+        "message": "images not supported",
+        "path": "/images"
+      },
+      {
+        "code": "adaptive_cards_not_supported",
+        "message": null,
+        "path": null
+      }
+    ],
+    "debug": {
+      "planner_version": 1,
+      "tier": "d"
+    }
+  }
+}

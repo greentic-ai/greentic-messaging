@@ -1,0 +1,40 @@
+{
+  "capabilities": {
+    "supports_adaptive_cards": true,
+    "supports_markdown": false,
+    "supports_html": false,
+    "supports_images": true,
+    "supports_buttons": true
+  },
+  "input": {
+    "title": "**Bold** <b>Title</b>",
+    "text": "Body with _markdown_ and <i>html</i>",
+    "actions": [
+      { "title": "`Action`", "url": null }
+    ]
+  },
+  "expected": {
+    "tier": "tier_a",
+    "summary_text": "Bold Title\nBody with markdown and html\nActions: Action",
+    "actions": [
+      "Action"
+    ],
+    "attachments": [],
+    "warnings": [
+      {
+        "code": "formatting_stripped",
+        "message": "markdown/html stripped",
+        "path": "/summary_text"
+      },
+      {
+        "code": "formatting_stripped",
+        "message": "markdown/html stripped",
+        "path": "/actions"
+      }
+    ],
+    "debug": {
+      "planner_version": 1,
+      "tier": "a"
+    }
+  }
+}

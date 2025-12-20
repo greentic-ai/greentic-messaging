@@ -1,0 +1,32 @@
+{
+  "capabilities": {
+    "supports_adaptive_cards": true,
+    "supports_markdown": false,
+    "supports_html": false,
+    "supports_images": true,
+    "supports_buttons": true,
+    "max_text_len": 10,
+    "max_payload_bytes": 12
+  },
+  "input": {
+    "title": "TruncateMe",
+    "text": "abcdefghijklmnopqrstuvwxyz"
+  },
+  "expected": {
+    "tier": "tier_a",
+    "summary_text": "TruncateMe",
+    "actions": [],
+    "attachments": [],
+    "warnings": [
+      {
+        "code": "text_truncated",
+        "message": "summary trimmed to 10 chars",
+        "path": "/summary_text"
+      }
+    ],
+    "debug": {
+      "planner_version": 1,
+      "tier": "a"
+    }
+  }
+}

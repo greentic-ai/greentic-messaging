@@ -1,0 +1,23 @@
+{
+  "input": {
+    "title": "Hello",
+    "text": "World"
+  },
+  "expected": {
+    "tier": "tier_d",
+    "summary_text": "Hello\nWorld",
+    "actions": [],
+    "attachments": [],
+    "warnings": [
+      {
+        "code": "adaptive_cards_not_supported",
+        "message": null,
+        "path": null
+      }
+    ],
+    "debug": {
+      "planner_version": 1,
+      "tier": "d"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "capabilities": {
+    "supports_adaptive_cards": true,
+    "supports_markdown": false,
+    "supports_html": false,
+    "supports_images": false,
+    "supports_buttons": true,
+    "supports_threads": false
+  },
+  "input": {
+    "title": "Has image",
+    "text": "Needs downgrade",
+    "images": [
+      "https://example.com/unsupported.png"
+    ],
+    "actions": []
+  },
+  "expected_tier": "tier_b",
+  "expected_warnings": [
+    {
+      "code": "images_not_supported",
+      "message": "images not supported",
+      "path": "/images"
+    }
+  ]
+}

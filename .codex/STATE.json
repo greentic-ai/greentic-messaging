@@ -1,0 +1,15 @@
+{
+  "repo_hint": "greentic-messaging",
+  "default_track": "host",
+  "current": null,
+  "done": [
+    "PR-01",
+    "PR-02",
+    "PR-03",
+    "PR-04",
+    "PR-05",
+    "PR-06",
+    "PR-07",
+    "PR-08"
+  ]
+}
