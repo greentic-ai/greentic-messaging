@@ -4,7 +4,6 @@
 mod demo {
     use anyhow::Result;
     use greentic_interfaces_host::runner_host_v1;
-    use greentic_interfaces_host::runner_host_v1::http_v1;
     use gsm_core::add_host_imports;
     use wasmtime::component::Linker;
     use wasmtime::{Config, Engine};

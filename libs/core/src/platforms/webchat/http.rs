@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::warn;
 
-use super::conversation::SharedConversationStore;
-#[cfg(feature = "directline_standalone")]
-use super::conversation::{Activity, ChannelAccount, ConversationAccount, StoreError, noop_store};
+use super::conversation::{
+    Activity, ChannelAccount, ConversationAccount, SharedConversationStore, StoreError, noop_store,
+};
 use super::{
     WebChatProvider, backoff,
     bus::{NoopBus, SharedBus},
@@ -43,7 +43,6 @@ pub struct AppState {
     pub sessions: SharedSessionStore,
     pub activity_poster: SharedDirectLinePoster,
     pub oauth_client: Arc<dyn GreenticOauthClient>,
-    #[cfg(feature = "directline_standalone")]
     pub conversations: SharedConversationStore,
     circuit_settings: CircuitSettings,
     token_circuits: CircuitRegistry,
@@ -61,7 +60,6 @@ impl Clone for AppState {
             sessions: Arc::clone(&self.sessions),
             activity_poster: Arc::clone(&self.activity_poster),
             oauth_client: Arc::clone(&self.oauth_client),
-            #[cfg(feature = "directline_standalone")]
             conversations: Arc::clone(&self.conversations),
             circuit_settings: self.circuit_settings.clone(),
             token_circuits: self.token_circuits.clone(),
@@ -95,7 +93,6 @@ impl AppState {
             sessions: Arc::new(MemorySessionStore::default()),
             activity_poster,
             oauth_client,
-            #[cfg(feature = "directline_standalone")]
             conversations: noop_store(),
             circuit_settings: circuit_settings.clone(),
             token_circuits: CircuitRegistry::new(circuit_settings.clone()),
@@ -128,14 +125,8 @@ impl AppState {
         self
     }
 
-    #[cfg(feature = "directline_standalone")]
     pub fn with_conversations(mut self, conversations: SharedConversationStore) -> Self {
         self.conversations = conversations;
-        self
-    }
-
-    #[cfg(not(feature = "directline_standalone"))]
-    pub fn with_conversations(self, _conversations: SharedConversationStore) -> Self {
         self
     }
 
@@ -706,7 +697,6 @@ pub async fn admin_post_activity(
     Ok(Json(AdminPostActivityResponse { posted, skipped }))
 }
 
-#[cfg(feature = "directline_standalone")]
 async fn append_and_broadcast(
     state: &AppState,
     session: &WebchatSession,
@@ -759,7 +749,6 @@ async fn append_and_broadcast(
     Ok(1)
 }
 
-#[cfg(feature = "directline_standalone")]
 fn apply_bot_defaults(activity: &mut Activity, conversation_id: &str) {
     match activity.from.as_mut() {
         Some(from) => {
@@ -786,21 +775,6 @@ fn apply_bot_defaults(activity: &mut Activity, conversation_id: &str) {
             id: conversation_id.to_string(),
         });
     }
-}
-
-#[cfg(not(feature = "directline_standalone"))]
-async fn append_and_broadcast(
-    state: &AppState,
-    session: &WebchatSession,
-    activity: Value,
-) -> Result<usize, WebChatError> {
-    if !session.proactive_ok {
-        return Err(WebChatError::BadRequest("proactive messaging disabled"));
-    }
-    state
-        .post_activity(&session.conversation_id, &session.bearer_token, activity)
-        .await?;
-    Ok(1)
 }
 
 pub type SharedDirectLinePoster = Arc<dyn DirectLinePoster>;

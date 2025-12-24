@@ -68,6 +68,38 @@ jobs:
       - name: test
         run: cargo test --workspace --all-targets --exclude dev-viewer ${{ matrix.cargo_args }}
 
+  providers-new:
+    name: providers (new backend)
+    runs-on: ubuntu-latest
+    needs: lint
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_BUILD_JOBS: 1
+      RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=mold"
+      GREENTIC_TEST_PROVIDER_BACKEND: new
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout greentic-messaging-providers
+        uses: actions/checkout@v4
+        with:
+          repository: greentic-ai/greentic-messaging-providers
+          path: ../greentic-messaging-providers
+      - name: Free disk space
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
+          echo "Disk usage after cleanup:"
+          df -h
+      - name: Install mold linker
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mold
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: providers probe + vectors
+        run: cargo test -p gsm-core --test providers_new_probe --test providers_backend_gate --test providers_vectors
+
   oauth:
     name: oauth suites
     runs-on: ubuntu-latest

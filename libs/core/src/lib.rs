@@ -4,6 +4,8 @@
 //! components. It also provides validation helpers and small utilities for subject naming and
 //! idempotency tracking.
 pub mod adapter_registry;
+#[cfg(feature = "adaptive-cards")]
+pub mod adaptivecards;
 pub mod cards;
 #[cfg(feature = "component-host")]
 pub mod component_host;
@@ -32,11 +34,15 @@ pub mod runner_client;
 pub mod secrets_paths;
 pub mod subjects;
 pub mod telemetry;
+#[cfg(any(test, feature = "testkit"))]
+pub mod testkit;
 pub mod types;
 pub mod validate;
 pub mod worker;
 
 pub use adapter_registry::*;
+#[cfg(feature = "adaptive-cards")]
+pub use adaptivecards::*;
 pub use cards::*;
 #[cfg(feature = "component-host")]
 pub use component_host::*;
@@ -81,6 +87,8 @@ pub use runner_client::*;
 pub use secrets_paths::*;
 pub use subjects::*;
 pub use telemetry::*;
+#[cfg(any(test, feature = "testkit"))]
+pub use testkit::*;
 pub use types::*;
 pub use validate::*;
 pub use worker::*;

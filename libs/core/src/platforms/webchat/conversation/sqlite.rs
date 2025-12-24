@@ -87,7 +87,8 @@ impl SqliteConversationStore {
                     .get(1)
                     .map_err(|err| StoreError::Internal(err.into()))?;
                 let next_watermark: u64 = row
-                    .get(2)
+                    .get::<_, i64>(2)
+                    .map(|v| v.max(0) as u64)
                     .map_err(|err| StoreError::Internal(err.into()))?;
                 let activities: Vec<StoredActivity> = serde_json::from_str(&activities_json)
                     .map_err(|err| StoreError::Internal(err.into()))?;
@@ -115,7 +116,11 @@ impl SqliteConversationStore {
             serde_json::to_string(&record.ctx).map_err(|err| StoreError::Internal(err.into()))?;
         let activities = serde_json::to_string(&record.activities)
             .map_err(|err| StoreError::Internal(err.into()))?;
-        let next_watermark = record.next_watermark;
+        let next_watermark: i64 = record
+            .next_watermark
+            .min(i64::MAX as u64)
+            .try_into()
+            .unwrap_or(i64::MAX);
 
         self.with_conn(move |conn| {
             conn.execute(

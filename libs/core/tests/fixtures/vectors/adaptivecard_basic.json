@@ -1,0 +1,13 @@
+{
+  "tier": "tier_d",
+  "summary_text": "Adaptive card summary",
+  "actions": [],
+  "attachments": [],
+  "warnings": [
+    {
+      "code": "downgraded",
+      "message": "adaptive card downgraded to text",
+      "path": null
+    }
+  ]
+}

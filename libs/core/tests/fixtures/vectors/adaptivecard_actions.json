@@ -1,0 +1,16 @@
+{
+  "tier": "tier_d",
+  "summary_text": "Actions summary text",
+  "actions": [
+    "openUrl:https://example.test",
+    "postback:{\"ok\":true}"
+  ],
+  "attachments": [],
+  "warnings": [
+    {
+      "code": "actions-downgraded",
+      "message": "actions folded into summary",
+      "path": "/actions"
+    }
+  ]
+}

@@ -11,7 +11,10 @@ nats = ["dep:async-nats"]
 directline_standalone = []
 store_sqlite = ["dep:rusqlite"]
 adaptive-cards = []
+testkit = []
+proptest = ["dep:proptest"]
 component-host = ["dep:wasmtime"]
+providers-bundle-tests = ["component-host"]
 
 [[example]]
 name = "wasmtime_host"
@@ -55,6 +58,7 @@ urlencoding = { workspace = true }
 gsm-telemetry = { workspace = true }
 packc = { workspace = true }
 greentic-pack = { workspace = true }
+proptest = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
@@ -64,3 +68,6 @@ tower-http = { workspace = true, features = ["cors"] }
 tracing-test = { workspace = true, features = ["no-env-filter"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
+provider-common = { workspace = true }
+serde_json = { workspace = true }
+insta = { workspace = true, features = ["json"] }
