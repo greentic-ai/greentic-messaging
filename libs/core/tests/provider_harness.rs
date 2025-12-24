@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use provider_common::{RenderPlan, RenderTier, RenderWarning};
+use gsm_core::{RenderPlan, RenderTier, RenderWarning};
 use serde_json::{Value, json};
 use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Config, Engine, Store};
@@ -33,7 +33,7 @@ pub fn implementation_origin() -> &'static str {
     "greentic-messaging-providers"
 }
 
-pub fn webchat_capabilities() -> provider_common::CapabilitiesResponseV1 {
+pub fn webchat_capabilities() -> CapabilitiesResponseV1 {
     let path = providers_components_root().join("webchat-capabilities_v1.json");
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("missing capabilities file at {}", path.display()));
@@ -58,6 +58,30 @@ pub struct EncodedPayload {
     pub body: Value,
     pub metadata: Value,
     pub warnings: Vec<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+struct CapabilitiesResponseV1 {
+    version: String,
+    metadata: ProviderMetadataV1,
+    capabilities: ProviderCapabilitiesV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+struct ProviderMetadataV1 {
+    provider_id: String,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    rate_limit_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+struct ProviderCapabilitiesV1 {
+    #[serde(default)]
+    supports_webhook_validation: bool,
 }
 
 fn parse_body(content_type: &str, body: &[u8]) -> Value {

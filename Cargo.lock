@@ -2021,7 +2021,6 @@ dependencies = [
  "once_cell",
  "packc",
  "proptest",
- "provider-common",
  "regex",
  "reqwest",
  "rusqlite",
@@ -4133,16 +4132,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "provider-common"
-version = "0.4.5"
-source = "git+https://github.com/greentic-ai/greentic-messaging-providers?branch=master#46b13bc530a52714bf9719ec6d1a6290ea18862f"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.17",
 ]
 
 [[package]]

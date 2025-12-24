@@ -73,8 +73,6 @@ greentic-session = { version = "0.4", default-features = false, features = ["inm
 greentic-telemetry = { version = "0.4", features = ["fmt"] }
 greentic-pack = "0.4"
 packc = "0.4"
-provider-common = { git = "https://github.com/greentic-ai/greentic-messaging-providers", package = "provider-common", branch = "master" }
-provider-runtime-config = { git = "https://github.com/greentic-ai/greentic-messaging-providers", package = "provider-runtime-config", branch = "master" }
 handlebars = "6.3"
 hex = "0.4"
 hmac = "0.12"
