@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: greentic-ai/greentic-messaging-providers
-          path: ../greentic-messaging-providers
+          path: greentic-messaging-providers
       - name: Free disk space
         run: |
           echo "Disk usage before cleanup:"

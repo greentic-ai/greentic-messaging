@@ -61,27 +61,27 @@ pub struct EncodedPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-struct CapabilitiesResponseV1 {
-    version: String,
-    metadata: ProviderMetadataV1,
-    capabilities: ProviderCapabilitiesV1,
+pub struct CapabilitiesResponseV1 {
+    pub version: String,
+    pub metadata: ProviderMetadataV1,
+    pub capabilities: ProviderCapabilitiesV1,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-struct ProviderMetadataV1 {
-    provider_id: String,
+pub struct ProviderMetadataV1 {
+    pub provider_id: String,
     #[serde(default)]
-    display_name: Option<String>,
+    pub display_name: Option<String>,
     #[serde(default)]
-    version: Option<String>,
+    pub version: Option<String>,
     #[serde(default)]
-    rate_limit_hint: Option<String>,
+    pub rate_limit_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-struct ProviderCapabilitiesV1 {
+pub struct ProviderCapabilitiesV1 {
     #[serde(default)]
-    supports_webhook_validation: bool,
+    pub supports_webhook_validation: bool,
 }
 
 fn parse_body(content_type: &str, body: &[u8]) -> Value {

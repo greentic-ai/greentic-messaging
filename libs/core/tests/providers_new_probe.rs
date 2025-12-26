@@ -14,6 +14,6 @@ fn providers_crate_links_and_exposes_capabilities() {
 
     let caps = webchat_capabilities();
     assert_eq!(caps.metadata.provider_id, "webchat");
-    assert!(!caps.metadata.version.trim().is_empty());
+    assert!(!caps.metadata.version.unwrap_or_default().trim().is_empty());
     assert_eq!(caps.capabilities.supports_webhook_validation, true);
 }
