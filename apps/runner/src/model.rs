@@ -168,17 +168,10 @@ impl Flow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::{fs, path::PathBuf};
 
     fn write_temp_flow(contents: &str) -> PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        let suffix = uuid::Uuid::new_v4();
         let path = std::env::temp_dir().join(format!("flow-{suffix}.yaml"));
         fs::write(&path, contents).unwrap();
         path

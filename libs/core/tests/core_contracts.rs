@@ -198,6 +198,12 @@ fn teams_conversations_secret_includes_scope() {
 
 #[test]
 fn webex_credentials_path_includes_scope() {
+    let _guard = env_lock().lock().unwrap();
+    let prev = std::env::var("GREENTIC_ENV").ok();
+    unsafe {
+        std::env::set_var("GREENTIC_ENV", "dev");
+    }
+
     let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
     let path = webex_credentials(&ctx);
     let rendered = path.uri().to_string();
@@ -205,6 +211,16 @@ fn webex_credentials_path_includes_scope() {
         rendered,
         "secrets://dev/acme/team-1/messaging/webex.credentials.json"
     );
+
+    if let Some(prev) = prev {
+        unsafe {
+            std::env::set_var("GREENTIC_ENV", prev);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var("GREENTIC_ENV");
+        }
+    }
 }
 
 #[test]

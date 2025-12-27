@@ -204,8 +204,6 @@ mod tests {
     fn setup_signer() -> JwtSigner {
         unsafe {
             std::env::set_var("JWT_ALG", "HS256");
-        }
-        unsafe {
             std::env::set_var("JWT_SECRET", "integration-secret");
         }
         JwtSigner::from_env().expect("signer")
