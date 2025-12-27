@@ -73,6 +73,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -83,8 +88,20 @@ jobs:
       - name: Determine release tag/name
         id: meta
         run: |
-          version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([0-9.]+)".*/\1/')
+          version=$(python3 - <<'PY'
+          import sys, tomllib
+
+          with open("Cargo.toml", "rb") as f:
+              data = tomllib.load(f)
+          version = data.get("workspace", {}).get("package", {}).get("version")
+          if not version:
+              sys.exit("No workspace.package.version found in Cargo.toml")
+          print(version)
+          PY
+          )
+
           tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "name=${tag}" >> "$GITHUB_OUTPUT"
           echo "prerelease=false" >> "$GITHUB_OUTPUT"
