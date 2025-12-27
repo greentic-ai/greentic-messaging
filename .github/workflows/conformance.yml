@@ -63,6 +63,15 @@ jobs:
       RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
+          docker system prune -af || true
+          echo "Disk usage after cleanup:"
+          df -h
       - name: Install mold linker
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mold
