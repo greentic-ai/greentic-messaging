@@ -39,7 +39,7 @@ struct Cli {
 enum CliCommand {
     /// Inspect the current environment, secrets and available binaries
     Info,
-    /// Developer utilities (coming soon)
+    /// Developer utilities (local stack helpers)
     Dev {
         #[command(subcommand)]
         command: DevCommand,
@@ -54,7 +54,7 @@ enum CliCommand {
         #[arg(long)]
         team: Option<String>,
     },
-    /// Flow helpers (coming soon)
+    /// Flow helpers
     Flows {
         #[command(subcommand)]
         command: FlowCommand,
