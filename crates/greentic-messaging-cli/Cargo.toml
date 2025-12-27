@@ -8,7 +8,7 @@ description = "Unified CLI wrapper for Greentic messaging services (ingress/egre
 repository.workspace = true
 
 [package.metadata.binstall]
-pkg-url = "https://github.com/greentic-ai/greentic-messaging/releases/download/{ version }/greentic-messaging-{ target }.{ archive-format }"
+pkg-url = "https://github.com/greentic-ai/greentic-messaging/releases/download/v{ version }/greentic-messaging-{ target }.{ archive-format }"
 pkg-fmt = "tgz"
 pkg-fmt-windows = "zip"
 targets = [
