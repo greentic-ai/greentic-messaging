@@ -72,16 +72,24 @@ mod tests {
     use axum::{Router, body::Body, middleware, routing::get};
     use base64::Engine;
     use hmac::Mac;
+    use rand::RngCore;
     use tower::ServiceExt;
+
+    fn random_secret() -> String {
+        let mut buf = [0u8; 32];
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut buf);
+        base64::engine::general_purpose::STANDARD.encode(buf)
+    }
 
     #[test]
     fn hmac_verify_accepts_valid_signature() {
-        let secret = "topsecret";
+        let secret = random_secret();
         let body = br#"{"ok":true}"#;
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(body);
         let sig = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
-        assert!(hmac_verify(secret, body, &sig).is_ok());
+        assert!(hmac_verify(&secret, body, &sig).is_ok());
     }
 
     #[tokio::test]
@@ -114,9 +122,8 @@ mod tests {
 
     #[tokio::test]
     async fn verify_hmac_rejects_bad_signature() {
-        unsafe {
-            std::env::set_var("INGRESS_HMAC_SECRET", "secret");
-        }
+        let secret = random_secret();
+        unsafe { std::env::set_var("INGRESS_HMAC_SECRET", &secret) };
         unsafe {
             std::env::set_var("INGRESS_HMAC_HEADER", "x-signature");
         }
@@ -131,7 +138,7 @@ mod tests {
         let resp: axum::response::Response = app.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), axum::http::StatusCode::UNAUTHORIZED);
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(b"secret").unwrap();
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(b"payload");
         let sig = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
         let ok_req = axum::http::Request::builder()

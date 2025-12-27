@@ -56,22 +56,32 @@ pub fn verify_signature(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::RngCore;
+
+    fn random_secret() -> String {
+        let mut buf = [0u8; 32];
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut buf);
+        hex::encode(buf)
+    }
 
     #[test]
     fn verifies_sha1_signature() {
-        let secret = "super-secret";
+        let secret = random_secret();
         let body = br#"{"hello":"world"}"#;
-        let sig = compute_signature(secret, body, SignatureAlgorithm::Sha1).unwrap();
+        let sig = compute_signature(&secret, body, SignatureAlgorithm::Sha1).unwrap();
         let signature = format!("sha1={}", hex::encode(sig));
-        assert!(verify_signature(secret, &signature, body, SignatureAlgorithm::Sha1).unwrap());
+        assert!(verify_signature(&secret, &signature, body, SignatureAlgorithm::Sha1).unwrap());
     }
 
     #[test]
     fn rejects_invalid_signature() {
-        let secret = "super-secret";
+        let secret = random_secret();
+        let other_secret = random_secret();
         let body = br#"{"hello":"world"}"#;
-        let signature = "sha1=deadbeef";
-        let valid = verify_signature(secret, signature, body, SignatureAlgorithm::Sha1)
+        let sig = compute_signature(&other_secret, body, SignatureAlgorithm::Sha1).unwrap();
+        let signature = format!("sha1={}", hex::encode(sig));
+        let valid = verify_signature(&secret, &signature, body, SignatureAlgorithm::Sha1)
             .expect("verification");
         assert!(!valid);
     }

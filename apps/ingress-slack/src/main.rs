@@ -338,7 +338,7 @@ fn slack_event_invocation(
 ///
 /// let mut headers = HeaderMap::new();
 /// headers.insert("X-Slack-Request-Timestamp", "1".parse().unwrap());
-/// headers.insert("X-Slack-Signature", "v0=deadbeef".parse().unwrap());
+/// headers.insert("X-Slack-Signature", "v0=<signature>".parse().unwrap());
 /// assert!(!verify_slack_sig("secret", &headers, b"{}"));
 /// ```
 pub fn verify_slack_sig(secret: &str, headers: &HeaderMap, body: &[u8]) -> bool {
@@ -391,10 +391,18 @@ fn hex_encode(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use axum::http::HeaderMap;
+    use rand::RngCore;
+
+    fn random_secret() -> String {
+        let mut buf = [0u8; 32];
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut buf);
+        hex_encode(buf.as_ref())
+    }
 
     #[test]
     fn verify_slack_sig_accepts_valid_signature() {
-        let secret = "top-secret";
+        let secret = random_secret();
         let timestamp = "1700000000";
         let body = br#"{"type":"event_callback"}"#;
         let base_string = format!("v0:{timestamp}:{}", String::from_utf8_lossy(body));
@@ -407,15 +415,25 @@ mod tests {
         headers.insert("X-Slack-Request-Timestamp", timestamp.parse().unwrap());
         headers.insert("X-Slack-Signature", signature.parse().unwrap());
 
-        assert!(verify_slack_sig(secret, &headers, body));
+        assert!(verify_slack_sig(&secret, &headers, body));
     }
 
     #[test]
     fn verify_slack_sig_rejects_mismatch() {
+        let good_secret = random_secret();
+        let bad_secret = random_secret();
+        let timestamp = "1700000001";
+        let body = br#"{"type":"event_callback"}"#;
+        let base_string = format!("v0:{timestamp}:{}", String::from_utf8_lossy(body));
+        let mut mac = HmacSha256::new_from_slice(good_secret.as_bytes()).unwrap();
+        mac.update(base_string.as_bytes());
+        let digest = mac.finalize().into_bytes();
+        let signature = format!("v0={}", hex_encode(digest.as_ref()));
+
         let mut headers = HeaderMap::new();
-        headers.insert("X-Slack-Request-Timestamp", "1".parse().unwrap());
-        headers.insert("X-Slack-Signature", "v0=deadbeef".parse().unwrap());
-        assert!(!verify_slack_sig("secret", &headers, b"{}"));
+        headers.insert("X-Slack-Request-Timestamp", timestamp.parse().unwrap());
+        headers.insert("X-Slack-Signature", signature.parse().unwrap());
+        assert!(!verify_slack_sig(&bad_secret, &headers, body));
     }
 
     #[test]

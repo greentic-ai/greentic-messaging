@@ -409,12 +409,13 @@ fn provider_key(ctx: &TenantCtx) -> ProviderKey {
 mod tests {
     use super::*;
     use axum::body::Body;
-    use axum::http::Request;
+    use axum::http::{HeaderName, Request};
     use gsm_core::{
         InvocationEnvelope, MessageEnvelope, Platform, SecretsResolver, make_tenant_ctx,
         webex_credentials,
     };
     use gsm_idempotency::{InMemoryIdemStore, SharedIdemStore};
+    use rand::RngCore;
     use std::sync::Mutex;
     use tower::ServiceExt;
     type EventLog = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
@@ -435,7 +436,7 @@ mod tests {
         }
     }
 
-    async fn build_state() -> (AppState, Arc<MockPublisher>) {
+    async fn build_state() -> (AppState, Arc<MockPublisher>, String) {
         unsafe {
             std::env::set_var("GREENTIC_ENV", "test");
         }
@@ -452,9 +453,15 @@ mod tests {
         let http_client = Arc::new(reqwest::Client::new());
 
         let ctx = make_tenant_ctx("acme".into(), None, None);
+        let webhook_secret = {
+            let mut buf = [0u8; 32];
+            let mut rng = rand::rng();
+            rng.fill_bytes(&mut buf);
+            hex::encode(buf)
+        };
         let creds = WebexCredentials {
             bot_token: "TOKEN".into(),
-            webhook_secret: "top-secret".into(),
+            webhook_secret: webhook_secret.clone(),
             webhooks: Vec::new(),
         };
         resolver
@@ -477,6 +484,7 @@ mod tests {
                 sessions,
             },
             mock,
+            webhook_secret,
         )
     }
 
@@ -519,14 +527,14 @@ mod tests {
             }
         }"#;
 
-        let (state, publisher) = build_state().await;
+        let (state, publisher, webhook_secret) = build_state().await;
         let app = router(state.clone());
         let path = WebexPath {
             tenant: "acme".into(),
             team: Some("default".into()),
         };
 
-        let signature = sign("top-secret", body.as_bytes());
+        let signature = sign(&webhook_secret, body.as_bytes());
         let req = build_request(&path, body, &signature);
         let res = app.clone().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
@@ -569,14 +577,14 @@ mod tests {
             }
         }"#;
 
-        let (state, publisher) = build_state().await;
+        let (state, publisher, webhook_secret) = build_state().await;
         let app = router(state);
         let path = WebexPath {
             tenant: "acme".into(),
             team: None,
         };
 
-        let signature = sign("top-secret", body.as_bytes());
+        let signature = sign(&webhook_secret, body.as_bytes());
         let req = build_request(&path, body, &signature);
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);

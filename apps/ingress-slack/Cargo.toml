@@ -28,3 +28,8 @@ sha2 = { workspace = true }
 security = { workspace = true }
 gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }

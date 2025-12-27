@@ -32,3 +32,4 @@ greentic-types = { workspace = true }
 
 [dev-dependencies]
 http-body-util = { workspace = true }
+rand = { workspace = true }

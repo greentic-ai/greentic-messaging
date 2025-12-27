@@ -57,15 +57,14 @@ async fn main() -> Result<()> {
         .await
         .context("failed to decode phone info")?;
 
-    println!(
-        "Verified phone: {} ({})",
-        info.display_phone_number
-            .unwrap_or_else(|| "unknown".into()),
-        info.verified_name.unwrap_or_else(|| "unverified".into())
-    );
+    let _display = info
+        .display_phone_number
+        .unwrap_or_else(|| "<redacted>".into());
+    let verified = info.verified_name.unwrap_or_else(|| "unverified".into());
+    println!("Verified phone lookup succeeded (number redacted, name: {verified})");
 
-    if let Some(number) = recipient.as_ref() {
-        println!("Test recipient configured: {number}");
+    if let Some(_number) = recipient.as_ref() {
+        println!("Test recipient configured (redacted)");
     } else {
         println!("No WHATSAPP_RECIPIENT configured.");
     }
@@ -73,20 +72,19 @@ async fn main() -> Result<()> {
     if let Some(path) = output_arg.or_else(|| env::var("WHATSAPP_ENV_PATH").ok()) {
         persist_env(&path, &token, &phone_id, recipient.as_deref())?;
         println!(
-            "Stored WHATSAPP_TOKEN/PHONE_ID{} in {}",
+            "Stored WHATSAPP_TOKEN/PHONE_ID{} in {path}",
             if recipient.is_some() {
                 "/RECIPIENT"
             } else {
                 ""
-            },
-            path
+            }
         );
     } else {
         println!("Add to your .env:");
-        println!("WHATSAPP_TOKEN={token}");
-        println!("WHATSAPP_PHONE_ID={phone_id}");
-        if let Some(number) = recipient {
-            println!("WHATSAPP_RECIPIENT={number}");
+        println!("WHATSAPP_TOKEN=<redacted>");
+        println!("WHATSAPP_PHONE_ID=<redacted>");
+        if let Some(_number) = recipient {
+            println!("WHATSAPP_RECIPIENT=<redacted>");
         }
     }
 

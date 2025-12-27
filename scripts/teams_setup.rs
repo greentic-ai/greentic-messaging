@@ -6,6 +6,7 @@ use std::io::Write;
 
 #[derive(Debug, Deserialize)]
 struct ChatInfo {
+    #[allow(dead_code)]
     id: Option<String>,
     topic: Option<String>,
 }
@@ -60,10 +61,10 @@ async fn main() -> Result<()> {
         .await
         .context("failed to decode chat info")?;
 
+    let topic = chat.topic.unwrap_or_else(|| "(no topic)".into());
     println!(
-        "Verified chat {} (topic: {})",
-        chat.id.unwrap_or_else(|| chat_id.clone()),
-        chat.topic.unwrap_or_else(|| "(no topic)".into())
+        "Verified chat lookup succeeded (id/topic redacted, topic present: {})",
+        topic != "(no topic)"
     );
 
     if let Some(path) = output.or_else(|| env::var("TEAMS_ENV_PATH").ok()) {
@@ -71,10 +72,10 @@ async fn main() -> Result<()> {
         println!("Stored TEAMS_* secrets in {path}");
     } else {
         println!("Add to your .env:");
-        println!("TEAMS_TENANT_ID={tenant_id}");
-        println!("TEAMS_CLIENT_ID={client_id}");
-        println!("TEAMS_CLIENT_SECRET={client_secret}");
-        println!("TEAMS_CHAT_ID={chat_id}");
+        println!("TEAMS_TENANT_ID=<redacted>");
+        println!("TEAMS_CLIENT_ID=<redacted>");
+        println!("TEAMS_CLIENT_SECRET=<redacted>");
+        println!("TEAMS_CHAT_ID=<redacted>");
     }
 
     Ok(())

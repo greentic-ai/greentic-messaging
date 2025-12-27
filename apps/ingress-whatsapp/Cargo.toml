@@ -30,3 +30,6 @@ gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
 reqwest = { workspace = true }
 async-trait = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }

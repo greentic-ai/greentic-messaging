@@ -482,11 +482,19 @@ fn hex_encode(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use axum::http::HeaderValue;
+    use rand::RngCore;
+
+    fn random_secret() -> String {
+        let mut buf = [0u8; 32];
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut buf);
+        hex_encode(&buf)
+    }
 
     #[test]
     fn verify_fb_sig_accepts_valid_signature() {
-        let secret = "secret";
-        let body = b"{\"entry\":[]}";
+        let secret = random_secret();
+        let body = b"{\"entry\":[{\"changes\":[]}]}";
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(body);
         let digest = mac.finalize().into_bytes();
@@ -494,17 +502,22 @@ mod tests {
 
         let mut headers = HeaderMap::new();
         headers.insert("X-Hub-Signature-256", HeaderValue::from_str(&sig).unwrap());
-        assert!(verify_fb_sig(secret, &headers, body));
+        assert!(verify_fb_sig(&secret, &headers, body));
     }
 
     #[test]
     fn verify_fb_sig_rejects_bad_signature() {
+        let header_secret = random_secret();
+        let verify_secret = random_secret();
+        let body = b"{\"entry\":[{\"changes\":[]}]}";
+        let mut mac = HmacSha256::new_from_slice(header_secret.as_bytes()).unwrap();
+        mac.update(body);
+        let digest = mac.finalize().into_bytes();
+        let sig = format!("sha256={}", hex_encode(&digest));
+
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "X-Hub-Signature-256",
-            HeaderValue::from_static("sha256=deadbeef"),
-        );
-        assert!(!verify_fb_sig("secret", &headers, b"{}"));
+        headers.insert("X-Hub-Signature-256", HeaderValue::from_str(&sig).unwrap());
+        assert!(!verify_fb_sig(&verify_secret, &headers, body));
     }
 
     #[test]
