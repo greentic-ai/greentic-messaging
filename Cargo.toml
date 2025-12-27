@@ -52,6 +52,7 @@ edition = "2024"
 license = "MIT"
 version = "0.4.21"
 authors = ["Greentic AI"]
+repository = "https://github.com/greentic-ai/greentic-messaging"
 
 [workspace.dependencies]
 anyhow = "1"

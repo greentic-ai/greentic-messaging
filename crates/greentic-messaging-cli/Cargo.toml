@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Unified CLI wrapper for Greentic messaging services (ingress/egress/test/admin tooling)."
+repository.workspace = true
 
 [[bin]]
 name = "greentic-messaging"
