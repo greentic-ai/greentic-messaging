@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 
 use crate::Platform;
 use crate::path_safety::normalize_under_root;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use greentic_pack::builder::PackManifest;
 use greentic_pack::messaging::{
     MessagingAdapterCapabilities, MessagingAdapterKind, MessagingSection,
 };
+use greentic_pack::reader::{SigningPolicy, open_pack};
 
 #[derive(Debug, serde::Deserialize)]
 struct PackSpec {
@@ -114,7 +116,19 @@ pub fn load_adapters_from_pack_files(root: &Path, paths: &[PathBuf]) -> Result<A
 }
 
 pub fn adapters_from_pack_file(root: &Path, path: &Path) -> Result<Vec<AdapterDescriptor>> {
-    let safe_path = if path.is_absolute() {
+    let safe_path = resolve_pack_path(root, path)?;
+    let ext = safe_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("gtpack") => adapters_from_gtpack(&safe_path),
+        _ => adapters_from_pack_yaml(&safe_path),
+    }
+}
+
+fn resolve_pack_path(root: &Path, path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
         let canonical_path = path
             .canonicalize()
             .with_context(|| format!("failed to canonicalize {}", path.display()))?;
@@ -125,16 +139,26 @@ pub fn adapters_from_pack_file(root: &Path, path: &Path) -> Result<Vec<AdapterDe
                 root.display()
             );
         }
-        canonical_path
+        Ok(canonical_path)
     } else {
-        normalize_under_root(root, path)?
-    };
-    let raw = fs::read_to_string(&safe_path)
-        .with_context(|| format!("failed to read pack file {}", safe_path.display()))?;
+        normalize_under_root(root, path)
+    }
+}
+
+fn adapters_from_pack_yaml(path: &Path) -> Result<Vec<AdapterDescriptor>> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read pack file {}", path.display()))?;
     let spec: PackSpec = serde_yaml_bw::from_str(&raw)
-        .with_context(|| format!("{} is not a valid pack spec", safe_path.display()))?;
+        .with_context(|| format!("{} is not a valid pack spec", path.display()))?;
     validate_pack_spec(&spec)?;
-    extract_adapters(&spec, Some(&safe_path))
+    extract_adapters(&spec.id, &spec.version, spec.messaging.as_ref(), Some(path))
+}
+
+fn adapters_from_gtpack(path: &Path) -> Result<Vec<AdapterDescriptor>> {
+    let pack = open_pack(path, SigningPolicy::DevOk)
+        .map_err(|err| anyhow!(err.message))
+        .with_context(|| format!("failed to open {}", path.display()))?;
+    extract_adapters_from_manifest(&pack.manifest, Some(path))
 }
 
 fn validate_pack_spec(spec: &PackSpec) -> Result<()> {
@@ -150,9 +174,26 @@ fn validate_pack_spec(spec: &PackSpec) -> Result<()> {
     Ok(())
 }
 
-fn extract_adapters(spec: &PackSpec, source: Option<&Path>) -> Result<Vec<AdapterDescriptor>> {
+fn extract_adapters_from_manifest(
+    manifest: &PackManifest,
+    source: Option<&Path>,
+) -> Result<Vec<AdapterDescriptor>> {
+    extract_adapters(
+        &manifest.meta.pack_id,
+        &manifest.meta.version.to_string(),
+        manifest.meta.messaging.as_ref(),
+        source,
+    )
+}
+
+fn extract_adapters(
+    pack_id: &str,
+    pack_version: &str,
+    messaging: Option<&MessagingSection>,
+    source: Option<&Path>,
+) -> Result<Vec<AdapterDescriptor>> {
     let mut out = Vec::new();
-    let messaging = match &spec.messaging {
+    let messaging = match messaging {
         Some(section) => section,
         None => return Ok(out),
     };
@@ -167,8 +208,8 @@ fn extract_adapters(spec: &PackSpec, source: Option<&Path>) -> Result<Vec<Adapte
             bail!("duplicate messaging adapter name: {}", adapter.name);
         }
         out.push(AdapterDescriptor {
-            pack_id: spec.id.clone(),
-            pack_version: spec.version.clone(),
+            pack_id: pack_id.to_string(),
+            pack_version: pack_version.to_string(),
             name: adapter.name.clone(),
             kind: adapter.kind.clone(),
             component: adapter.component.clone(),
@@ -204,6 +245,8 @@ pub fn infer_platform_from_adapter_name(name: &str) -> Option<Platform> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use greentic_pack::messaging::MessagingAdapter;
+    use tempfile::TempDir;
 
     #[test]
     fn loads_slack_pack() {
@@ -246,6 +289,96 @@ mod tests {
         assert!(egress.iter().any(|a| a.name == "telegram-egress"));
         let both = registry.by_kind(MessagingAdapterKind::IngressEgress);
         assert!(both.iter().any(|a| a.name == "slack-main"));
+    }
+
+    #[test]
+    fn loads_gtpack_archive() {
+        let temp = TempDir::new().expect("temp dir");
+        let gtpack_path = temp.path().join("demo.gtpack");
+
+        let flow_yaml = r#"id: demo-flow
+type: messaging
+in: start
+nodes: {}
+"#;
+        let flow_bundle = greentic_flow::flow_bundle::FlowBundle {
+            id: "demo-flow".to_string(),
+            kind: "messaging".to_string(),
+            entry: "start".to_string(),
+            yaml: flow_yaml.to_string(),
+            json: serde_json::json!({
+                "id": "demo-flow",
+                "type": "messaging",
+                "in": "start",
+                "nodes": {}
+            }),
+            hash_blake3: greentic_flow::flow_bundle::blake3_hex(flow_yaml),
+            nodes: Vec::new(),
+        };
+
+        let wasm_path = temp.path().join("demo-component.wasm");
+        std::fs::write(&wasm_path, b"00").expect("write wasm stub");
+
+        let meta = greentic_pack::builder::PackMeta {
+            pack_version: greentic_pack::builder::PACK_VERSION,
+            pack_id: "gtpack-demo".to_string(),
+            version: semver::Version::new(0, 0, 1),
+            name: "gtpack demo".to_string(),
+            kind: None,
+            description: None,
+            authors: Vec::new(),
+            license: None,
+            homepage: None,
+            support: None,
+            vendor: None,
+            imports: Vec::new(),
+            entry_flows: vec![flow_bundle.id.clone()],
+            created_at_utc: "1970-01-01T00:00:00Z".to_string(),
+            events: None,
+            repo: None,
+            messaging: Some(MessagingSection {
+                adapters: Some(vec![MessagingAdapter {
+                    name: "gtpack-adapter".to_string(),
+                    kind: MessagingAdapterKind::IngressEgress,
+                    component: "demo-component@0.0.1".to_string(),
+                    default_flow: Some("flows/messaging/local/default.ygtc".to_string()),
+                    custom_flow: None,
+                    capabilities: None,
+                }]),
+            }),
+            interfaces: Vec::new(),
+            annotations: serde_json::Map::new(),
+            distribution: None,
+            components: Vec::new(),
+        };
+
+        greentic_pack::builder::PackBuilder::new(meta)
+            .with_flow(flow_bundle)
+            .with_component(greentic_pack::builder::ComponentArtifact {
+                name: "demo-component".to_string(),
+                version: semver::Version::new(0, 0, 1),
+                wasm_path: wasm_path.clone(),
+                schema_json: None,
+                manifest_json: None,
+                capabilities: None,
+                world: None,
+                hash_blake3: None,
+            })
+            .with_signing(greentic_pack::builder::Signing::Dev)
+            .build(&gtpack_path)
+            .expect("build gtpack");
+
+        let registry =
+            load_adapters_from_pack_files(temp.path(), std::slice::from_ref(&gtpack_path))
+                .expect("load adapters");
+        let adapter = registry.get("gtpack-adapter").expect("adapter registered");
+        assert_eq!(adapter.pack_id, "gtpack-demo");
+        assert_eq!(adapter.pack_version, "0.0.1");
+        assert_eq!(adapter.component, "demo-component@0.0.1");
+        assert_eq!(
+            adapter.source.as_ref(),
+            Some(&gtpack_path.canonicalize().unwrap())
+        );
     }
 
     #[test]

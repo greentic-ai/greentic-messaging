@@ -7,6 +7,7 @@ Environment flags:
 - `MESSAGING_DEFAULT_ADAPTER_PACKS=teams,slack,...`: explicit subset of default packs (ignored if `install_all` is true).
 - `MESSAGING_ADAPTER_PACK_PATHS=/abs/path/a.yaml,/abs/path/b.yaml`: extra pack files to load.
 - `MESSAGING_PACKS_ROOT=...`: root directory that contains `messaging/` (defaults to `packs`).
+- Pack formats: `.yaml` sources and signed `.gtpack` archives are both supported; point `MESSAGING_ADAPTER_PACK_PATHS` at the `.gtpack` file directly without unpacking it (paths must live under `MESSAGING_PACKS_ROOT`).
 - `MESSAGING_EGRESS_ADAPTER=name`: force a specific egress adapter; otherwise selection is by platform.
 
 Ingress (gateway):

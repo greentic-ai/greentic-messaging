@@ -18,6 +18,7 @@ export OAUTH_BASE_URL=https://oauth.greentic.dev
 # Enable telemetry when a collector is available
 # export ENABLE_OTEL=true
 # export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+# Adapter packs can be loaded from raw YAML or signed .gtpack archives; point `MESSAGING_ADAPTER_PACK_PATHS` at the `.gtpack` file directly without unpacking it (paths must sit under `MESSAGING_PACKS_ROOT`, default `packs/`).
 ```
 
 ## Seed messaging secrets (dev)
