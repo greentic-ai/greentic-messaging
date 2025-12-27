@@ -1,0 +1,62 @@
+name: Build greentic-messaging binaries for binstall
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: macos-15
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: macos-15
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+    env:
+      CARGO_BUILD_JOBS: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+
+      - name: Build greentic-messaging
+        run: cargo build --release -p greentic-messaging-cli
+
+      - name: Package artifact (unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          bin_path=target/release/greentic-messaging
+          tar -C "$(dirname "$bin_path")" -czf "greentic-messaging-${{ matrix.target }}.tar.gz" "$(basename "$bin_path")"
+
+      - name: Package artifact (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $binPath = "target/release/greentic-messaging.exe"
+          $out = "greentic-messaging-${{ matrix.target }}.zip"
+          Compress-Archive -Path $binPath -DestinationPath $out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: greentic-messaging-${{ matrix.target }}
+          path: greentic-messaging-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error

@@ -7,6 +7,17 @@ license.workspace = true
 description = "Unified CLI wrapper for Greentic messaging services (ingress/egress/test/admin tooling)."
 repository.workspace = true
 
+[package.metadata.binstall]
+pkg-url = "https://github.com/greentic-ai/greentic-messaging/releases/download/{ version }/greentic-messaging-{ target }.{ archive-format }"
+pkg-fmt = "tgz"
+pkg-fmt-windows = "zip"
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
 [[bin]]
 name = "greentic-messaging"
 path = "src/main.rs"
