@@ -83,18 +83,11 @@ jobs:
       - name: Determine release tag/name
         id: meta
         run: |
-          ref="${GITHUB_REF}"
-          if [[ "$ref" == refs/heads/master ]]; then
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-            echo "name=latest" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            # strip refs/tags/
-            tag="${ref#refs/tags/}"
-            echo "tag=$tag" >> "$GITHUB_OUTPUT"
-            echo "name=$tag" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([0-9.]+)".*/\1/')
+          tag="v${version}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "name=${tag}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v1
