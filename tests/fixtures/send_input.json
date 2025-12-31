@@ -1,0 +1,19 @@
+{
+  "to": "channel-123",
+  "text": "Hello from greentic-messaging",
+  "attachments": [
+    {
+      "name": "diagram.png",
+      "content_type": "image/png",
+      "data_base64": "ZGF0YQ=="
+    }
+  ],
+  "metadata": {
+    "thread_id": "thread-42",
+    "reply_to": "msg-001",
+    "tags": [
+      "alert",
+      "prod"
+    ]
+  }
+}

@@ -30,8 +30,32 @@ fn run_and_capture(args: &[&str]) -> String {
 fn serve_ingress_slack_dry_run() {
     let stdout = run_and_capture(&["serve", "ingress", "slack", "--tenant", "acme"]);
     assert!(
-        stdout.contains("dry-run) make run-ingress-slack"),
+        stdout.contains("cargo run -p gsm-gateway"),
         "stdout did not contain dry-run marker:\n{}",
+        stdout
+    );
+}
+
+#[test]
+fn serve_ingress_with_pack_sets_env() {
+    let tmp = NamedTempFile::new().unwrap();
+    let stdout = run_and_capture(&[
+        "serve",
+        "ingress",
+        "webchat",
+        "--tenant",
+        "acme",
+        "--pack",
+        tmp.path().to_str().unwrap(),
+    ]);
+    assert!(
+        stdout.contains("MESSAGING_ADAPTER_PACK_PATHS"),
+        "stdout did not include pack env:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("cargo run -p gsm-gateway"),
+        "stdout did not contain gateway run:\n{}",
         stdout
     );
 }
@@ -62,6 +86,54 @@ fn messaging_test_wrapper_dry_run() {
     assert!(
         stdout.contains("dry-run) cargo run -p greentic-messaging-test"),
         "stdout did not contain dry-run marker:\n{}",
+        stdout
+    );
+}
+
+#[test]
+fn dev_down_dry_run() {
+    let stdout = run_and_capture(&["dev", "down"]);
+    assert!(
+        stdout.contains("dry-run) make stack-down"),
+        "stdout did not contain stack-down marker:\n{}",
+        stdout
+    );
+}
+
+#[test]
+fn info_lists_adapters_from_pack() {
+    let pack = NamedTempFile::new().unwrap();
+    std::fs::write(
+        pack.path(),
+        r#"
+id: info-pack
+version: 0.0.1
+messaging:
+  adapters:
+    - name: info-ingress
+      kind: ingress
+      component: info@0.0.1
+    - name: info-egress
+      kind: egress
+      component: info@0.0.1
+    - name: info-both
+      kind: ingress-egress
+      component: info@0.0.1
+"#,
+    )
+    .unwrap();
+
+    let stdout = run_and_capture(&[
+        "info",
+        "--pack",
+        pack.path().to_str().unwrap(),
+        "--no-default-packs",
+    ]);
+    assert!(
+        stdout.contains("info-ingress")
+            && stdout.contains("info-egress")
+            && stdout.contains("info-both"),
+        "stdout did not list adapters:\n{}",
         stdout
     );
 }

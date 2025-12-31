@@ -25,6 +25,7 @@ pub mod platforms;
 pub mod prelude;
 pub mod provider;
 pub mod provider_capabilities;
+pub mod provider_ops;
 pub mod provider_registry;
 pub mod registry;
 pub mod render_mode;
@@ -78,6 +79,10 @@ pub use platforms::*;
 pub use prelude::*;
 pub use provider::*;
 pub use provider_capabilities::*;
+pub use provider_ops::{
+    AttachmentInput, IngestInput, IngestOutput, MessageEnvelope as ProviderMessageEnvelope,
+    ReplyInput, ReplyMetadata, ReplyOutput, SendInput, SendMetadata, SendOutput, SendStatus,
+};
 pub use provider_registry::{CapsSource, ProviderCapsRegistry, ProviderRecord};
 pub use registry::*;
 pub use render_mode::*;

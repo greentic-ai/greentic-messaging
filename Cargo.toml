@@ -50,7 +50,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.23"
+version = "0.4.24"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 

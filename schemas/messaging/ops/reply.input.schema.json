@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://greentic.ai/schemas/messaging/ops/reply.input.schema.json",
+  "title": "ReplyInput",
+  "description": "Input contract for provider-core reply operation.",
+  "type": "object",
+  "required": ["to", "reply_to"],
+  "additionalProperties": false,
+  "properties": {
+    "to": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target recipient (channel, room, or address)."
+    },
+    "reply_to": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Provider or Greentic message id being replied to."
+    },
+    "text": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Text content of the reply."
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attachment"
+      },
+      "default": [],
+      "description": "Optional inline attachments encoded as base64."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "thread_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "required": ["text"]
+        },
+        {
+          "properties": {
+            "attachments": {
+              "minItems": 1
+            }
+          }
+        }
+      ],
+      "description": "Require either text or at least one attachment."
+    }
+  ],
+  "$defs": {
+    "attachment": {
+      "type": "object",
+      "required": ["name", "content_type", "data_base64"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data_base64": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "message_id": "msg-123",
+  "provider_message_id": "provider-987",
+  "thread_id": "thread-42",
+  "status": "sent",
+  "ts": "2024-01-01T00:00:00Z"
+}

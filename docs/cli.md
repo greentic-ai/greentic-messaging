@@ -1,9 +1,9 @@
 # Greentic Messaging CLI
 
-The `greentic-messaging` binary is a thin convenience layer on top of the existing
-Makefile and Cargo flows. It inspects the current environment, shells out to the
-existing ingress/egress/runner targets, proxies the fixture/test tooling, and now
-exposes a first wave of admin helpers.
+The `greentic-messaging` binary is a convenience layer over the messaging services.
+It inspects the current environment, runs the gateway/egress/subscription services
+with your chosen adapter packs (including `.gtpack` bundles), proxies the
+fixture/test tooling, and exposes a first wave of admin helpers.
 
 Secrets are now managed via the `greentic-secrets` CLI (ctx + scaffold/wizard/apply).
 Use `messaging-tenants` or `greentic-secrets` directly to seed credentials; legacy
@@ -18,9 +18,9 @@ Testing with seeds:
 
 ## Installation
 
-`cargo run -p greentic-messaging-cli -- <command>` from the repo root is the
-recommended entrypoint while the CLI evolves. Once the crate stabilises we can
-decide if a `cargo install` workflow makes sense.
+Use the packaged binary (`greentic-messaging …`) for day-to-day work. While
+developing locally you can still run `cargo run -p greentic-messaging-cli -- <command>`
+from the repo root.
 
 ## Commands
 
@@ -30,32 +30,42 @@ Inspect the current workspace:
 
 - Detects `GREENTIC_ENV` (defaults to `dev`).
 - Prints the current `greentic-secrets` context (via `greentic-secrets ctx show`) and hints at `greentic-secrets init --pack ...` for seeding.
-- Shows the ingress/egress/subscription binaries that are available via the Makefile targets.
+- Lists adapters loaded from your packs. Flags mirror `serve`:
+  - `--pack <path>`: repeatable; supports `.yaml` and `.gtpack`.
+  - `--packs-root <dir>`: sets `MESSAGING_PACKS_ROOT` (default `./packs`).
+  - `--no-default-packs`: disables loading shipped defaults.
 
 Example:
 
 ```bash
-cargo run -p greentic-messaging-cli -- info
+greentic-messaging info --pack fixtures/packs/messaging-provider-bundle.gtpack --no-default-packs
 ```
 
-### `greentic-messaging dev up`
+### `greentic-messaging dev up|down`
 
-Shells out to `make stack-up` in the current workspace to spin up the optional
-docker/NATS stack. Failures are logged but do not abort the CLI so you can keep
-issuing commands afterwards.
+Shells out to `make stack-up`/`stack-down` in the current workspace to manage the
+optional docker/NATS stack. Failures are logged but do not abort the CLI so you
+can keep issuing commands afterwards.
 
 ### `greentic-messaging serve ingress|egress|subscriptions`
 
-Wraps the existing `make run-<kind>-<platform>` targets while ensuring
-`GREENTIC_ENV`, `TENANT`, `TEAM`, and `NATS_URL` are set. The command logs the
-effective environment before delegating to `make`.
+Launches the pack-aware services (`gsm-gateway`, `gsm-egress`, `gsm-subscriptions-*`)
+with the right environment pre-populated. Flags:
+
+- `--pack <path>`: repeatable; supports `.yaml` and `.gtpack`. Passed via `MESSAGING_ADAPTER_PACK_PATHS`.
+- `--packs-root <dir>`: sets `MESSAGING_PACKS_ROOT` (default `./packs`).
+- `--no-default-packs`: disables loading shipped defaults.
+- `--adapter <name>`: egress-only override for `MESSAGING_EGRESS_ADAPTER`.
 
 ```bash
-# example: run Slack ingress for tenant acme/team default
-cargo run -p greentic-messaging-cli -- serve ingress slack --tenant acme
+# run ingress with a local gtpack bundle
+greentic-messaging serve ingress webchat \
+  --tenant acme \
+  --pack fixtures/packs/messaging-provider-bundle.gtpack \
+  --no-default-packs
 
-# run Teams egress for tenant foo/team bar
-cargo run -p greentic-messaging-cli -- serve egress teams --tenant foo --team bar
+# run egress with a specific adapter name
+greentic-messaging serve egress webchat --tenant acme --adapter webchat-main
 ```
 
 ### `greentic-messaging flows run`
@@ -64,7 +74,7 @@ Thin wrapper around the runner invocation (currently `make run-runner`). It sets
 `FLOW`, `PLATFORM`, `TENANT`, `TEAM`, and `GREENTIC_ENV` automatically.
 
 ```bash
-cargo run -p greentic-messaging-cli -- flows run \
+greentic-messaging flows run \
   --flow examples/flows/weather_telegram.yaml \
   --platform telegram \
   --tenant acme

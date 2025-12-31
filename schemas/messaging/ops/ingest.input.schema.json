@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://greentic.ai/schemas/messaging/ops/ingest.input.schema.json",
+  "title": "IngestInput",
+  "description": "Input contract for provider-core ingest operation (webhook normalization).",
+  "type": "object",
+  "required": ["provider_type", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "provider_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Provider identifier (for example messaging.telegram.bot)."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Raw provider webhook payload as received.",
+      "additionalProperties": true
+    },
+    "tenant": {
+      "$ref": "../common/message_envelope.schema.json#/properties/tenant",
+      "description": "Optional TenantCtx hints when the webhook does not carry them."
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "HTTP headers forwarded alongside the webhook."
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the webhook was received (RFC3339)."
+    }
+  }
+}

@@ -1,0 +1,28 @@
+id: greentic-messaging-provider-core-send
+title: Provider-core send (template)
+description: Reusable flow that calls a messaging provider via ProviderInvoke.op=send.
+type: messaging
+in: send
+nodes:
+  send:
+    # ProviderInvoke node (runner PR-07/08). Swaps providers by changing provider_id/provider_type.
+    provider_invoke:
+      provider_id: "{{ params.provider_id | default(\"messaging-default\") }}"
+      provider_type: "{{ params.provider_type | default(\"messaging.telegram.bot\") }}"
+      op: send
+      input:
+        to: "{{ payload.to }}"
+        text: "{{ payload.text }}"
+        attachments: "{{ payload.attachments | default([]) }}"
+        metadata:
+          thread_id: "{{ payload.thread_id }}"
+          reply_to: "{{ payload.reply_to }}"
+          tags: "{{ payload.tags | default([]) }}"
+    assign:
+      payload.message_id: "{{ result.message_id }}"
+      payload.provider_message_id: "{{ result.provider_message_id }}"
+      payload.thread_id: "{{ result.thread_id | coalesce(payload.thread_id) }}"
+      payload.status: "{{ result.status }}"
+      payload.sent_at: "{{ result.ts }}"
+    routes:
+      - end

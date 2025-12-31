@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://greentic.ai/schemas/messaging/ops/ingest.output.schema.json",
+  "title": "IngestOutput",
+  "description": "Normalized message envelope emitted by ingest.",
+  "$ref": "../common/message_envelope.schema.json"
+}

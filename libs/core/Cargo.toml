@@ -15,6 +15,7 @@ testkit = []
 proptest = ["dep:proptest"]
 component-host = ["dep:wasmtime"]
 providers-bundle-tests = ["component-host"]
+schemars = []
 
 [[example]]
 name = "wasmtime_host"

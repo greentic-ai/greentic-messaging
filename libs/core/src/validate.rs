@@ -1,6 +1,172 @@
-use crate::{CardBlock, MessageCard, MessageEnvelope, OutKind, OutMessage};
+use crate::{
+    CardBlock, MessageCard, MessageEnvelope, OutKind, OutMessage, ProviderMessageEnvelope,
+    ReplyInput, SendInput, SendMetadata,
+};
 use anyhow::{Result, bail};
 use time::OffsetDateTime;
+
+/// Describes a validation failure for provider-core inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationIssue {
+    pub field: &'static str,
+    pub message: String,
+}
+
+impl ValidationIssue {
+    pub fn new(field: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            field,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ValidationIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.field, self.message)
+    }
+}
+
+impl std::error::Error for ValidationIssue {}
+
+/// Convenience alias for validation results that do not use `anyhow`.
+pub type ValidationResult<T> = std::result::Result<T, ValidationIssue>;
+
+/// Validates the send provider-core input.
+pub fn validate_send_input(input: &SendInput) -> ValidationResult<()> {
+    if input.to.trim().is_empty() {
+        return Err(ValidationIssue::new("to", "recipient is required"));
+    }
+
+    let has_text = input
+        .text
+        .as_ref()
+        .map(|t| !t.trim().is_empty())
+        .unwrap_or(false);
+    let has_attachments = !input.attachments.is_empty();
+
+    if !has_text && !has_attachments {
+        return Err(ValidationIssue::new(
+            "content",
+            "provide text or at least one attachment",
+        ));
+    }
+
+    if let Some(text) = &input.text
+        && text.trim().is_empty()
+    {
+        return Err(ValidationIssue::new("text", "text cannot be empty"));
+    }
+
+    for (idx, att) in input.attachments.iter().enumerate() {
+        if att.name.trim().is_empty() {
+            return Err(ValidationIssue::new(
+                "attachments",
+                format!("attachment #{idx} name is empty"),
+            ));
+        }
+        if att.content_type.trim().is_empty() {
+            return Err(ValidationIssue::new(
+                "attachments",
+                format!("attachment #{idx} content_type is empty"),
+            ));
+        }
+        if att.data_base64.trim().is_empty() {
+            return Err(ValidationIssue::new(
+                "attachments",
+                format!("attachment #{idx} data_base64 is empty"),
+            ));
+        }
+    }
+
+    if let Some(meta) = &input.metadata {
+        if let Some(thread_id) = &meta.thread_id
+            && thread_id.trim().is_empty()
+        {
+            return Err(ValidationIssue::new(
+                "metadata.thread_id",
+                "thread_id cannot be empty",
+            ));
+        }
+        if let Some(reply_to) = &meta.reply_to
+            && reply_to.trim().is_empty()
+        {
+            return Err(ValidationIssue::new(
+                "metadata.reply_to",
+                "reply_to cannot be empty",
+            ));
+        }
+        for (idx, tag) in meta.tags.iter().enumerate() {
+            if tag.trim().is_empty() {
+                return Err(ValidationIssue::new(
+                    "metadata.tags",
+                    format!("tag #{idx} is empty"),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates reply input, ensuring the reply target is present.
+pub fn validate_reply_input(input: &ReplyInput) -> ValidationResult<()> {
+    if input.reply_to.trim().is_empty() {
+        return Err(ValidationIssue::new(
+            "reply_to",
+            "reply_to message identifier is required",
+        ));
+    }
+
+    let send_like = SendInput {
+        to: input.to.clone(),
+        text: input.text.clone(),
+        attachments: input.attachments.clone(),
+        metadata: Some(SendMetadata {
+            thread_id: input.metadata.as_ref().and_then(|m| m.thread_id.clone()),
+            reply_to: Some(input.reply_to.clone()),
+            tags: input
+                .metadata
+                .as_ref()
+                .map(|m| m.tags.clone())
+                .unwrap_or_default(),
+        }),
+    };
+
+    validate_send_input(&send_like)
+}
+
+/// Normalizes a canonical message envelope (trims text and metadata).
+pub fn normalize_envelope(env: &mut ProviderMessageEnvelope) {
+    if let Some(text) = env.text.as_mut() {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            env.text = None;
+        } else {
+            *text = trimmed.to_string();
+        }
+    }
+
+    if let Some(user) = env.user_id.as_mut() {
+        let trimmed = user.trim();
+        if trimmed.is_empty() {
+            env.user_id = None;
+        } else {
+            *user = trimmed.to_string();
+        }
+    }
+
+    let mut normalized = std::collections::BTreeMap::new();
+    for (k, v) in env.metadata.iter() {
+        let key = k.trim();
+        let value = v.trim();
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+        normalized.insert(key.to_string(), value.to_string());
+    }
+    env.metadata = normalized;
+}
 
 /// Validates an inbound [`MessageEnvelope`] for required fields and timestamp correctness.
 ///
@@ -239,5 +405,47 @@ mod tests {
             }],
         };
         assert!(validate_card(&card).is_ok());
+    }
+
+    #[test]
+    fn send_validation_requires_text_or_attachment() {
+        let input = SendInput {
+            to: "channel-123".into(),
+            text: None,
+            attachments: vec![],
+            metadata: None,
+        };
+        assert!(validate_send_input(&input).is_err());
+    }
+
+    #[test]
+    fn reply_validation_requires_reply_to() {
+        let input = ReplyInput {
+            to: "channel-1".into(),
+            reply_to: "   ".into(),
+            text: Some("hi".into()),
+            attachments: vec![],
+            metadata: None,
+        };
+        assert!(validate_reply_input(&input).is_err());
+    }
+
+    #[test]
+    fn normalize_envelope_trims_and_prunes() {
+        let mut env = ProviderMessageEnvelope {
+            id: "id-1".into(),
+            tenant: make_tenant_ctx("acme".into(), None, None),
+            channel: "channel".into(),
+            session_id: "session".into(),
+            user_id: Some("  ".into()),
+            text: Some(" hi  ".into()),
+            attachments: vec![],
+            metadata: BTreeMap::from_iter([(" key ".into(), " value ".into())]),
+        };
+        normalize_envelope(&mut env);
+        assert_eq!(env.text.as_deref(), Some("hi"));
+        assert!(env.user_id.is_none());
+        assert!(!env.metadata.contains_key(" key "));
+        assert_eq!(env.metadata.get("key"), Some(&"value".to_string()));
     }
 }

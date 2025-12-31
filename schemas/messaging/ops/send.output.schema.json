@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://greentic.ai/schemas/messaging/ops/send.output.schema.json",
+  "title": "SendOutput",
+  "description": "Output contract for provider-core send operation.",
+  "type": "object",
+  "required": ["message_id", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "message_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Greentic-level message identifier (may be generated)."
+    },
+    "provider_message_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Provider-native identifier when available."
+    },
+    "thread_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Provider thread or conversation identifier."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["sent", "queued"],
+      "description": "Delivery state reported by the provider."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp for the send acknowledgement."
+    }
+  }
+}

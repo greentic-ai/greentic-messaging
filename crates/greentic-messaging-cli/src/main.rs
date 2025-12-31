@@ -6,18 +6,39 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand, ValueEnum};
+use gsm_core::{
+    AdapterRegistry, DefaultAdapterPacksConfig, MessagingAdapterKind, adapter_pack_paths_from_env,
+    default_adapter_pack_paths,
+};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        CliCommand::Info => handle_info(),
+        CliCommand::Info {
+            pack,
+            packs_root,
+            no_default_packs,
+        } => handle_info(pack, packs_root, no_default_packs),
         CliCommand::Dev { command } => handle_dev(command),
         CliCommand::Serve {
             kind,
             platform,
             tenant,
             team,
-        } => handle_serve(kind, platform, tenant, team),
+            pack,
+            packs_root,
+            no_default_packs,
+            adapter,
+        } => handle_serve(
+            kind,
+            platform,
+            tenant,
+            team,
+            pack,
+            packs_root,
+            no_default_packs,
+            adapter,
+        ),
         CliCommand::Flows { command } => handle_flows(command),
         CliCommand::Test { command } => handle_test(command),
         CliCommand::Admin { command } => handle_admin(command),
@@ -38,7 +59,17 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum CliCommand {
     /// Inspect the current environment, secrets and available binaries
-    Info,
+    Info {
+        /// Path to a messaging pack (.yaml or .gtpack); can be repeated.
+        #[arg(long, value_name = "PATH")]
+        pack: Vec<PathBuf>,
+        /// Root directory that contains the packs folder (defaults to ./packs).
+        #[arg(long, value_name = "PATH")]
+        packs_root: Option<PathBuf>,
+        /// Disable loading default packs shipped in packs/messaging.
+        #[arg(long)]
+        no_default_packs: bool,
+    },
     /// Developer utilities (local stack helpers)
     Dev {
         #[command(subcommand)]
@@ -53,6 +84,18 @@ enum CliCommand {
         tenant: String,
         #[arg(long)]
         team: Option<String>,
+        /// Path to a messaging pack (.yaml or .gtpack); can be repeated.
+        #[arg(long, value_name = "PATH")]
+        pack: Vec<PathBuf>,
+        /// Root directory that contains the packs folder (defaults to ./packs).
+        #[arg(long, value_name = "PATH")]
+        packs_root: Option<PathBuf>,
+        /// Disable loading default packs shipped in packs/messaging.
+        #[arg(long)]
+        no_default_packs: bool,
+        /// Override the egress adapter name (egress only).
+        #[arg(long)]
+        adapter: Option<String>,
     },
     /// Flow helpers
     Flows {
@@ -73,7 +116,10 @@ enum CliCommand {
 
 #[derive(Subcommand, Debug)]
 enum DevCommand {
+    /// Start the local docker/NATS stack (stack-up)
     Up,
+    /// Stop and clean the local docker stack (stack-down)
+    Down,
 }
 
 #[derive(Subcommand, Debug)]
@@ -183,7 +229,11 @@ enum ServeKind {
     Subscriptions,
 }
 
-fn handle_info() -> Result<()> {
+fn handle_info(
+    pack: Vec<PathBuf>,
+    packs_root: Option<PathBuf>,
+    no_default_packs: bool,
+) -> Result<()> {
     let env = current_env();
     println!("Environment : {env}");
 
@@ -197,10 +247,38 @@ fn handle_info() -> Result<()> {
         "Seed/apply   : greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env {env} --tenant <tenant> --team <team> --non-interactive"
     );
 
+    let registry = load_adapter_registry_for_cli(packs_root.clone(), &pack, no_default_packs)?;
+    println!("\nAdapter packs:");
+    println!(
+        "  packs_root     : {}",
+        packs_root
+            .unwrap_or_else(|| PathBuf::from("packs"))
+            .to_string_lossy()
+    );
+    if pack.is_empty() {
+        println!("  extra packs    : (none)");
+    } else {
+        println!(
+            "  extra packs    : {}",
+            pack.iter()
+                .map(|p| p.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if registry.is_empty() {
+        println!("  adapters       : (none loaded; add --pack or configure env)");
+    } else {
+        print_adapters(&registry, MessagingAdapterKind::Ingress, "ingress");
+        print_adapters(&registry, MessagingAdapterKind::Egress, "egress");
+        print_adapters(
+            &registry,
+            MessagingAdapterKind::IngressEgress,
+            "ingress+egress",
+        );
+    }
+
     println!("\nAvailable services:");
-    println!("  ingress       : {}", INGRESS_PLATFORMS.join(", "));
-    println!("  egress        : {}", EGRESS_PLATFORMS.join(", "));
-    println!("  subscriptions : {}", SUBSCRIPTION_PLATFORMS.join(", "));
     println!("  runner/flows  : gsm-runner (FLOW=... PLATFORM=...)\n");
 
     println!("For more commands, run `greentic-messaging --help`.");
@@ -215,30 +293,80 @@ fn handle_dev(command: DevCommand) -> Result<()> {
                 eprintln!("stack-up failed: {err:?}");
             }
         }
+        DevCommand::Down => {
+            println!("Running make stack-down (best effort)…");
+            if let Err(err) = run_make("stack-down", &[]) {
+                eprintln!("stack-down failed: {err:?}");
+            }
+        }
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_serve(
     kind: ServeKind,
     platform: String,
     tenant: String,
     team: Option<String>,
+    pack: Vec<PathBuf>,
+    packs_root: Option<PathBuf>,
+    no_default_packs: bool,
+    adapter_override: Option<String>,
 ) -> Result<()> {
     let env_scope = current_env();
     let team = team.unwrap_or_else(|| "default".into());
-    let target = serve_target(kind, &platform)?;
     let nats_url = env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    println!(
-        "Starting {kind:?} {platform} (env={env_scope}, tenant={tenant}, team={team}, nats={nats_url})"
-    );
-    let envs = vec![
-        ("GREENTIC_ENV", env_scope.as_str()),
-        ("TENANT", tenant.as_str()),
-        ("TEAM", team.as_str()),
-        ("NATS_URL", nats_url.as_str()),
+    let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
+
+    let mut envs: Vec<(String, String)> = vec![
+        ("GREENTIC_ENV".into(), env_scope.clone()),
+        ("TENANT".into(), tenant.clone()),
+        ("TEAM".into(), team.clone()),
+        ("NATS_URL".into(), nats_url.clone()),
+        (
+            "MESSAGING_PACKS_ROOT".into(),
+            packs_root.to_string_lossy().into(),
+        ),
     ];
-    run_make_with_logging(&target, &envs)
+    if !pack.is_empty() {
+        let joined = pack
+            .iter()
+            .map(|p| p.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(",");
+        envs.push(("MESSAGING_ADAPTER_PACK_PATHS".into(), joined));
+    }
+    if no_default_packs {
+        envs.push((
+            "MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS".into(),
+            "false".into(),
+        ));
+        envs.push(("MESSAGING_DEFAULT_ADAPTER_PACKS".into(), "".into()));
+    }
+    if let Some(adapter) = adapter_override {
+        envs.push(("MESSAGING_EGRESS_ADAPTER".into(), adapter));
+    }
+
+    println!(
+        "Starting {kind:?} {platform} (env={env_scope}, tenant={tenant}, team={team}, nats={nats_url}, packs_root={})",
+        packs_root.to_string_lossy()
+    );
+
+    match kind {
+        ServeKind::Ingress => {
+            run_cargo_package_with_env("greentic-messaging", "gsm-gateway", &envs, &[])
+        }
+        ServeKind::Egress => {
+            run_cargo_package_with_env("greentic-messaging", "gsm-egress", &envs, &[])
+        }
+        ServeKind::Subscriptions => run_cargo_package_with_env(
+            "greentic-messaging",
+            &subscription_package_for(&platform)?,
+            &envs,
+            &[],
+        ),
+    }
 }
 
 fn handle_flows(command: FlowCommand) -> Result<()> {
@@ -339,9 +467,6 @@ fn secrets_ctx() -> Result<Option<String>> {
     }
 }
 
-const INGRESS_PLATFORMS: &[&str] = &["slack", "telegram", "webchat", "whatsapp", "teams"];
-const EGRESS_PLATFORMS: &[&str] = &["slack", "telegram", "webchat", "whatsapp", "teams", "webex"];
-const SUBSCRIPTION_PLATFORMS: &[&str] = &["teams"];
 const CLI_DRY_RUN_ENV: &str = "GREENTIC_MESSAGING_CLI_DRY_RUN";
 
 fn current_env() -> String {
@@ -376,24 +501,12 @@ fn run_make(target: &str, envs: &[(&str, &str)]) -> Result<()> {
     }
 }
 
-fn serve_target(kind: ServeKind, platform: &str) -> Result<String> {
+fn subscription_package_for(platform: &str) -> Result<String> {
     let normalized = platform.to_ascii_lowercase();
-    let list = match kind {
-        ServeKind::Ingress => INGRESS_PLATFORMS,
-        ServeKind::Egress => EGRESS_PLATFORMS,
-        ServeKind::Subscriptions => SUBSCRIPTION_PLATFORMS,
-    };
-    if !list.contains(&normalized.as_str()) {
-        return Err(anyhow!(
-            "platform '{platform}' is not supported for {kind:?}"
-        ));
+    match normalized.as_str() {
+        "teams" => Ok("gsm-subscriptions-teams".into()),
+        _ => Err(anyhow!("subscriptions are only supported for: {}", "teams")),
     }
-    let prefix = match kind {
-        ServeKind::Ingress => "run-ingress-",
-        ServeKind::Egress => "run-egress-",
-        ServeKind::Subscriptions => "run-subscriptions-",
-    };
-    Ok(format!("{prefix}{normalized}"))
 }
 
 fn run_messaging_test_cli(args: &[&str]) -> Result<()> {
@@ -512,6 +625,57 @@ fn run_whatsapp_setup(args: Vec<String>) -> Result<()> {
     run_cargo_manifest_bin("scripts/Cargo.toml", "whatsapp_setup", &args)
 }
 
+fn run_cargo_package_with_env(
+    invoker: &str,
+    package: &str,
+    envs: &[(String, String)],
+    args: &[&str],
+) -> Result<()> {
+    let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    if cli_dry_run() {
+        let env_prefix = if envs.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "env {} ",
+                envs.iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
+        };
+        println!(
+            "(dry-run) {env_prefix}cargo run -p {package}{}",
+            dry_suffix(&args_vec)
+        );
+        return Ok(());
+    }
+    let mut cmd = ProcessCommand::new("cargo");
+    cmd.arg("run")
+        .arg("-p")
+        .arg(package)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
+    if !args.is_empty() {
+        cmd.arg("--");
+        for arg in args {
+            cmd.arg(arg);
+        }
+    }
+    let status = cmd
+        .status()
+        .with_context(|| format!("failed to run cargo package {package} (invoked by {invoker})"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!("{package} exited with status {status}"))
+    }
+}
+
 fn run_cargo_package(invoker: &str, package: &str, args: &[String]) -> Result<()> {
     if cli_dry_run() {
         println!("(dry-run) cargo run -p {package}{}", dry_suffix(args));
@@ -591,5 +755,68 @@ fn dry_suffix(args: &[String]) -> String {
         String::new()
     } else {
         format!(" -- {}", args.join(" "))
+    }
+}
+
+fn load_adapter_registry_for_cli(
+    packs_root: Option<PathBuf>,
+    extra_packs: &[PathBuf],
+    no_default_packs: bool,
+) -> Result<AdapterRegistry> {
+    let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
+    if !packs_root.exists() {
+        // Create the directory so canonicalization in the registry loader succeeds.
+        let _ = std::fs::create_dir_all(&packs_root);
+    }
+    let default_cfg = if no_default_packs {
+        DefaultAdapterPacksConfig {
+            install_all: false,
+            selected: Vec::new(),
+        }
+    } else {
+        DefaultAdapterPacksConfig::from_env()
+    };
+    let mut pack_paths = if no_default_packs {
+        Vec::new()
+    } else {
+        default_adapter_pack_paths(packs_root.as_path(), &default_cfg)
+    };
+    pack_paths.extend(
+        adapter_pack_paths_from_env()
+            .into_iter()
+            .filter_map(canonicalize_pack_path),
+    );
+    pack_paths.extend(
+        extra_packs
+            .iter()
+            .filter_map(|p| canonicalize_pack_path(p.clone())),
+    );
+
+    AdapterRegistry::load_from_paths(packs_root.as_path(), &pack_paths).or_else(|err| {
+        eprintln!(
+            "warning: failed to load adapter packs (root={}, packs={:?}): {err}",
+            packs_root.display(),
+            pack_paths
+        );
+        Ok(AdapterRegistry::default())
+    })
+}
+
+fn canonicalize_pack_path(path: PathBuf) -> Option<PathBuf> {
+    std::fs::canonicalize(&path).ok().or_else(|| {
+        eprintln!(
+            "warning: could not canonicalize pack path {}; skipping",
+            path.display()
+        );
+        None
+    })
+}
+
+fn print_adapters(registry: &AdapterRegistry, kind: MessagingAdapterKind, label: &str) {
+    let names: Vec<String> = registry.by_kind(kind).into_iter().map(|a| a.name).collect();
+    if names.is_empty() {
+        println!("  {label:<14}: (none)");
+    } else {
+        println!("  {label:<14}: {}", names.join(", "));
     }
 }

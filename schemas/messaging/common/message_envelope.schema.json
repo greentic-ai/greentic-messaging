@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://greentic.ai/schemas/messaging/common/message_envelope.schema.json",
+  "title": "ChannelMessageEnvelope",
+  "description": "Normalized channel message envelope shared across messaging providers (mirrors greentic-types ChannelMessageEnvelope).",
+  "type": "object",
+  "required": ["id", "tenant", "channel", "session_id"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the message."
+    },
+    "tenant": {
+      "type": "object",
+      "description": "Tenant context propagated with the message (greentic-types TenantCtx).",
+      "required": ["env", "tenant", "tenant_id"],
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenant": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "team": {
+          "type": "string",
+          "minLength": 1
+        },
+        "team_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "user": {
+          "type": "string",
+          "minLength": 1
+        },
+        "user_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "flow_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "correlation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "channel": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Abstract channel identifier or type."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Conversation or thread identifier."
+    },
+    "user_id": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Optional user identifier associated with the message."
+    },
+    "text": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Optional text content."
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/attachment"
+      },
+      "default": [],
+      "description": "Attachments included with the message."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "description": "Free-form metadata for adapters and flows."
+    }
+  },
+  "$defs": {
+    "attachment": {
+      "type": "object",
+      "required": ["mime_type", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "mime_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

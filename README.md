@@ -40,12 +40,18 @@ greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --
 Then run the messaging orchestration CLI:
 
 ```bash
-cargo run -p greentic-messaging-cli -- info
-cargo run -p greentic-messaging-cli -- dev up
-cargo run -p greentic-messaging-cli -- serve ingress slack --tenant acme
-cargo run -p greentic-messaging-cli -- flows run --flow examples/flows/weather_telegram.yaml --platform telegram --tenant acme
-cargo run -p greentic-messaging-cli -- test fixtures
-cargo run -p greentic-messaging-cli -- admin guard-rails show
+greentic-messaging -- info
+greentic-messaging -- dev up
+greentic-messaging -- serve ingress slack --tenant acme
+greentic-messaging -- flows run --flow examples/flows/weather_telegram.yaml --platform telegram --tenant acme
+greentic-messaging -- test fixtures
+greentic-messaging -- admin guard-rails show
+
+# run ingress against a provider bundle (.gtpack)
+greentic-messaging -- serve ingress webchat \
+  --tenant acme \
+  --pack fixtures/packs/messaging-provider-bundle.gtpack \
+  --no-default-packs
 ```
 
 The CLI now assumes secrets are managed through `greentic-secrets` (ctx/seed/apply);

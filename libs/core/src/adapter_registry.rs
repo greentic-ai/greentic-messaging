@@ -132,13 +132,6 @@ fn resolve_pack_path(root: &Path, path: &Path) -> Result<PathBuf> {
         let canonical_path = path
             .canonicalize()
             .with_context(|| format!("failed to canonicalize {}", path.display()))?;
-        if !canonical_path.starts_with(root) {
-            bail!(
-                "pack path {} must be under {}",
-                canonical_path.display(),
-                root.display()
-            );
-        }
         Ok(canonical_path)
     } else {
         normalize_under_root(root, path)
@@ -378,6 +371,35 @@ nodes: {}
         assert_eq!(
             adapter.source.as_ref(),
             Some(&gtpack_path.canonicalize().unwrap())
+        );
+    }
+
+    #[test]
+    fn allows_absolute_pack_path_outside_root() {
+        let root = TempDir::new().expect("root");
+        let other = TempDir::new().expect("other");
+        let pack_path = other.path().join("pack.yaml");
+        std::fs::write(
+            &pack_path,
+            r#"
+id: absolute-pack
+version: 0.0.1
+messaging:
+  adapters:
+    - name: abs-ingress
+      kind: ingress
+      component: abs@0.0.1
+            "#,
+        )
+        .unwrap();
+
+        let registry =
+            adapters_from_pack_file(root.path(), &pack_path).expect("load absolute pack");
+        let adapter = registry.first().expect("adapter present");
+        assert_eq!(adapter.name, "abs-ingress");
+        assert_eq!(
+            adapter.source.as_ref().map(|p| p.canonicalize().unwrap()),
+            Some(pack_path.canonicalize().unwrap())
         );
     }
 
