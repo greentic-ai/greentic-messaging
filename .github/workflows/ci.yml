@@ -105,8 +105,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then sudo rm -rf "$AGENT_TOOLSDIRECTORY"; fi
+          echo "Disk usage after cleanup:"
+          df -h
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - name: OAuth renderer snapshots
         run: cargo test -p gsm-core --features "adaptive-cards directline_standalone" --test renderers_oauth -- --nocapture
       - name: OAuth builder helpers
