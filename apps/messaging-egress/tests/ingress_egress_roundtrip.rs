@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use gsm_bus::InMemoryBusClient;
 use gsm_core::{
-    AdapterDescriptor, ChannelMessage, MessagingAdapterKind, OutKind, OutMessage, Platform,
-    make_tenant_ctx,
+    AdapterDescriptor, ChannelMessage, LoggingRunnerClient, MessagingAdapterKind, OutKind,
+    OutMessage, Platform, make_tenant_ctx,
 };
 use gsm_egress::adapter_registry::AdapterLookup;
 use gsm_egress::process_message_internal;
@@ -106,9 +106,13 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         adapter: None,
         packs_root: "packs".into(),
         egress_prefix: gsm_bus::EGRESS_SUBJECT_PREFIX.to_string(),
+        runner_http_url: None,
+        runner_http_api_key: None,
     };
 
-    process_message_internal(&out, &adapter, bus.as_ref(), &cfg)
+    let runner = LoggingRunnerClient;
+
+    process_message_internal(&out, &adapter, bus.as_ref(), &runner, &cfg)
         .await
         .unwrap();
 

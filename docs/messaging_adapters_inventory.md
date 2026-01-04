@@ -1,13 +1,21 @@
-# Messaging adapters inventory
+# Messaging adapters inventory (pack-based)
 
-Discovery of existing adapters in this repo. No behaviour changes were made.
+Adapters are now discovered from messaging packs (.gtpack preferred, YAML only for development).
+Load them via `MESSAGING_ADAPTER_PACK_PATHS`/`greentic-messaging --pack …`. The legacy
+`gsm-provider-registry` implementations are being retired once pack-backed components are
+validated; keep them only as a fallback during migration.
 
-| adapter_name | kind | code_location | config_type | how_it’s wired today |
-| --- | --- | --- | --- | --- |
-| slack | ingress-egress | `libs/gsm-provider-registry/src/providers/slack/mod.rs` (manifest at `providers/slack/provider.json`) | `ProviderManifest` plus env (`SLACK_BOT_TOKEN`, optional `SLACK_SEND_URL`) | Send: HTTP `chat.postMessage` via `reqwest` (bearer token), with mock:// support for tests. Receive: parses Slack event webhook payloads, emits `Message` for `message` events. |
-| teams | ingress-egress | `libs/gsm-provider-registry/src/providers/teams/mod.rs` (manifest at `providers/teams/provider.json`) | `ProviderManifest` plus env (`MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET`) | Send: obtains OAuth2 client credentials token then POSTs to Microsoft Graph chat/channel message endpoints; mock:// for tests. Receive: parses Teams webhook payload (message body/from/channel identity) into `Message`. |
-| webex | ingress-egress | `libs/gsm-provider-registry/src/providers/webex/mod.rs` (manifest at `providers/webex/provider.json`) | `ProviderManifest` plus env (`WEBEX_BOT_TOKEN`, optional `WEBEX_SEND_URL`) | Send: HTTP POST to Webex messages API with bearer token, mock:// scenarios for tests. Receive: parses Webex webhook payload data (room/person info) into `Message`. |
-| webchat | ingress-egress | `libs/gsm-provider-registry/src/providers/webchat/mod.rs` (manifest at `providers/webchat/provider.json`) | `ProviderManifest` plus env (`WEBCHAT_SEND_URL`) | Send: HTTP POST to configured webchat endpoint (or mock://), payload built from `Message`. Receive: ingests batched webhook payload (`messages` array) into `Message` list. |
-| whatsapp | ingress-egress | `libs/gsm-provider-registry/src/providers/whatsapp/mod.rs` (manifest at `providers/whatsapp/provider.json`) | `ProviderManifest` plus env (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, optional `WHATSAPP_SEND_URL`) | Send: HTTP POST to WhatsApp Cloud API endpoint (phone-id templated), bearer token, mock:// for tests. Receive: parses WhatsApp webhook entries/changes for text messages into `Message`. |
-| telegram (ingress) | ingress | `apps/ingress-telegram/src/main.rs` (webhook/admin server) and `apps/ingress-telegram/src/config.rs` | `TelegramConfig` (per-tenant) loaded from YAML/env (`TELEGRAM_PUBLIC_WEBHOOK_BASE`, `TELEGRAM_SECRET_TOKEN_KEY`, allowed updates), secrets under `tenants/<tenant>/telegram/*` | Axum service handles `/telegram/webhook` + admin endpoints, reconciles webhooks via `TelegramApi`, validates secret tokens, normalizes updates to internal messages. |
-| telegram (egress) | egress | `apps/egress-telegram/src/main.rs` and `apps/egress-telegram/src/sender.rs` | `TelegramSender` uses secrets `TelegramCreds` (`messaging_credentials("telegram", ctx)`), env (`NATS_URL`, `TENANT`, optional `TELEGRAM_API_BASE`, optional OAuth env) | JetStream consumer on `greentic.msg.out.<tenant>.telegram` subjects; translates `OutMessage` via `TelegramTranslator` then calls Bot API over HTTP (or mock://), with rate/backoff/error handling. |
+| adapter_name (pack entry) | kind | pack file | component id | flow references | notes |
+| --- | --- | --- | --- | --- | --- |
+| `slack-main` | ingress-egress | `packs/messaging/slack.yaml` / `target/packs/greentic-messaging-slack.gtpack` | `slack-adapter@1.0.0` | `flows/messaging/slack/default.ygtc`, `flows/messaging/slack/custom.ygtc` | Requires `messaging/slack.credentials.json` secret. |
+| `teams-main` | ingress-egress | `packs/messaging/teams.yaml` / `target/packs/greentic-messaging-teams.gtpack` | `teams-adapter@1.0.0` | `flows/messaging/teams/default.ygtc`, `flows/messaging/teams/custom.ygtc` | Requires `messaging/teams.credentials.json` secret. |
+| `webex-main` | ingress-egress | `packs/messaging/webex.yaml` / `target/packs/greentic-messaging-webex.gtpack` | `webex-adapter@1.0.0` | `flows/messaging/webex/default.ygtc`, `flows/messaging/webex/custom.ygtc` | Requires `messaging/webex.credentials.json` secret. |
+| `webchat-main` | ingress-egress | `packs/messaging/webchat.yaml` / `target/packs/greentic-messaging-webchat.gtpack` | `webchat-adapter@1.0.0` | `flows/messaging/webchat/default.ygtc`, `flows/messaging/webchat/custom.ygtc` | Requires `messaging/webchat.credentials.json` secret. |
+| `whatsapp-main` | ingress-egress | `packs/messaging/whatsapp.yaml` / `target/packs/greentic-messaging-whatsapp.gtpack` | `whatsapp-adapter@1.0.0` | `flows/messaging/whatsapp/default.ygtc`, `flows/messaging/whatsapp/custom.ygtc` | Requires `messaging/whatsapp.credentials.json` secret. |
+| `telegram-ingress` | ingress | `packs/messaging/telegram.yaml` / `target/packs/greentic-messaging-telegram.gtpack` | `telegram-ingress-adapter@1.0.0` | `flows/messaging/telegram/ingress_default.ygtc`, `flows/messaging/telegram/ingress_custom.ygtc` | Requires `messaging/telegram.credentials.json` secret. |
+| `telegram-egress` | egress | `packs/messaging/telegram.yaml` / `target/packs/greentic-messaging-telegram.gtpack` | `telegram-egress-adapter@1.0.0` | `flows/messaging/telegram/egress_default.ygtc`, `flows/messaging/telegram/egress_custom.ygtc` | Requires `messaging/telegram.credentials.json` secret. |
+| `local-main` | ingress-egress | `packs/messaging/local.yaml` / `target/packs/greentic-messaging-local.gtpack` | `local-adapter@1.0.0` | `flows/messaging/local/default.ygtc`, `flows/messaging/local/custom.ygtc` | Dev/mock adapter, no external deps. |
+
+Legacy provider-registry code paths (`libs/gsm-provider-registry/**`, `apps/ingress-*`, `apps/egress-*`)
+will be dropped once all gtpack components are validated with greentic-runner. Prefer testing and
+deploying via packs so platform secrets, components, and flows remain declarative.

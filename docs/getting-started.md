@@ -18,7 +18,7 @@ export OAUTH_BASE_URL=https://oauth.greentic.dev
 # Enable telemetry when a collector is available
 # export ENABLE_OTEL=true
 # export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-# Adapter packs can be loaded from raw YAML or signed .gtpack archives; point `MESSAGING_ADAPTER_PACK_PATHS` at the `.gtpack` file directly without unpacking it (paths must sit under `MESSAGING_PACKS_ROOT`, default `packs/`).
+# Adapter packs are shipped as signed .gtpack archives (or raw YAML during development). Point `MESSAGING_ADAPTER_PACK_PATHS` at the `.gtpack` file directly; relative paths are resolved under `MESSAGING_PACKS_ROOT` (default `packs/`).
 ```
 
 ## Seed messaging secrets (dev)
@@ -45,14 +45,28 @@ export MESSAGING_DISABLE_SECRETS_ROOT=1
 
 This forces test utilities to use the seed and ignore legacy env/dir fallbacks.
 
+## Use gtpack adapters with greentic-messaging
+
+1) Build or fetch `.gtpack` bundles  
+   - Dev: `tools/generate_packs.sh` expects component WASM artifacts under `target/components/*.wasm` and emits `target/packs/*.gtpack`.  
+   - CI/consumers: use the signed packs published alongside releases or artifacts you trust.
+
+2) Start gateway/egress with the packs loaded  
+   - Via CLI: `greentic-messaging serve ingress slack --tenant acme --pack target/packs/greentic-messaging-slack.gtpack` (repeat `--pack` for multiple bundles).  
+   - Env-based: set `MESSAGING_PACKS_ROOT` and `MESSAGING_ADAPTER_PACK_PATHS=/abs/path/a.gtpack,/abs/path/b.gtpack`. Default packs can also be enabled with `MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS=true`.
+
+3) Invoke components via greentic-runner  
+   - Set `MESSAGING_RUNNER_HTTP_URL=https://runner-host/invoke` (and optionally `MESSAGING_RUNNER_HTTP_API_KEY`) so messaging-egress calls greentic-runner’s HTTP endpoint for each outbound envelope, passing the pack’s component id and flow path.  
+   - If unset, a logging runner client is used. Bus publish still occurs for legacy consumers. Run `make run-runner FLOW=flows/messaging/slack/default.ygtc PLATFORM=slack` locally to supply the runner endpoint during development.
+
 ## Choose Your Platform
 
 | Platform | Setup Guide | Example Flow | Notes |
 | --- | --- | --- | --- |
 | Slack | README section “Slack Integration” | `examples/flows/weather_slack.yaml` | Seed Slack creds via `greentic-secrets init/apply`; tokens not exported via env anymore. |
-| Microsoft Teams | README section “Microsoft Teams Integration” | `examples/flows/weather_telegram.yaml` | Seed client credentials via `greentic-secrets`; Graph subscriptions still supported. |
+| Microsoft Teams | README section “Microsoft Teams Integration” | — | Seed client credentials via `greentic-secrets`; Graph subscriptions still supported (no example flow shipped yet). |
 | Telegram | README section “Telegram Integration” | `examples/flows/weather_telegram.yaml` | Works with BotFather bots; secrets flow via `greentic-secrets`. |
-| WebChat | README section “WebChat Integration” | `examples/flows/weather_slack.yaml` | Minimal HTTP+SSE demo; secrets seeded via `greentic-secrets`. |
+| WebChat | README section “WebChat Integration” | — | Minimal HTTP+SSE demo; secrets seeded via `greentic-secrets` (example flow not shipped). |
 | WhatsApp | README section “WhatsApp Integration” | — | Requires Meta Business setup; seed tokens via `greentic-secrets`. |
 | **Webex** | [`docs/platform-setup/webex.md`](platform-setup/webex.md) | `examples/flows/weather_webex.yaml` | New Webex ingress/egress pipeline; seed webhook/bot secrets via `greentic-secrets`. |
 | **Dev Viewer** | README section “Golden Fixtures & Previewing” | `libs/core/tests/fixtures/cards/*.json` | Run `cargo run -p dev-viewer -- --listen 127.0.0.1:7878` and open the UI to preview all platforms without touching a bot |

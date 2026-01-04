@@ -1,6 +1,6 @@
 # Messaging adapters migration plan (pack-based)
 
-This maps existing adapters to pack-defined `messaging.adapters` entries. No runtime changes yet; this is planning only.
+This maps existing adapters to pack-defined `messaging.adapters` entries. Pack-based loading is already live in gateway/egress; the table tracks the current mapping and placeholders.
 
 Pack/Component convention: for each row, `pack_name` is a pack YAML (e.g., `packs/messaging/slack.yaml`, logical id `greentic-messaging-slack`), and `component` is the logical ID of the WASM component that implements that adapter (e.g., `slack-adapter@1.0.0`).
 

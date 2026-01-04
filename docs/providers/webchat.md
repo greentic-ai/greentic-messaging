@@ -1,5 +1,13 @@
 # Web Chat Provider (Bot Framework Direct Line)
 
+> Pack-first note: the WebChat adapter now ships via the messaging pack
+> (`packs/messaging/webchat.yaml` → `greentic-messaging-webchat.gtpack`) with
+> component id `webchat-adapter@1.0.0` and flows under
+> `flows/messaging/webchat/*`. Load the gtpack through
+> `MESSAGING_ADAPTER_PACK_PATHS`/`greentic-messaging --pack …` and exercise it
+> with greentic-runner. The legacy provider-registry details below remain only
+> as a reference while migration completes.
+
 The Direct Line implementation now ships under **`gsm-core::platforms::webchat`**.
 The legacy `providers/webchat` crate has been collapsed to metadata (descriptor +
 schemas); binaries and tests should depend on `gsm-core` directly.

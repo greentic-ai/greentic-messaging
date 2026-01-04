@@ -9,6 +9,8 @@ pub struct EgressConfig {
     pub adapter: Option<String>,
     pub packs_root: String,
     pub egress_prefix: String,
+    pub runner_http_url: Option<String>,
+    pub runner_http_api_key: Option<String>,
 }
 
 impl EgressConfig {
@@ -35,6 +37,8 @@ impl EgressConfig {
             adapter: std::env::var("MESSAGING_EGRESS_ADAPTER").ok(),
             packs_root: std::env::var("MESSAGING_PACKS_ROOT").unwrap_or_else(|_| "packs".into()),
             egress_prefix,
+            runner_http_url: std::env::var("MESSAGING_RUNNER_HTTP_URL").ok(),
+            runner_http_api_key: std::env::var("MESSAGING_RUNNER_HTTP_API_KEY").ok(),
         })
     }
 }

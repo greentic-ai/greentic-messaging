@@ -59,6 +59,7 @@ urlencoding = { workspace = true }
 gsm-telemetry = { workspace = true }
 packc = { workspace = true }
 greentic-pack = { workspace = true }
+zip = { workspace = true }
 proptest = { version = "1", optional = true }
 
 [dev-dependencies]

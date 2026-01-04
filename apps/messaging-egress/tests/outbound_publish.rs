@@ -1,5 +1,5 @@
 use gsm_core::{AdapterDescriptor, MessagingAdapterKind};
-use gsm_core::{OutKind, OutMessage, Platform, make_tenant_ctx};
+use gsm_core::{LoggingRunnerClient, OutKind, OutMessage, Platform, make_tenant_ctx};
 use gsm_egress::InMemoryBusClient;
 use gsm_egress::adapter_registry::AdapterLookup;
 
@@ -47,9 +47,13 @@ async fn publishes_outbound_payload_via_bus() {
         adapter: None,
         packs_root: "packs".into(),
         egress_prefix: gsm_bus::EGRESS_SUBJECT_PREFIX.to_string(),
+        runner_http_url: None,
+        runner_http_api_key: None,
     };
 
-    gsm_egress::process_message_internal(&out, &adapter, &bus, &cfg)
+    let runner = LoggingRunnerClient;
+
+    gsm_egress::process_message_internal(&out, &adapter, &bus, &runner, &cfg)
         .await
         .unwrap();
 

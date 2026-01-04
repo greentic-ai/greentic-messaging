@@ -2,8 +2,9 @@
 
 The `greentic-messaging` binary is a convenience layer over the messaging services.
 It inspects the current environment, runs the gateway/egress/subscription services
-with your chosen adapter packs (including `.gtpack` bundles), proxies the
-fixture/test tooling, and exposes a first wave of admin helpers.
+with your chosen adapter packs (prefer `.gtpack` bundles), proxies the
+fixture/test tooling, and exposes a first wave of admin helpers. Pack loading is
+gtpack-first; YAML is supported for development.
 
 Secrets are now managed via the `greentic-secrets` CLI (ctx + scaffold/wizard/apply).
 Use `messaging-tenants` or `greentic-secrets` directly to seed credentials; legacy
@@ -67,6 +68,13 @@ greentic-messaging serve ingress webchat \
 # run egress with a specific adapter name
 greentic-messaging serve egress webchat --tenant acme --adapter webchat-main
 ```
+
+Runner note: egress currently republishes envelopes to the bus; runner HTTP
+invocation is available when `MESSAGING_RUNNER_HTTP_URL` is set (auth via
+`MESSAGING_RUNNER_HTTP_API_KEY`). If unset, a logging client is used. Bus
+publish still occurs for legacy consumers. You can run `make run-runner` (or
+your deployed greentic-runner) against the flow referenced by your pack to
+service those HTTP invocations.
 
 ### `greentic-messaging flows run`
 

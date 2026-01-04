@@ -15,6 +15,10 @@ Expectations:
 
 Outputs are written to `target/packs/*.gtpack`. Wire this into CI once the component/tooling story is settled.
 
+Using the packs:
+- Point gateway/egress at the generated `.gtpack` files via `MESSAGING_ADAPTER_PACK_PATHS` (or `greentic-messaging --pack …`).
+- Set `MESSAGING_RUNNER_HTTP_URL` (and optional `MESSAGING_RUNNER_HTTP_API_KEY`) so messaging-egress invokes greentic-runner with the component id/flow path carried in the pack; run greentic-runner against the referenced flows (e.g., `flows/messaging/<adapter>/default.ygtc`) to handle those invocations.
+
 Smoke secrets:
 
 - Use `fixtures/seeds/messaging_all_smoke.yaml` for seed-based runs (set `MESSAGING_SEED_FILE` and disable env fallbacks with `MESSAGING_DISABLE_ENV=1` and `MESSAGING_DISABLE_SECRETS_ROOT=1`).

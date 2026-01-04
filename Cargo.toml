@@ -50,7 +50,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.24"
+version = "0.4.25"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 
@@ -118,6 +118,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 rusqlite = { version = "0.38", features = ["bundled"] }
 url = "2.5"
 gsm-core = { version = "0.4", path = "libs/core" }
+zip = "2.1"
 gsm-telemetry = { version = "0.4", path = "libs/telemetry" }
 gsm-session = { version = "0.4", path = "libs/session" }
 gsm-dlq = { version = "0.4", path = "libs/dlq" }

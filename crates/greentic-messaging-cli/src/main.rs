@@ -1,15 +1,20 @@
 use std::{
+    collections::{BTreeMap, HashSet},
     env,
+    io::Read,
     path::PathBuf,
     process::{Command as ProcessCommand, Stdio},
 };
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand, ValueEnum};
+use greentic_pack::reader::{SigningPolicy, open_pack};
+use greentic_types::pack_manifest::{ExtensionInline, ExtensionRef};
 use gsm_core::{
-    AdapterRegistry, DefaultAdapterPacksConfig, MessagingAdapterKind, adapter_pack_paths_from_env,
-    default_adapter_pack_paths,
+    AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, MessagingAdapterKind,
+    adapter_pack_paths_from_env, default_adapter_pack_paths,
 };
+use serde::Deserialize;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -247,7 +252,8 @@ fn handle_info(
         "Seed/apply   : greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env {env} --tenant <tenant> --team <team> --non-interactive"
     );
 
-    let registry = load_adapter_registry_for_cli(packs_root.clone(), &pack, no_default_packs)?;
+    let (registry, pack_paths) =
+        load_adapter_registry_for_cli(packs_root.clone(), &pack, no_default_packs)?;
     println!("\nAdapter packs:");
     println!(
         "  packs_root     : {}",
@@ -266,16 +272,52 @@ fn handle_info(
                 .join(", ")
         );
     }
+    let (flows, provider_flow_hints) = collect_pack_flows_and_provider_hints(&pack_paths);
+
     if registry.is_empty() {
-        println!("  adapters       : (none loaded; add --pack or configure env)");
+        println!(
+            "  adapters       : (none loaded; add --pack or configure env; packs must declare provider extension {} or legacy messaging.adapters)",
+            greentic_types::provider::PROVIDER_EXTENSION_ID
+        );
     } else {
-        print_adapters(&registry, MessagingAdapterKind::Ingress, "ingress");
-        print_adapters(&registry, MessagingAdapterKind::Egress, "egress");
+        print_adapters(
+            &registry,
+            MessagingAdapterKind::Ingress,
+            "ingress",
+            &provider_flow_hints,
+        );
+        print_adapters(
+            &registry,
+            MessagingAdapterKind::Egress,
+            "egress",
+            &provider_flow_hints,
+        );
         print_adapters(
             &registry,
             MessagingAdapterKind::IngressEgress,
             "ingress+egress",
+            &provider_flow_hints,
         );
+    }
+
+    println!("\nFlows in loaded packs:");
+    if flows.is_empty() {
+        println!("  (none)");
+    } else {
+        for pack in flows {
+            if pack.flows.is_empty() {
+                println!("  {}: (none)", pack.label);
+                continue;
+            }
+            println!("  {}:", pack.label);
+            for flow in pack.flows {
+                if let Some(title) = flow.title {
+                    println!("    - {}  kind={}  {}", flow.id, flow.kind, title);
+                } else {
+                    println!("    - {}  kind={}", flow.id, flow.kind);
+                }
+            }
+        }
     }
 
     println!("\nAvailable services:");
@@ -762,7 +804,7 @@ fn load_adapter_registry_for_cli(
     packs_root: Option<PathBuf>,
     extra_packs: &[PathBuf],
     no_default_packs: bool,
-) -> Result<AdapterRegistry> {
+) -> Result<(AdapterRegistry, Vec<PathBuf>)> {
     let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
     if !packs_root.exists() {
         // Create the directory so canonicalization in the registry loader succeeds.
@@ -792,14 +834,18 @@ fn load_adapter_registry_for_cli(
             .filter_map(|p| canonicalize_pack_path(p.clone())),
     );
 
-    AdapterRegistry::load_from_paths(packs_root.as_path(), &pack_paths).or_else(|err| {
-        eprintln!(
-            "warning: failed to load adapter packs (root={}, packs={:?}): {err}",
-            packs_root.display(),
-            pack_paths
-        );
-        Ok(AdapterRegistry::default())
-    })
+    let registry = match AdapterRegistry::load_from_paths(packs_root.as_path(), &pack_paths) {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!(
+                "warning: failed to load adapter packs (root={}, packs={:?}): {err}",
+                packs_root.display(),
+                pack_paths
+            );
+            AdapterRegistry::default()
+        }
+    };
+    Ok((registry, pack_paths))
 }
 
 fn canonicalize_pack_path(path: PathBuf) -> Option<PathBuf> {
@@ -812,11 +858,224 @@ fn canonicalize_pack_path(path: PathBuf) -> Option<PathBuf> {
     })
 }
 
-fn print_adapters(registry: &AdapterRegistry, kind: MessagingAdapterKind, label: &str) {
-    let names: Vec<String> = registry.by_kind(kind).into_iter().map(|a| a.name).collect();
-    if names.is_empty() {
+fn print_adapters(
+    registry: &AdapterRegistry,
+    kind: MessagingAdapterKind,
+    label: &str,
+    provider_flow_hints: &ProviderFlowHintsByProvider,
+) {
+    let adapters = registry.by_kind(kind);
+    if adapters.is_empty() {
         println!("  {label:<14}: (none)");
     } else {
-        println!("  {label:<14}: {}", names.join(", "));
+        println!("  {label:<14}:");
+        for adapter in adapters {
+            println!("    - {}", format_adapter(&adapter));
+            if let Some(hints) = provider_flow_hints.get(&adapter.name) {
+                for hint in hints {
+                    println!("      provider flows (from pack {}):", hint.pack_label);
+                    for flow in &hint.hints {
+                        if flow.missing {
+                            println!(
+                                "        {key:<18}: {id} (missing)",
+                                key = flow.key,
+                                id = flow.flow_id
+                            );
+                        } else {
+                            println!("        {key:<18}: {id}", key = flow.key, id = flow.flow_id);
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+fn format_adapter(adapter: &AdapterDescriptor) -> String {
+    let mut parts = Vec::new();
+    parts.push(format!("component={}", adapter.component));
+    if let Some(flow) = adapter.flow_path() {
+        parts.push(format!("flow={}", flow));
+    }
+    if let Some(caps) = &adapter.capabilities {
+        if !caps.direction.is_empty() {
+            parts.push(format!("direction={}", caps.direction.join("|")));
+        }
+        if !caps.features.is_empty() {
+            parts.push(format!("features={}", caps.features.join("|")));
+        }
+    }
+    if parts.is_empty() {
+        adapter.name.clone()
+    } else {
+        format!("{} ({})", adapter.name, parts.join(", "))
+    }
+}
+
+#[derive(Debug)]
+struct PackFlowsSummary {
+    label: String,
+    flows: Vec<FlowSummary>,
+}
+
+#[derive(Debug)]
+struct FlowSummary {
+    id: String,
+    kind: String,
+    title: Option<String>,
+}
+
+#[derive(Debug)]
+struct ProviderFlowHintLine {
+    key: &'static str,
+    flow_id: String,
+    missing: bool,
+}
+
+#[derive(Debug)]
+struct ProviderFlowHints {
+    pack_label: String,
+    hints: Vec<ProviderFlowHintLine>,
+}
+
+type ProviderFlowHintsByProvider = BTreeMap<String, Vec<ProviderFlowHints>>;
+
+fn collect_pack_flows_and_provider_hints(
+    pack_paths: &[PathBuf],
+) -> (Vec<PackFlowsSummary>, ProviderFlowHintsByProvider) {
+    let mut summaries = Vec::new();
+    let mut provider_hints: ProviderFlowHintsByProvider = BTreeMap::new();
+
+    for path in pack_paths {
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase());
+        if ext.as_deref() != Some("gtpack") {
+            continue;
+        }
+        if let Some(manifest) = decode_pack_manifest(path) {
+            let label = manifest.pack_id.to_string();
+
+            let mut flows: Vec<FlowSummary> = manifest
+                .flows
+                .iter()
+                .map(|f| FlowSummary {
+                    id: f.id.to_string(),
+                    kind: format!("{:?}", f.kind),
+                    title: f.flow.metadata.title.clone(),
+                })
+                .collect();
+            flows.sort_by(|a, b| a.id.cmp(&b.id));
+            let flow_ids: HashSet<String> =
+                manifest.flows.iter().map(|f| f.id.to_string()).collect();
+            summaries.push(PackFlowsSummary {
+                label: label.clone(),
+                flows,
+            });
+
+            if let Some(hints) =
+                extract_provider_flow_hints(manifest.extensions.as_ref(), &flow_ids, &label)
+            {
+                for (provider, hint) in hints {
+                    provider_hints.entry(provider).or_default().push(hint);
+                }
+            }
+        } else if let Ok(pack) = open_pack(path, SigningPolicy::DevOk) {
+            let label = pack.manifest.meta.pack_id.clone();
+            let mut flows: Vec<FlowSummary> = pack
+                .manifest
+                .flows
+                .iter()
+                .map(|f| FlowSummary {
+                    id: f.id.clone(),
+                    kind: f.kind.clone(),
+                    title: None,
+                })
+                .collect();
+            flows.sort_by(|a, b| a.id.cmp(&b.id));
+            summaries.push(PackFlowsSummary { label, flows });
+        }
+    }
+
+    summaries.sort_by(|a, b| a.label.cmp(&b.label));
+    for hints in provider_hints.values_mut() {
+        hints.sort_by(|a, b| a.pack_label.cmp(&b.pack_label));
+    }
+    (summaries, provider_hints)
+}
+
+fn decode_pack_manifest(path: &PathBuf) -> Option<greentic_types::pack_manifest::PackManifest> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+    let mut buf = Vec::new();
+    archive
+        .by_name("manifest.cbor")
+        .ok()?
+        .read_to_end(&mut buf)
+        .ok()?;
+    greentic_types::decode_pack_manifest(&buf).ok()
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderFlowHintsPayload {
+    #[serde(flatten)]
+    providers: BTreeMap<String, ProviderFlowHintSet>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderFlowHintSet {
+    setup_default: Option<String>,
+    setup_custom: Option<String>,
+    reconfigure: Option<String>,
+    diagnostics: Option<String>,
+    verify_webhooks: Option<String>,
+    rotate_credentials: Option<String>,
+}
+
+fn extract_provider_flow_hints(
+    extensions: Option<&BTreeMap<String, ExtensionRef>>,
+    flow_ids: &HashSet<String>,
+    pack_label: &str,
+) -> Option<BTreeMap<String, ProviderFlowHints>> {
+    let extensions = extensions?;
+    let ref_entry = extensions.get("messaging.provider_flow_hints")?;
+    let inline = ref_entry.inline.as_ref()?;
+    let payload = match inline {
+        ExtensionInline::Other(value) => {
+            serde_json::from_value::<ProviderFlowHintsPayload>(value.clone()).ok()?
+        }
+        _ => return None,
+    };
+
+    let mut out = BTreeMap::new();
+    for (provider_id, hint_set) in payload.providers {
+        let mut hints = Vec::new();
+        for (key, value) in [
+            ("setup_default", &hint_set.setup_default),
+            ("setup_custom", &hint_set.setup_custom),
+            ("reconfigure", &hint_set.reconfigure),
+            ("diagnostics", &hint_set.diagnostics),
+            ("verify_webhooks", &hint_set.verify_webhooks),
+            ("rotate_credentials", &hint_set.rotate_credentials),
+        ] {
+            if let Some(flow_id) = value {
+                hints.push(ProviderFlowHintLine {
+                    key,
+                    flow_id: flow_id.clone(),
+                    missing: !flow_ids.contains(flow_id),
+                });
+            }
+        }
+        if !hints.is_empty() {
+            out.insert(
+                provider_id,
+                ProviderFlowHints {
+                    pack_label: pack_label.to_string(),
+                    hints,
+                },
+            );
+        }
+    }
+    if out.is_empty() { None } else { Some(out) }
 }

@@ -5,11 +5,13 @@ use async_nats::jetstream::{
 };
 use futures::StreamExt;
 use gsm_core::{
-    AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, OutMessage,
-    adapter_pack_paths_from_env, default_adapter_pack_paths,
+    AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, HttpRunnerClient,
+    LoggingRunnerClient, OutMessage, RunnerClient, adapter_pack_paths_from_env,
+    default_adapter_pack_paths, shared_client,
 };
 use metrics::counter;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{error, info, warn};
 
 use crate::adapter_registry::AdapterLookup;
@@ -33,6 +35,13 @@ pub async fn run() -> Result<()> {
         });
     let adapters = AdapterLookup::new(&registry);
     let bus = NatsBusClient::new(client.clone());
+    let runner_client: Arc<dyn RunnerClient> = match &config.runner_http_url {
+        Some(url) => shared_client(HttpRunnerClient::new(
+            url.clone(),
+            config.runner_http_api_key.clone(),
+        )?),
+        None => shared_client(LoggingRunnerClient),
+    };
 
     let stream_name = format!("messaging-egress-{}", config.env.0);
     let stream = js
@@ -80,6 +89,7 @@ pub async fn run() -> Result<()> {
                     &adapters,
                     config.adapter.as_deref(),
                     &bus,
+                    &*runner_client,
                     &config,
                 )
                 .await
@@ -104,6 +114,7 @@ async fn process_message(
     adapters: &AdapterLookup<'_>,
     adapter_override: Option<&str>,
     bus: &impl BusClient,
+    runner: &dyn RunnerClient,
     config: &EgressConfig,
 ) -> Result<(), Error> {
     let out: OutMessage = serde_json::from_slice(&msg.payload)?;
@@ -127,7 +138,7 @@ async fn process_message(
         platform = %out.platform.as_str(),
         "resolved egress adapter"
     );
-    process_message_internal(&out, &adapter, bus, config).await
+    process_message_internal(&out, &adapter, bus, runner, config).await
 }
 
 /// Internal helper used by tests to avoid NATS.
@@ -135,8 +146,32 @@ pub async fn process_message_internal(
     out: &OutMessage,
     adapter: &AdapterDescriptor,
     bus: &impl BusClient,
+    runner: &dyn RunnerClient,
     config: &EgressConfig,
 ) -> Result<(), Error> {
+    if let Err(err) = runner.invoke_adapter(out, adapter).await {
+        let _ = counter!(
+            "messaging_egress_runner_failure_total",
+            "tenant" => out.tenant.clone(),
+            "platform" => out.platform.as_str().to_string(),
+            "adapter" => adapter.name.clone()
+        );
+        tracing::error!(
+            tenant = %out.tenant,
+            platform = %out.platform.as_str(),
+            adapter = %adapter.name,
+            error = %err,
+            "runner invocation failed"
+        );
+        return Err(err);
+    }
+    let _ = counter!(
+        "messaging_egress_runner_success_total",
+        "tenant" => out.tenant.clone(),
+        "platform" => out.platform.as_str().to_string(),
+        "adapter" => adapter.name.clone()
+    );
+
     let subject = egress_subject_with_prefix(
         config.egress_prefix.as_str(),
         &out.tenant,
