@@ -365,6 +365,21 @@ pub fn format_secret_uri(env: &str, tenant: &str, team: &str, provider: &str) ->
     )
 }
 
+/// Redact the env/tenant/team segments of a secret URI before logging.
+pub fn redact_secret_uri(uri: &str) -> String {
+    const PREFIX: &str = "secrets://";
+    if let Some(rest) = uri.strip_prefix(PREFIX) {
+        let mut parts: Vec<&str> = rest.split('/').collect();
+        if parts.len() >= 3 {
+            parts[0] = "***";
+            parts[1] = "***";
+            parts[2] = "***";
+            return format!("{PREFIX}{}", parts.join("/"));
+        }
+    }
+    "***".into()
+}
+
 fn walk(root: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];

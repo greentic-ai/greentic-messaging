@@ -261,13 +261,13 @@ impl RunContext {
                     &runtime.team,
                     provider,
                 );
-                println!("    - {} -> {}", provider, uri);
+                println!("    - {} -> {}", provider, packs::redact_secret_uri(&uri));
             }
         }
         if !report.secret_uris.is_empty() {
             println!("  required secrets:");
             for uri in &report.secret_uris {
-                println!("    - {uri}");
+                println!("    - {}", packs::redact_secret_uri(uri));
             }
         }
         if !report.steps.is_empty() {

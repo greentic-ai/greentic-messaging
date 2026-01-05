@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "dev-viewer"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "axum",
@@ -1688,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging-cli"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "clap",
@@ -1706,7 +1706,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging-security"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1733,7 +1733,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging-test"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "clap",
@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-backpressure"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1985,7 +1985,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-bus"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1998,7 +1998,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-cli-dlq"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-core"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2068,7 +2068,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-dlq"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-common"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-gateway"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2148,7 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-idempotency"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2165,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-common"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2192,7 +2192,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-provider-registry"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-runner"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2237,7 +2237,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-session"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "greentic-session",
@@ -2246,7 +2246,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-slack-oauth"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2268,7 +2268,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-telemetry"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "greentic-telemetry",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-testutil"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "dotenvy",
@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-translator"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "greentic-messaging-security",
@@ -3084,7 +3084,7 @@ dependencies = [
 
 [[package]]
 name = "messaging-tenants"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "clap",
@@ -3136,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "mock-weather-tool"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "axum",
@@ -3170,7 +3170,7 @@ dependencies = [
 
 [[package]]
 name = "nats-demo"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "anyhow",
  "async-nats",
