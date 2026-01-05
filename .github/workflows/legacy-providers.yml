@@ -1,4 +1,6 @@
 name: Legacy Providers (manual)
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
