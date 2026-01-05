@@ -1,6 +1,7 @@
 mod adapters;
 mod cli;
 mod fixtures;
+mod packs;
 mod run;
 
 use anyhow::Result;

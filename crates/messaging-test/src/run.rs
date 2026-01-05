@@ -6,8 +6,9 @@ use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 
 use crate::adapters::{AdapterConfig, AdapterMode, AdapterTarget, registry_from_env};
-use crate::cli::{Cli, CliCommand};
+use crate::cli::{Cli, CliCommand, PacksCommand};
 use crate::fixtures::{Fixture, discover};
+use crate::packs::{self, PackRunReport};
 use gsm_core::messaging_card::MessageCardEngine;
 
 pub struct RunContext {
@@ -46,6 +47,7 @@ impl RunContext {
             } => self.run_interactive(fixture, dry_run),
             CliCommand::All { dry_run } => self.run_all(dry_run),
             CliCommand::GenGolden => self.gen_golden(),
+            CliCommand::Packs { ref command } => self.packs(command),
         }
     }
 
@@ -161,6 +163,162 @@ impl RunContext {
         }
         println!("goldens updated");
         Ok(())
+    }
+
+    fn packs(&self, command: &PacksCommand) -> Result<()> {
+        match command {
+            PacksCommand::List { discovery } => {
+                let packs = packs::discover_packs(discovery)?;
+                if packs.is_empty() {
+                    println!("No packs found under {:?}", discovery.roots);
+                    return Ok(());
+                }
+                for pack in packs {
+                    if let Some(err) = pack.error {
+                        println!("{}: failed to load ({})", pack.path.display(), err);
+                        continue;
+                    }
+                    let Some(manifest) = pack.manifest else {
+                        continue;
+                    };
+                    println!(
+                        "{}: {} {} (kind={:?})",
+                        pack.path.display(),
+                        manifest.pack_id,
+                        manifest.version,
+                        manifest.kind
+                    );
+                    if manifest.flows.is_empty() {
+                        println!("  flows: (none)");
+                    } else {
+                        println!("  flows:");
+                        for flow in &manifest.flows {
+                            let title = flow.flow.metadata.title.clone().unwrap_or_default();
+                            if title.is_empty() {
+                                println!("    - {} (kind={:?})", flow.id, flow.kind);
+                            } else {
+                                println!("    - {} (kind={:?}) {title}", flow.id, flow.kind);
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            PacksCommand::Run {
+                pack,
+                discovery: _,
+                runtime,
+            } => {
+                let report = packs::run_pack_from_path(pack, runtime)?;
+                self.print_pack_report(&report, runtime);
+                if report.is_success() {
+                    Ok(())
+                } else {
+                    Err(anyhow!("pack validation failed"))
+                }
+            }
+            PacksCommand::All {
+                discovery,
+                runtime,
+                fail_fast,
+            } => {
+                let discovered = packs::discover_packs(discovery)?;
+                let reports = packs::run_all_packs(&discovered, runtime, *fail_fast)?;
+                if reports.is_empty() {
+                    println!("No packs matched {}", discovery.glob);
+                    return Ok(());
+                }
+                let mut failures = 0;
+                for report in reports {
+                    self.print_pack_report(&report, runtime);
+                    if !report.is_success() {
+                        failures += 1;
+                    }
+                }
+                if failures > 0 {
+                    Err(anyhow!("{failures} pack(s) failed validation"))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    fn print_pack_report(&self, report: &PackRunReport, runtime: &crate::cli::PackRuntimeArgs) {
+        println!("Pack {} ({})", report.pack_id, report.pack_path.display());
+        println!(
+            "  flow: {} (kind={}){}",
+            report.flow_id,
+            report.flow_kind,
+            if report.dry_run { " [dry-run]" } else { "" }
+        );
+        if !report.provider_ids.is_empty() {
+            println!("  provider secrets:");
+            for provider in &report.provider_ids {
+                let uri = packs::format_secret_uri(
+                    &runtime.env,
+                    &runtime.tenant,
+                    &runtime.team,
+                    provider,
+                );
+                println!("    - {} -> {}", provider, uri);
+            }
+        }
+        if !report.secret_uris.is_empty() {
+            println!("  required secrets:");
+            for uri in &report.secret_uris {
+                println!("    - {uri}");
+            }
+        }
+        if !report.steps.is_empty() {
+            println!("  steps:");
+            for step in &report.steps {
+                let status = match &step.status {
+                    packs::PackStepStatus::Planned => "planned".to_string(),
+                    packs::PackStepStatus::Executed => "ok".to_string(),
+                    packs::PackStepStatus::MissingComponent => "missing component".to_string(),
+                };
+                let op = step
+                    .operation
+                    .as_ref()
+                    .map(|op| format!(" op={op}"))
+                    .unwrap_or_default();
+                println!(
+                    "    - {} -> {}{op} [{status}]",
+                    step.node_id, step.component_id
+                );
+            }
+        }
+        if !report.errors.is_empty()
+            || !report.lint_errors.is_empty()
+            || !report.missing_components.is_empty()
+        {
+            if !report.lint_errors.is_empty() {
+                println!("  lint:");
+                for err in &report.lint_errors {
+                    println!("    - {err}");
+                }
+            }
+            if !report.missing_components.is_empty() {
+                println!("  missing components:");
+                for comp in &report.missing_components {
+                    println!("    - {comp}");
+                }
+            }
+            if !report.errors.is_empty() {
+                println!("  flow:");
+                for err in &report.errors {
+                    println!("    - {err}");
+                }
+            }
+            if report.is_success() {
+                println!("  result: ok");
+            } else {
+                println!("  result: failed");
+            }
+        } else {
+            println!("  result: ok");
+        }
     }
 
     fn fixture_index(&self, fixture_id: &str) -> Result<usize> {

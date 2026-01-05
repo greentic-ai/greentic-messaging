@@ -1,0 +1,17 @@
+name: Legacy Providers (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Build legacy workspace
+        run: cargo build --locked --manifest-path legacy/Cargo.toml

@@ -1,38 +1,27 @@
 [workspace]
 members = [
-  "apps/runner",
-  "apps/ingress-common",
-  "apps/egress-common",
-  "apps/messaging-egress",
-  "apps/messaging-gateway",
-  "apps/messaging-tenants",
-  "libs/gsm-provider-registry",
-  "libs/core",
-  "libs/session",
-  "libs/translator",
-  "libs/security",
-  "libs/telemetry",
-  "libs/testutil",
-  "libs/idempotency",
-  "libs/backpressure",
-  "libs/dlq",
-  "scripts",
-  "tools/nats-demo",
-  "tools/mock-weather-tool",
-  "apps/cli-dlq",
-  "apps/slack_oauth",
-  "conformance/webchat",
-  "tools/dev-viewer",
-  "crates/greentic-messaging-cli",
-  "crates/messaging-test",
-  "crates/gsm-bus",
+  "apps/ingress-telegram",
+  "apps/ingress-slack",
+  "apps/ingress-teams",
+  "apps/ingress-webex",
+  "apps/ingress-webchat",
+  "apps/ingress-whatsapp",
+  "apps/egress-telegram",
+  "apps/egress-slack",
+  "apps/egress-teams",
+  "apps/egress-webex",
+  "apps/egress-webchat",
+  "apps/egress-whatsapp",
+  "apps/subscriptions-teams",
+  "apps/mock-slack",
+  "apps/mock-telegram",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.27"
+version = "0.4.26"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 
@@ -92,21 +81,11 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "std"] }
 tracing-test = "0.2"
-security = { package = "greentic-messaging-security", version = "0.4", path = "libs/security" }
+security = { package = "greentic-messaging-security", version = "0.4", path = "../libs/security" }
 unicode-segmentation = "1"
 urlencoding = "2"
 uuid = { version = "1", features = ["v4","serde"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
 url = "2.5"
-gsm-core = { version = "0.4", path = "libs/core" }
-zip = "7"
-gsm-telemetry = { version = "0.4", path = "libs/telemetry" }
-gsm-session = { version = "0.4", path = "libs/session" }
-gsm-dlq = { version = "0.4", path = "libs/dlq" }
-gsm-backpressure = { version = "0.4", path = "libs/backpressure" }
-gsm-idempotency = { version = "0.4", path = "libs/idempotency" }
-gsm-translator = { version = "0.4", path = "libs/translator" }
-gsm-bus = { path = "crates/gsm-bus", version = "0.4" }
-gsm-gateway = { path = "apps/messaging-gateway", version = "0.4" }
-gsm-testutil = { version = "0.4", path = "libs/testutil" }
+gsm-core = { version = "0.4", path = "../libs/core" }

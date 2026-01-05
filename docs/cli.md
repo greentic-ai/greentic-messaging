@@ -99,6 +99,10 @@ greentic-messaging test adapters
 greentic-messaging test run oauth_slack --dry-run
 greentic-messaging test all --dry-run   # hard requirement enforced by the CLI
 greentic-messaging test gen-golden
+# gtpack-aware smoke checks
+greentic-messaging test packs list --packs dist/packs
+greentic-messaging test packs run dist/packs/messaging-telegram.gtpack --dry-run --env dev --tenant ci --team ci
+greentic-messaging test packs all --packs dist/packs --glob 'messaging-*.gtpack' --dry-run
 ```
 
 When `--dry-run` is omitted from `test run …` the command will send real traffic,

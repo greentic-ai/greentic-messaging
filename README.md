@@ -128,6 +128,10 @@ by the bespoke telemetry shim are no longer emitted.)
 - `cargo run -p greentic-messaging-test -- adapters` prints every adapter along with whether it is enabled and a reason for why it might be disabled.
 - `cargo run -p greentic-messaging-test -- run <fixture> --dry-run` launches an interactive keyboard session. Press **Enter** or `r` to re-send, `n/p` to cycle fixtures, `a` to toggle adapters (enter a comma-separated list or `all`), and `q` to quit. Artifacts are written to `./.gsm-test/artifacts/<fixture>/<adapter>`, where `translated.json` is redacted before being recorded.
 - `cargo run -p greentic-messaging-test -- all --dry-run` iterates every fixture in a non-interactive way and generates the same artifacts tree. Run `cargo run -p greentic-messaging-test -- gen-golden` afterward to copy the translated payloads into `crates/messaging-test/tests/golden/<fixture>/<adapter>/translated.json`.
+- Provider packs are now supported alongside card fixtures:
+  - `cargo run -p greentic-messaging-test -- packs list --packs dist/packs`
+  - `cargo run -p greentic-messaging-test -- packs run dist/packs/messaging-telegram.gtpack --dry-run --env dev --tenant ci --team ci`
+  - `cargo run -p greentic-messaging-test -- packs all --packs dist/packs --glob 'messaging-*.gtpack' --dry-run`
 
 ## Gateway + Egress flow
 
