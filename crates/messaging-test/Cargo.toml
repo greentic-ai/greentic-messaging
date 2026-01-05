@@ -5,6 +5,17 @@ edition = "2024"
 description = "Interactive tool to run MessageCard fixtures across Teams/Webex/Slack/WebChat/Telegram/WhatsApp translations."
 license = "MIT"
 
+[package.metadata.binstall]
+pkg-url = "https://github.com/greentic-ai/greentic-messaging/releases/download/v{ version }/greentic-messaging-test-{ target }.{ archive-format }"
+pkg-fmt = "tgz"
+pkg-fmt-windows = "zip"
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
 [dependencies]
 anyhow = "1"
 clap = { workspace = true, features = ["derive"] }
