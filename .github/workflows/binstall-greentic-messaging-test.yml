@@ -1,0 +1,115 @@
+name: Build greentic-messaging-test binaries for binstall
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+      - "v*"
+      - "*-v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+        fail-fast: false
+        matrix:
+          include:
+            - os: ubuntu-latest
+              target: x86_64-unknown-linux-gnu
+              archive: tar.gz
+            - os: macos-15
+              target: x86_64-apple-darwin
+              archive: tar.gz
+            - os: macos-15
+              target: aarch64-apple-darwin
+              archive: tar.gz
+            - os: windows-latest
+              target: x86_64-pc-windows-msvc
+              archive: zip
+    env:
+      CARGO_BUILD_JOBS: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+
+      - name: Build greentic-messaging-test
+        run: cargo build --release -p greentic-messaging-test
+
+      - name: Package artifact (unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          bin_path=target/release/greentic-messaging-test
+          tar -C "$(dirname "$bin_path")" -czf "greentic-messaging-test-${{ matrix.target }}.tar.gz" "$(basename "$bin_path")"
+
+      - name: Package artifact (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $binPath = "target/release/greentic-messaging-test.exe"
+          $out = "greentic-messaging-test-${{ matrix.target }}.zip"
+          Compress-Archive -Path $binPath -DestinationPath $out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: greentic-messaging-test-${{ matrix.target }}
+          path: greentic-messaging-test-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: greentic-messaging-test-*
+          path: dist
+          merge-multiple: true
+
+      - name: Determine release tag/name
+        id: meta
+        run: |
+          version=$(python3 - <<'PY'
+          import sys, tomllib
+
+          with open("Cargo.toml", "rb") as f:
+              data = tomllib.load(f)
+          version = data.get("workspace", {}).get("package", {}).get("version")
+          if not version:
+              sys.exit("No workspace.package.version found in Cargo.toml")
+          print(version)
+          PY
+          )
+
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "name=${tag}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          files: dist/greentic-messaging-test-*
