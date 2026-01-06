@@ -26,6 +26,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 greentic-types = { workspace = true }
 greentic-pack = { workspace = true }
 greentic-flow = "0.4"
+blake3 = "1"
 gsm-core = { workspace = true }
 gsm-telemetry = { workspace = true }
 greentic-secrets = { workspace = true }

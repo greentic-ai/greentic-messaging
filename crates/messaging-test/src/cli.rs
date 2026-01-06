@@ -102,6 +102,12 @@ pub struct PackRuntimeArgs {
     /// Team used for secret resolution
     #[arg(long, default_value = "ci")]
     pub team: String,
+    /// Allow tag-only component refs (use with caution; prefer digest pins)
+    #[arg(long)]
+    pub allow_tags: bool,
+    /// Offline mode (fail if components are not already in cache)
+    #[arg(long)]
+    pub offline: bool,
     /// Dry-run mode (no outbound provider calls)
     #[arg(
         long,
@@ -111,6 +117,14 @@ pub struct PackRuntimeArgs {
         default_missing_value = "true"
     )]
     pub dry_run: bool,
+    /// Resolve and materialize components via distributor-client (default: on)
+    #[arg(
+        long = "resolve-components",
+        default_value_t = true,
+        action = ArgAction::SetTrue
+    )]
+    #[arg(long = "no-resolve-components", action = ArgAction::SetFalse)]
+    pub resolve_components: bool,
 }
 
 impl Cli {

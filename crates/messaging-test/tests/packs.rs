@@ -19,13 +19,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use zip::write::SimpleFileOptions;
 
-fn write_pack(path: &Path, flow_id: &str) {
+fn write_pack(path: &Path, flow_id: &str, component_id: &str) {
     let node_id = NodeId::new("start").unwrap();
-    let component_id = ComponentId::new("demo.component").unwrap();
+    let component_id = ComponentId::new(component_id).unwrap();
 
     let mut nodes: IndexMap<NodeId, Node, greentic_types::flow::FlowHasher> = IndexMap::default();
     nodes.insert(
@@ -141,7 +142,11 @@ fn write_pack(path: &Path, flow_id: &str) {
     zip.finish().expect("finish zip");
 }
 
-fn ensure_fixture_pack(name: &str, flow_id: &str) -> std::path::PathBuf {
+fn ensure_fixture_pack_with_component(
+    name: &str,
+    flow_id: &str,
+    component_id: &str,
+) -> std::path::PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
@@ -149,12 +154,20 @@ fn ensure_fixture_pack(name: &str, flow_id: &str) -> std::path::PathBuf {
     fs::create_dir_all(&root).expect("create pack fixtures dir");
     let path = root.join(format!("{name}.gtpack"));
     if !path.exists() {
-        write_pack(&path, flow_id);
+        write_pack(&path, flow_id, component_id);
     }
     path
 }
 
+fn ensure_fixture_pack(name: &str, flow_id: &str) -> std::path::PathBuf {
+    ensure_fixture_pack_with_component(name, flow_id, "demo.component")
+}
+
 fn run_cli(args: &[&str]) -> String {
+    run_cli_with_env(args, &[])
+}
+
+fn run_cli_with_env(args: &[&str], env: &[(&str, &str)]) -> String {
     let bin = env!("CARGO_BIN_EXE_greentic-messaging-test");
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -162,6 +175,7 @@ fn run_cli(args: &[&str]) -> String {
         .expect("workspace root");
     let output = Command::new(bin)
         .current_dir(workspace_root)
+        .envs(env.iter().cloned())
         .args(args)
         .output()
         .expect("run messaging-test CLI");
@@ -192,6 +206,7 @@ fn packs_list_and_run() {
         "run",
         pack_path.to_str().unwrap(),
         "--dry-run",
+        "--no-resolve-components",
         "--env",
         "dev",
         "--tenant",
@@ -218,6 +233,7 @@ fn packs_all_scans_dir() {
         "--packs",
         dir.to_str().unwrap(),
         "--dry-run",
+        "--no-resolve-components",
     ]);
     assert!(
         out.contains("messaging.demo"),
@@ -228,9 +244,71 @@ fn packs_all_scans_dir() {
 #[test]
 fn packs_run_without_smoke_uses_first_flow() {
     let pack = ensure_fixture_pack("messaging-custom", "custom");
-    let out = run_cli(&["packs", "run", pack.to_str().unwrap(), "--dry-run"]);
+    let out = run_cli(&[
+        "packs",
+        "run",
+        pack.to_str().unwrap(),
+        "--dry-run",
+        "--no-resolve-components",
+    ]);
     assert!(
         out.contains("flow: custom"),
         "expected flow fallback to first flow:\n{out}"
+    );
+}
+
+#[test]
+fn packs_resolves_oci_component_via_distributor_client() {
+    let pack_path = ensure_fixture_pack_with_component(
+        "messaging-oci",
+        "smoke",
+        "greentic-ai.components.component-template",
+    );
+    let temp = tempfile::tempdir().expect("tempdir");
+    let stub = temp.path().join("greentic-distributor-client");
+    let mut script = File::create(&stub).expect("stub bin");
+    writeln!(
+        script,
+        r#"#!/bin/sh
+out_dir=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--out" ]; then
+    shift
+    out_dir="$1"
+  fi
+  shift
+done
+mkdir -p "$out_dir/components"
+exit 0
+"#
+    )
+    .expect("write stub");
+    drop(script);
+    let mut perms = fs::metadata(&stub).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&stub, perms).unwrap();
+
+    let out = run_cli_with_env(
+        &[
+            "packs",
+            "run",
+            pack_path.to_str().unwrap(),
+            "--dry-run",
+            "--env",
+            "dev",
+            "--tenant",
+            "ci",
+            "--team",
+            "ci",
+        ],
+        &[
+            ("GREENTIC_HOME", temp.path().to_str().unwrap()),
+            ("GREENTIC_DISTRIBUTOR_CLIENT", stub.to_str().unwrap()),
+        ],
+    );
+
+    assert!(
+        out.contains("result: ok"),
+        "expected pack validation to succeed with OCI component resolved:\n{out}"
     );
 }

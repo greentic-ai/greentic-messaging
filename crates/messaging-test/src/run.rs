@@ -166,6 +166,8 @@ impl RunContext {
     }
 
     fn packs(&self, command: &PacksCommand) -> Result<()> {
+        // Packs validation materializes components via distributor-client before linting.
+        let materializer = packs::DistributorClientMaterializer::default();
         match command {
             PacksCommand::List { discovery } => {
                 let packs = packs::discover_packs(discovery)?;
@@ -209,7 +211,7 @@ impl RunContext {
                 discovery: _,
                 runtime,
             } => {
-                let report = packs::run_pack_from_path(pack, runtime)?;
+                let report = packs::run_pack_from_path(pack, runtime, &materializer)?;
                 self.print_pack_report(&report, runtime);
                 if report.is_success() {
                     Ok(())
@@ -223,7 +225,8 @@ impl RunContext {
                 fail_fast,
             } => {
                 let discovered = packs::discover_packs(discovery)?;
-                let reports = packs::run_all_packs(&discovered, runtime, *fail_fast)?;
+                let reports =
+                    packs::run_all_packs(&discovered, runtime, *fail_fast, &materializer)?;
                 if reports.is_empty() {
                     println!("No packs matched {}", discovery.glob);
                     return Ok(());

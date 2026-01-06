@@ -104,6 +104,7 @@ greentic-messaging test packs list --packs dist/packs
 greentic-messaging test packs run dist/packs/messaging-telegram.gtpack --dry-run --env dev --tenant ci --team ci
 greentic-messaging test packs all --packs dist/packs --glob 'messaging-*.gtpack' --dry-run
 ```
+Component resolution for packs is enabled by default and materializes public OCI components through `greentic-distributor-client` into `~/.cache/greentic/materialized/<hash>`. Use `--no-resolve-components` to skip, `--allow-tags` to permit tag-only refs, or `--offline` to require cached artifacts and avoid network pulls.
 
 When `--dry-run` is omitted from `test run …` the command will send real traffic,
 just like invoking the crate manually.

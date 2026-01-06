@@ -1,9 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::env;
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
+use blake3::Hasher;
 use greentic_flow::lint::lint_builtin_rules;
 use greentic_pack::{SigningPolicy, open_pack};
 use greentic_secrets::core::seed::{DevContext, resolve_uri};
@@ -66,6 +70,128 @@ impl PackStepStatus {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct MaterializeOptions {
+    pub resolve_components: bool,
+    pub offline: bool,
+    pub allow_tags: bool,
+    pub cache_root: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct MaterializedPack {
+    pub pack_path: PathBuf,
+    pub components_dir: Option<PathBuf>,
+}
+
+pub trait PackMaterializer: Send + Sync {
+    fn materialize(&self, pack: &Path, opts: &MaterializeOptions) -> Result<MaterializedPack>;
+}
+
+pub struct DistributorClientMaterializer {
+    bin: OsString,
+    cache_root: PathBuf,
+}
+
+impl DistributorClientMaterializer {
+    fn cache_dir_for_pack(&self, pack: &Path, base: &Path) -> Result<PathBuf> {
+        let mut hasher = Hasher::new();
+        let mut file = File::open(pack)
+            .with_context(|| format!("open pack for hashing {}", pack.display()))?;
+        let mut buf = [0u8; 8192];
+        loop {
+            let read = file.read(&mut buf)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buf[..read]);
+        }
+        let hash = hasher.finalize();
+        Ok(base.join("materialized").join(hash.to_hex().as_str()))
+    }
+
+    fn cmd_bin(&self) -> &OsString {
+        &self.bin
+    }
+}
+
+impl Default for DistributorClientMaterializer {
+    fn default() -> Self {
+        let bin = env::var_os("GREENTIC_DISTRIBUTOR_CLIENT")
+            .unwrap_or_else(|| OsString::from("greentic-distributor-client"));
+        let cache_root = env::var_os("GREENTIC_HOME")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/greentic")))
+            .unwrap_or_else(|| PathBuf::from(".cache/greentic"));
+        Self { bin, cache_root }
+    }
+}
+
+impl PackMaterializer for DistributorClientMaterializer {
+    fn materialize(&self, pack: &Path, opts: &MaterializeOptions) -> Result<MaterializedPack> {
+        if !opts.resolve_components {
+            return Ok(MaterializedPack {
+                pack_path: pack.to_path_buf(),
+                components_dir: None,
+            });
+        }
+
+        let base = if opts.cache_root.as_os_str().is_empty() {
+            &self.cache_root
+        } else {
+            &opts.cache_root
+        };
+        let cache_dir = self.cache_dir_for_pack(pack, base)?;
+        if opts.offline && !cache_dir.exists() {
+            bail!(
+                "offline mode enabled; component cache missing for pack {}",
+                pack.display()
+            );
+        }
+        fs::create_dir_all(&cache_dir)
+            .with_context(|| format!("create cache dir {}", cache_dir.display()))?;
+
+        let mut cmd = Command::new(self.cmd_bin());
+        cmd.arg("materialize")
+            .arg("--pack")
+            .arg(pack)
+            .arg("--out")
+            .arg(&cache_dir);
+        if opts.offline {
+            cmd.arg("--offline");
+        }
+        if opts.allow_tags {
+            cmd.arg("--allow-tags");
+        }
+
+        let output = cmd.output().map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                anyhow!(
+                    "greentic-distributor-client not found; install it or set GREENTIC_DISTRIBUTOR_CLIENT"
+                )
+            } else {
+                anyhow!(err)
+            }
+        })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            bail!(
+                "failed to materialize components for {} (status {}):\nstdout: {}\nstderr: {}",
+                pack.display(),
+                output.status,
+                stdout,
+                stderr
+            );
+        }
+
+        Ok(MaterializedPack {
+            pack_path: pack.to_path_buf(),
+            components_dir: Some(cache_dir.join("components")),
+        })
+    }
+}
+
 pub fn discover_packs(args: &PackDiscoveryArgs) -> Result<Vec<DiscoveredPack>> {
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut results = Vec::new();
@@ -83,15 +209,21 @@ pub fn discover_packs(args: &PackDiscoveryArgs) -> Result<Vec<DiscoveredPack>> {
     Ok(results)
 }
 
-pub fn run_pack_from_path(path: &Path, runtime: &PackRuntimeArgs) -> Result<PackRunReport> {
-    let manifest = load_manifest(path)?;
-    run_pack(&manifest, runtime, path)
+pub fn run_pack_from_path(
+    path: &Path,
+    runtime: &PackRuntimeArgs,
+    materializer: &dyn PackMaterializer,
+) -> Result<PackRunReport> {
+    let materialized = materialize_pack(path, runtime, materializer)?;
+    let manifest = load_manifest(&materialized.pack_path)?;
+    run_pack(&manifest, runtime, &materialized)
 }
 
 pub fn run_all_packs(
     packs: &[DiscoveredPack],
     runtime: &PackRuntimeArgs,
     fail_fast: bool,
+    materializer: &dyn PackMaterializer,
 ) -> Result<Vec<PackRunReport>> {
     let mut reports = Vec::new();
     for pack in packs {
@@ -105,7 +237,8 @@ pub fn run_all_packs(
             Some(m) => m.clone(),
             None => continue,
         };
-        let report = run_pack(&manifest, runtime, &pack.path)?;
+        let materialized = materialize_pack(&pack.path, runtime, materializer)?;
+        let report = run_pack(&manifest, runtime, &materialized)?;
         if fail_fast && !report.is_success() {
             return Err(anyhow!(
                 "pack {} failed validation",
@@ -115,6 +248,23 @@ pub fn run_all_packs(
         reports.push(report);
     }
     Ok(reports)
+}
+
+fn materialize_pack(
+    path: &Path,
+    runtime: &PackRuntimeArgs,
+    materializer: &dyn PackMaterializer,
+) -> Result<MaterializedPack> {
+    let opts = MaterializeOptions {
+        resolve_components: runtime.resolve_components,
+        offline: runtime.offline,
+        allow_tags: runtime.allow_tags,
+        cache_root: env::var_os("GREENTIC_HOME")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/greentic")))
+            .unwrap_or_else(|| PathBuf::from(".cache/greentic")),
+    };
+    materializer.materialize(path, &opts)
 }
 
 fn load_pack(path: &Path) -> DiscoveredPack {
@@ -175,23 +325,20 @@ fn select_flow<'a>(
 fn run_pack(
     manifest: &PackManifest,
     runtime: &PackRuntimeArgs,
-    pack_path: &Path,
+    materialized: &MaterializedPack,
 ) -> Result<PackRunReport> {
     let flow = select_flow(manifest, runtime.flow.as_deref())?;
     let lint_errors = lint_builtin_rules(&flow.flow);
-    let component_ids: BTreeSet<String> = manifest
-        .components
-        .iter()
-        .map(|c| c.id.as_str().to_string())
-        .collect();
+    let (component_ids, mut component_errors) =
+        collect_component_ids(manifest, materialized.components_dir.as_deref());
     let missing_components = find_missing_components(&flow.flow, &component_ids);
     let provider_ids = provider_ids_from_extensions(manifest.extensions.as_ref());
     let secret_uris = collect_secret_uris(manifest, runtime, &provider_ids);
-    let walk = walk_flow(&flow.flow, &component_ids, runtime.dry_run);
+    let mut walk = walk_flow(&flow.flow, &component_ids, runtime.dry_run);
 
     Ok(PackRunReport {
         pack_id: manifest.pack_id.to_string(),
-        pack_path: pack_path.to_path_buf(),
+        pack_path: materialized.pack_path.to_path_buf(),
         flow_id: flow.id.to_string(),
         flow_kind: format!("{:?}", flow.kind),
         lint_errors,
@@ -199,9 +346,60 @@ fn run_pack(
         provider_ids,
         dry_run: runtime.dry_run,
         steps: walk.steps,
-        errors: walk.errors,
+        errors: {
+            component_errors.append(&mut walk.errors);
+            component_errors
+        },
         secret_uris,
     })
+}
+
+fn collect_component_ids(
+    manifest: &PackManifest,
+    components_dir: Option<&Path>,
+) -> (BTreeSet<String>, Vec<String>) {
+    let mut errors = Vec::new();
+    let mut ids: BTreeSet<String> = manifest
+        .components
+        .iter()
+        .map(|c| c.id.as_str().to_string())
+        .collect();
+    if let Some(root) = components_dir.filter(|r| r.exists()) {
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n == "component.manifest.json")
+                {
+                    match fs::read_to_string(&path).ok().and_then(|content| {
+                        serde_json::from_str::<greentic_types::component::ComponentManifest>(
+                            &content,
+                        )
+                        .ok()
+                    }) {
+                        Some(component) => {
+                            ids.insert(component.id.as_str().to_string());
+                        }
+                        None => errors.push(format!(
+                            "failed to parse component manifest {}",
+                            path.display()
+                        )),
+                    }
+                }
+            }
+        }
+    }
+    (ids, errors)
 }
 
 fn find_missing_components(flow: &Flow, component_ids: &BTreeSet<String>) -> Vec<String> {
@@ -423,6 +621,7 @@ mod tests {
     use indexmap::IndexMap;
     use semver::Version;
     use std::fs;
+    use std::sync::Mutex;
     use tempfile::tempdir;
 
     fn manifest_with_flows(flow_ids: &[&str]) -> PackManifest {
@@ -491,5 +690,64 @@ mod tests {
         assert_eq!(packs.len(), 1);
         assert_eq!(packs[0].path, matching);
         assert!(packs[0].error.is_some(), "invalid pack should report error");
+    }
+
+    #[derive(Default)]
+    struct FakeMaterializer {
+        calls: Mutex<Vec<MaterializeOptions>>,
+    }
+
+    impl PackMaterializer for FakeMaterializer {
+        fn materialize(&self, pack: &Path, opts: &MaterializeOptions) -> Result<MaterializedPack> {
+            self.calls.lock().unwrap().push(opts.clone());
+            Ok(MaterializedPack {
+                pack_path: pack.to_path_buf(),
+                components_dir: None,
+            })
+        }
+    }
+
+    fn runtime_with_defaults() -> PackRuntimeArgs {
+        PackRuntimeArgs {
+            flow: None,
+            env: "dev".into(),
+            tenant: "ci".into(),
+            team: "ci".into(),
+            allow_tags: false,
+            offline: false,
+            dry_run: true,
+            resolve_components: true,
+        }
+    }
+
+    #[test]
+    fn materialize_defaults_on() {
+        let mat = FakeMaterializer::default();
+        let runtime = runtime_with_defaults();
+        let path = Path::new("demo.gtpack");
+        materialize_pack(path, &runtime, &mat).expect("materialize");
+        let calls = mat.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let opts = &calls[0];
+        assert!(opts.resolve_components);
+        assert!(!opts.offline);
+        assert!(!opts.allow_tags);
+    }
+
+    #[test]
+    fn materialize_respects_flags() {
+        let mat = FakeMaterializer::default();
+        let mut runtime = runtime_with_defaults();
+        runtime.resolve_components = false;
+        runtime.offline = true;
+        runtime.allow_tags = true;
+        let path = Path::new("demo.gtpack");
+        materialize_pack(path, &runtime, &mat).expect("materialize");
+        let calls = mat.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let opts = &calls[0];
+        assert!(!opts.resolve_components);
+        assert!(opts.offline);
+        assert!(opts.allow_tags);
     }
 }

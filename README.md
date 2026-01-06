@@ -132,6 +132,7 @@ by the bespoke telemetry shim are no longer emitted.)
   - `cargo run -p greentic-messaging-test -- packs list --packs dist/packs`
   - `cargo run -p greentic-messaging-test -- packs run dist/packs/messaging-telegram.gtpack --dry-run --env dev --tenant ci --team ci`
   - `cargo run -p greentic-messaging-test -- packs all --packs dist/packs --glob 'messaging-*.gtpack' --dry-run`
+  - Component resolution is enabled by default and uses `greentic-distributor-client` to materialize public OCI components into `~/.cache/greentic/materialized/<hash>`. Disable with `--no-resolve-components`, allow tag-only refs with `--allow-tags`, or run offline with `--offline` (requires cached components).
 
 ## Gateway + Egress flow
 

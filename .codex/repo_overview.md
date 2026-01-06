@@ -61,6 +61,9 @@
 - **Location:** libs/core/src/runner_client.rs (LoggingRunnerClient)
   **Status:** Intentional stub for dev/tests
   **Short description:** Logging-only runner client kept for local/test use; production paths should use HttpRunnerClient or a real runner.
+- **Location:** crates/messaging-test (packs validation)
+  **Status:** Pack validator now materializes components via greentic-distributor-client by default; additional polish/maintenance may follow.
+  **Short description:** Packs dry-run validator fetches/ resolves public OCI components (offline/allow-tag toggles) before linting flows to keep validation runner-free.
 
 ## 4. Broken, Failing, or Conflicting Areas
 - **Location:** None
