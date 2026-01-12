@@ -9,3 +9,4 @@ coverage/
 node_modules/
 .gsm-test/
 tmpfile
+.greentic/

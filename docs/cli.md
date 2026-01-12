@@ -76,6 +76,20 @@ publish still occurs for legacy consumers. You can run `make run-runner` (or
 your deployed greentic-runner) against the flow referenced by your pack to
 service those HTTP invocations.
 
+### `greentic-messaging serve pack`
+
+Auto-start services based on adapters discovered in your packs:
+- Starts `gsm-gateway` if any adapters support ingress.
+- Starts `gsm-egress` if any adapters support egress.
+- Starts `gsm-subscriptions-teams` when Teams adapters are present.
+
+```bash
+greentic-messaging serve pack \
+  --tenant acme \
+  --pack dist/packs/messaging-telegram.gtpack \
+  --no-default-packs
+```
+
 ### `greentic-messaging flows run`
 
 Thin wrapper around the runner invocation (currently `make run-runner`). It sets

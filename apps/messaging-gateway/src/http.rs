@@ -133,8 +133,8 @@ pub async fn build_router_with_bus(
     }
 
     let router = Router::new()
-        .route("/api/:tenant/:channel", post(ingest_without_team))
-        .route("/api/:tenant/:team/:channel", post(ingest_with_team))
+        .route("/api/{tenant}/{channel}", post(ingest_without_team))
+        .route("/api/{tenant}/{team}/{channel}", post(ingest_with_team))
         .layer(Extension(state));
 
     Ok(router)

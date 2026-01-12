@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     env,
     io::Read,
     path::PathBuf,
@@ -9,12 +9,16 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand, ValueEnum};
 use greentic_pack::reader::{SigningPolicy, open_pack};
-use greentic_types::pack_manifest::{ExtensionInline, ExtensionRef};
+use greentic_types::{
+    pack_manifest::{ExtensionInline, ExtensionRef, PackManifest},
+    provider::{PROVIDER_EXTENSION_ID, ProviderExtensionInline},
+};
 use gsm_core::{
-    AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, MessagingAdapterKind,
+    AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, MessagingAdapterKind, Platform,
     adapter_pack_paths_from_env, default_adapter_pack_paths,
 };
 use serde::Deserialize;
+use std::str::FromStr;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -80,11 +84,12 @@ enum CliCommand {
         #[command(subcommand)]
         command: DevCommand,
     },
-    /// Serve ingress/egress/subscriptions
+    /// Serve ingress/egress/subscriptions or auto-start from packs
     Serve {
         #[arg(value_enum)]
         kind: ServeKind,
-        platform: String,
+        #[arg(value_name = "PLATFORM")]
+        platform: Option<String>,
         #[arg(long)]
         tenant: String,
         #[arg(long)]
@@ -232,6 +237,7 @@ enum ServeKind {
     Ingress,
     Egress,
     Subscriptions,
+    Pack,
 }
 
 fn handle_info(
@@ -249,7 +255,7 @@ fn handle_info(
         ),
     };
     println!(
-        "Seed/apply   : greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env {env} --tenant <tenant> --team <team> --non-interactive"
+        "Seed/apply : greentic-secrets init --pack messaging-<name>.gtpack --env {env} --tenant <tenant> --team <team> --non-interactive"
     );
 
     let (registry, pack_paths) =
@@ -348,7 +354,7 @@ fn handle_dev(command: DevCommand) -> Result<()> {
 #[allow(clippy::too_many_arguments)]
 fn handle_serve(
     kind: ServeKind,
-    platform: String,
+    platform: Option<String>,
     tenant: String,
     team: Option<String>,
     pack: Vec<PathBuf>,
@@ -356,59 +362,183 @@ fn handle_serve(
     no_default_packs: bool,
     adapter_override: Option<String>,
 ) -> Result<()> {
+    let platform = match kind {
+        ServeKind::Pack => None,
+        _ => Some(platform.ok_or_else(|| anyhow!("missing platform (e.g. slack, teams)"))?),
+    };
     let env_scope = current_env();
     let team = team.unwrap_or_else(|| "default".into());
     let nats_url = env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
 
+    let config = ServeEnvConfig {
+        env_scope,
+        tenant,
+        team,
+        nats_url,
+        packs_root,
+        pack,
+        no_default_packs,
+        adapter_override,
+    };
+    let envs = build_serve_envs(&config);
+
+    match kind {
+        ServeKind::Pack => handle_serve_pack(&config, envs),
+        ServeKind::Ingress => {
+            let platform = platform.expect("platform required");
+            println!(
+                "Starting {kind:?} {platform} (env={}, tenant={}, team={}, nats={}, packs_root={})",
+                config.env_scope,
+                config.tenant,
+                config.team,
+                config.nats_url,
+                config.packs_root.to_string_lossy()
+            );
+            run_cargo_package_with_env("greentic-messaging", "gsm-gateway", &envs, &[])
+        }
+        ServeKind::Egress => {
+            let platform = platform.expect("platform required");
+            println!(
+                "Starting {kind:?} {platform} (env={}, tenant={}, team={}, nats={}, packs_root={})",
+                config.env_scope,
+                config.tenant,
+                config.team,
+                config.nats_url,
+                config.packs_root.to_string_lossy()
+            );
+            run_cargo_package_with_env("greentic-messaging", "gsm-egress", &envs, &[])
+        }
+        ServeKind::Subscriptions => {
+            let platform = platform.expect("platform required");
+            println!(
+                "Starting {kind:?} {platform} (env={}, tenant={}, team={}, nats={}, packs_root={})",
+                config.env_scope,
+                config.tenant,
+                config.team,
+                config.nats_url,
+                config.packs_root.to_string_lossy()
+            );
+            run_cargo_package_with_env(
+                "greentic-messaging",
+                &subscription_package_for(&platform)?,
+                &envs,
+                &[],
+            )
+        }
+    }
+}
+
+struct ServeEnvConfig {
+    env_scope: String,
+    tenant: String,
+    team: String,
+    nats_url: String,
+    packs_root: PathBuf,
+    pack: Vec<PathBuf>,
+    no_default_packs: bool,
+    adapter_override: Option<String>,
+}
+
+fn handle_serve_pack(config: &ServeEnvConfig, envs: Vec<(String, String)>) -> Result<()> {
+    let (registry, pack_paths) = load_adapter_registry_for_cli(
+        Some(config.packs_root.clone()),
+        &config.pack,
+        config.no_default_packs,
+    )?;
+    if registry.is_empty() {
+        return Err(anyhow!(
+            "no adapters loaded; add --pack or configure env for adapter packs"
+        ));
+    }
+
+    let (platforms, unknown_providers) = platforms_from_pack_paths(&pack_paths);
+    let mut has_ingress = false;
+    let mut has_egress = false;
+
+    for adapter in registry.all() {
+        match adapter.kind {
+            MessagingAdapterKind::Ingress => has_ingress = true,
+            MessagingAdapterKind::Egress => has_egress = true,
+            MessagingAdapterKind::IngressEgress => {
+                has_ingress = true;
+                has_egress = true;
+            }
+        }
+    }
+
+    if !unknown_providers.is_empty() {
+        eprintln!(
+            "warning: could not infer platform for providers: {}",
+            unknown_providers.join(", ")
+        );
+    }
+
+    let mut packages: Vec<&str> = Vec::new();
+    if has_ingress {
+        packages.push("gsm-gateway");
+    }
+    if has_egress {
+        packages.push("gsm-egress");
+    }
+    if platforms.iter().any(|platform| platform == "teams") {
+        packages.push("gsm-subscriptions-teams");
+    }
+
+    if packages.is_empty() {
+        return Err(anyhow!("no services selected from pack adapters"));
+    }
+
+    let platform_list = if platforms.is_empty() {
+        "(unknown)".to_string()
+    } else {
+        platforms.iter().cloned().collect::<Vec<_>>().join(", ")
+    };
+
+    println!(
+        "Starting pack services [{}] (platforms={platform_list}, env={}, tenant={}, team={}, nats={}, packs_root={})",
+        packages.join(", "),
+        config.env_scope,
+        config.tenant,
+        config.team,
+        config.nats_url,
+        config.packs_root.to_string_lossy()
+    );
+
+    run_cargo_packages_with_env("greentic-messaging", &packages, &envs, &[])
+}
+
+fn build_serve_envs(config: &ServeEnvConfig) -> Vec<(String, String)> {
     let mut envs: Vec<(String, String)> = vec![
-        ("GREENTIC_ENV".into(), env_scope.clone()),
-        ("TENANT".into(), tenant.clone()),
-        ("TEAM".into(), team.clone()),
-        ("NATS_URL".into(), nats_url.clone()),
+        ("GREENTIC_ENV".into(), config.env_scope.clone()),
+        ("TENANT".into(), config.tenant.clone()),
+        ("TEAM".into(), config.team.clone()),
+        ("NATS_URL".into(), config.nats_url.clone()),
         (
             "MESSAGING_PACKS_ROOT".into(),
-            packs_root.to_string_lossy().into(),
+            config.packs_root.to_string_lossy().into(),
         ),
     ];
-    if !pack.is_empty() {
-        let joined = pack
+    if !config.pack.is_empty() {
+        let joined = config
+            .pack
             .iter()
             .map(|p| p.to_string_lossy())
             .collect::<Vec<_>>()
             .join(",");
         envs.push(("MESSAGING_ADAPTER_PACK_PATHS".into(), joined));
     }
-    if no_default_packs {
+    if config.no_default_packs {
         envs.push((
             "MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS".into(),
             "false".into(),
         ));
         envs.push(("MESSAGING_DEFAULT_ADAPTER_PACKS".into(), "".into()));
     }
-    if let Some(adapter) = adapter_override {
+    if let Some(adapter) = config.adapter_override.clone() {
         envs.push(("MESSAGING_EGRESS_ADAPTER".into(), adapter));
     }
-
-    println!(
-        "Starting {kind:?} {platform} (env={env_scope}, tenant={tenant}, team={team}, nats={nats_url}, packs_root={})",
-        packs_root.to_string_lossy()
-    );
-
-    match kind {
-        ServeKind::Ingress => {
-            run_cargo_package_with_env("greentic-messaging", "gsm-gateway", &envs, &[])
-        }
-        ServeKind::Egress => {
-            run_cargo_package_with_env("greentic-messaging", "gsm-egress", &envs, &[])
-        }
-        ServeKind::Subscriptions => run_cargo_package_with_env(
-            "greentic-messaging",
-            &subscription_package_for(&platform)?,
-            &envs,
-            &[],
-        ),
-    }
+    envs
 }
 
 fn handle_flows(command: FlowCommand) -> Result<()> {
@@ -718,6 +848,75 @@ fn run_cargo_package_with_env(
     }
 }
 
+fn run_cargo_packages_with_env(
+    invoker: &str,
+    packages: &[&str],
+    envs: &[(String, String)],
+    args: &[&str],
+) -> Result<()> {
+    let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    if cli_dry_run() {
+        for package in packages {
+            let env_prefix = if envs.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "env {} ",
+                    envs.iter()
+                        .map(|(k, v)| format!("{k}={v}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            };
+            println!(
+                "(dry-run) {env_prefix}cargo run -p {package}{}",
+                dry_suffix(&args_vec)
+            );
+        }
+        return Ok(());
+    }
+
+    let mut children = Vec::new();
+    for package in packages {
+        let mut cmd = ProcessCommand::new("cargo");
+        cmd.arg("run")
+            .arg("-p")
+            .arg(package)
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
+        if !args.is_empty() {
+            cmd.arg("--");
+            for arg in args {
+                cmd.arg(arg);
+            }
+        }
+        let child = cmd.spawn().with_context(|| {
+            format!("failed to run cargo package {package} (invoked by {invoker})")
+        })?;
+        children.push((*package, child));
+    }
+
+    let mut failures = Vec::new();
+    for (package, mut child) in children {
+        let status = child
+            .wait()
+            .with_context(|| format!("failed while waiting for {package}"))?;
+        if !status.success() {
+            failures.push(format!("{package} exited with status {status}"));
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow!(failures.join("; ")))
+    }
+}
+
 fn run_cargo_package(invoker: &str, package: &str, args: &[String]) -> Result<()> {
     if cli_dry_run() {
         println!("(dry-run) cargo run -p {package}{}", dry_suffix(args));
@@ -833,6 +1032,7 @@ fn load_adapter_registry_for_cli(
             .iter()
             .filter_map(|p| canonicalize_pack_path(p.clone())),
     );
+    pack_paths = dedupe_pack_paths(pack_paths);
 
     let registry = match AdapterRegistry::load_from_paths(packs_root.as_path(), &pack_paths) {
         Ok(r) => r,
@@ -856,6 +1056,18 @@ fn canonicalize_pack_path(path: PathBuf) -> Option<PathBuf> {
         );
         None
     })
+}
+
+fn dedupe_pack_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for path in paths {
+        let key = path.to_string_lossy().into_owned();
+        if seen.insert(key) {
+            out.push(path);
+        }
+    }
+    out
 }
 
 fn print_adapters(
@@ -1015,6 +1227,60 @@ fn decode_pack_manifest(path: &PathBuf) -> Option<greentic_types::pack_manifest:
         .read_to_end(&mut buf)
         .ok()?;
     greentic_types::decode_pack_manifest(&buf).ok()
+}
+
+fn platforms_from_pack_paths(pack_paths: &[PathBuf]) -> (BTreeSet<String>, Vec<String>) {
+    let mut platforms = BTreeSet::new();
+    let mut unknown = BTreeSet::new();
+    for path in pack_paths {
+        if let Some(manifest) = decode_pack_manifest(path) {
+            let (pack_platforms, pack_unknown) = platforms_from_manifest(&manifest);
+            platforms.extend(pack_platforms);
+            unknown.extend(pack_unknown);
+        }
+    }
+    (platforms, unknown.into_iter().collect())
+}
+
+fn platforms_from_manifest(manifest: &PackManifest) -> (BTreeSet<String>, BTreeSet<String>) {
+    let mut platforms = BTreeSet::new();
+    let mut unknown = BTreeSet::new();
+    let Some(inline) = provider_inline(manifest) else {
+        return (platforms, unknown);
+    };
+    for provider in inline.providers {
+        if let Some(platform) = infer_platform_from_provider_type(&provider.provider_type) {
+            platforms.insert(platform);
+        } else {
+            unknown.insert(provider.provider_type);
+        }
+    }
+    (platforms, unknown)
+}
+
+fn infer_platform_from_provider_type(provider_type: &str) -> Option<String> {
+    provider_type
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .find_map(|token| {
+            Platform::from_str(token)
+                .ok()
+                .map(|p| p.as_str().to_string())
+        })
+}
+
+fn provider_inline(manifest: &PackManifest) -> Option<ProviderExtensionInline> {
+    manifest.provider_extension_inline().cloned().or_else(|| {
+        manifest
+            .extensions
+            .as_ref()
+            .and_then(|exts| exts.get(PROVIDER_EXTENSION_ID))
+            .and_then(|ext| ext.inline.as_ref())
+            .and_then(|inline| match inline {
+                ExtensionInline::Provider(p) => Some(p.clone()),
+                _ => None,
+            })
+    })
 }
 
 #[derive(Debug, Deserialize)]
