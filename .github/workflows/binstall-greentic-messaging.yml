@@ -44,7 +44,7 @@ jobs:
           cache-on-failure: false
 
       - name: Build greentic-messaging
-        run: cargo build --release -p greentic-messaging-cli
+        run: cargo build --release -p greentic-messaging
 
       - name: Package artifact (unix)
         if: matrix.archive == 'tar.gz'

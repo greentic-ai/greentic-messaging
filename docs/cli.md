@@ -20,7 +20,7 @@ Testing with seeds:
 ## Installation
 
 Use the packaged binary (`greentic-messaging …`) for day-to-day work. While
-developing locally you can still run `cargo run -p greentic-messaging-cli -- <command>`
+developing locally you can still run `cargo run -p greentic-messaging -- <command>`
 from the repo root.
 
 ## Commands

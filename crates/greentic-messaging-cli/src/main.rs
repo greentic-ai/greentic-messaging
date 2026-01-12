@@ -649,7 +649,7 @@ fn print_guard_line(name: &str, enabled: bool, detail: &str) {
 
 fn run_slack_oauth_helper(args: Vec<String>) -> Result<()> {
     println!("Launching Slack OAuth helper (gsm-slack-oauth)...");
-    run_cargo_package("greentic-messaging-cli", "gsm-slack-oauth", &args)
+    run_cargo_package("greentic-messaging", "gsm-slack-oauth", &args)
 }
 
 fn run_teams_setup(args: Vec<String>) -> Result<()> {
