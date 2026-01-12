@@ -32,7 +32,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.29"
+version = "0.4.30"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 
@@ -54,8 +54,8 @@ greentic-interfaces-host = "0.4"
 greentic-interfaces-wasmtime = "0.4"
 greentic-session = { version = "0.4", default-features = false, features = ["inmemory"] }
 greentic-telemetry = { version = "0.4", features = ["fmt"] }
-greentic-pack = "0.4"
-packc = "0.4"
+greentic-flow = "0.4"
+greentic-pack-lib = "0.4"
 handlebars = "6.3"
 hex = "0.4"
 hmac = "0.12"

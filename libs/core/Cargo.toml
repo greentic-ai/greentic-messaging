@@ -57,8 +57,8 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 urlencoding = { workspace = true }
 gsm-telemetry = { workspace = true }
-packc = { workspace = true }
-greentic-pack = { workspace = true }
+greentic-flow = { workspace = true }
+greentic-pack-lib = { workspace = true }
 zip = { workspace = true }
 proptest = { version = "1", optional = true }
 
@@ -72,6 +72,6 @@ tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 insta = { workspace = true, features = ["json"] }
-greentic-flow = "0.4"
+greentic-flow = { workspace = true }
 tempfile = { workspace = true }
 semver = "1"

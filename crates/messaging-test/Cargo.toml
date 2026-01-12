@@ -24,8 +24,8 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 greentic-types = { workspace = true }
-greentic-pack = { workspace = true }
-greentic-flow = "0.4"
+greentic-flow = { workspace = true }
+greentic-pack-lib = { workspace = true }
 blake3 = "1"
 gsm-core = { workspace = true }
 gsm-telemetry = { workspace = true }

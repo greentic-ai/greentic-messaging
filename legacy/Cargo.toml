@@ -43,8 +43,6 @@ greentic-interfaces-host = "0.4"
 greentic-interfaces-wasmtime = "0.4"
 greentic-session = { version = "0.4", default-features = false, features = ["inmemory"] }
 greentic-telemetry = { version = "0.4", features = ["fmt"] }
-greentic-pack = "0.4"
-packc = "0.4"
 handlebars = "6.3"
 hex = "0.4"
 hmac = "0.12"
