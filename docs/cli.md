@@ -155,7 +155,7 @@ greentic-messaging admin slack oauth-helper -- --listen 0.0.0.0:8080
 ### `greentic-messaging admin teams setup`
 
 Wraps the Teams chat verification tool
-(`cargo run --manifest-path scripts/Cargo.toml --bin teams_setup -- …`). Example:
+(`cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup -- …`). Example:
 
 ```bash
 greentic-messaging admin teams setup -- \
@@ -170,12 +170,12 @@ behaviour, and exits with the same status code as the helper binary.
 
 ### `greentic-messaging admin telegram setup`
 
-Wraps `cargo run --manifest-path scripts/Cargo.toml --bin telegram_setup -- …`.
+Wraps `cargo run --manifest-path legacy/scripts/Cargo.toml --bin telegram_setup -- …`.
 Use it to resolve a Telegram chat handle into its numeric chat id and persist it.
 
 ### `greentic-messaging admin whatsapp setup`
 
-Wraps `cargo run --manifest-path scripts/Cargo.toml --bin whatsapp_setup -- …`
+Wraps `cargo run --manifest-path legacy/scripts/Cargo.toml --bin whatsapp_setup -- …`
 for verifying phone metadata and recording the token/recipient combo locally.
 
 ### Dry-run mode

@@ -208,7 +208,7 @@ enum SlackAdminCommand {
 #[derive(Subcommand, Debug)]
 enum TeamsAdminCommand {
     Setup {
-        /// Arguments forwarded to `cargo run --manifest-path scripts/Cargo.toml --bin teams_setup -- ...`
+        /// Arguments forwarded to `cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup -- ...`
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -217,7 +217,7 @@ enum TeamsAdminCommand {
 #[derive(Subcommand, Debug)]
 enum TelegramAdminCommand {
     Setup {
-        /// Arguments forwarded to `cargo run --manifest-path scripts/Cargo.toml --bin telegram_setup -- ...`
+        /// Arguments forwarded to `cargo run --manifest-path legacy/scripts/Cargo.toml --bin telegram_setup -- ...`
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -226,7 +226,7 @@ enum TelegramAdminCommand {
 #[derive(Subcommand, Debug)]
 enum WhatsAppAdminCommand {
     Setup {
-        /// Arguments forwarded to `cargo run --manifest-path scripts/Cargo.toml --bin whatsapp_setup -- ...`
+        /// Arguments forwarded to `cargo run --manifest-path legacy/scripts/Cargo.toml --bin whatsapp_setup -- ...`
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -784,17 +784,17 @@ fn run_slack_oauth_helper(args: Vec<String>) -> Result<()> {
 
 fn run_teams_setup(args: Vec<String>) -> Result<()> {
     println!("Running Teams setup helper...");
-    run_cargo_manifest_bin("scripts/Cargo.toml", "teams_setup", &args)
+    run_cargo_manifest_bin("legacy/scripts/Cargo.toml", "teams_setup", &args)
 }
 
 fn run_telegram_setup(args: Vec<String>) -> Result<()> {
     println!("Running Telegram setup helper...");
-    run_cargo_manifest_bin("scripts/Cargo.toml", "telegram_setup", &args)
+    run_cargo_manifest_bin("legacy/scripts/Cargo.toml", "telegram_setup", &args)
 }
 
 fn run_whatsapp_setup(args: Vec<String>) -> Result<()> {
     println!("Running WhatsApp setup helper...");
-    run_cargo_manifest_bin("scripts/Cargo.toml", "whatsapp_setup", &args)
+    run_cargo_manifest_bin("legacy/scripts/Cargo.toml", "whatsapp_setup", &args)
 }
 
 fn run_cargo_package_with_env(

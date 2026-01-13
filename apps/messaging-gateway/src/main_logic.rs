@@ -1,5 +1,7 @@
 use crate::config::GatewayConfig;
-use crate::{NatsBusClient, build_router_with_bus, load_adapter_registry};
+use crate::{
+    NatsBusClient, build_router_with_bus, load_adapter_registry, load_provider_extensions_registry,
+};
 use anyhow::{Result, anyhow};
 use axum::serve;
 use gsm_core::{
@@ -11,6 +13,7 @@ use tracing::info;
 /// Starts the gateway HTTP server using the provided configuration.
 pub async fn run(config: GatewayConfig) -> Result<()> {
     let adapter_registry = load_adapter_registry();
+    let provider_extensions = load_provider_extensions_registry();
     let nats = async_nats::connect(&config.nats_url).await?;
     let bus = NatsBusClient::new(nats.clone());
 
@@ -52,6 +55,7 @@ pub async fn run(config: GatewayConfig) -> Result<()> {
     let router = build_router_with_bus(
         config.clone(),
         adapter_registry,
+        provider_extensions,
         std::sync::Arc::new(bus),
         worker_clients,
     )

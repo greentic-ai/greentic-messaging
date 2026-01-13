@@ -44,7 +44,7 @@ Expect the setup to take ~5 minutes per provider once you have the credentials h
 
    See `providers/<platform>/README.md` for the exact tokens/IDs required. The
    readmes include quick-start links and helper scripts (for example,
-   `scripts/telegram_setup.rs` resolves chat IDs).
+   `legacy/scripts/telegram_setup.rs` resolves chat IDs).
 
    Example `.env` snippet:
 
@@ -87,9 +87,9 @@ nightly jobs exercise real environments.
 - `npx playwright install --with-deps` must run once per machine (the CI workflow
   does this automatically).
 - Telegram chat IDs can be resolved with
-  `cargo run --manifest-path scripts/Cargo.toml --bin telegram_setup -- --handle <@handle> --token <bot_token>`.
+  `cargo run --manifest-path legacy/scripts/Cargo.toml --bin telegram_setup -- --handle <@handle> --token <bot_token>`.
 - Teams chat IDs and service principals can be verified with
-  `cargo run --manifest-path scripts/Cargo.toml --bin teams_setup`.
+  `cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup`.
 - WhatsApp tests expect a Business API phone number; verify that the account can
   send interactive message templates before running the suite.
 

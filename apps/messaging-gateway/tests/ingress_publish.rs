@@ -1,4 +1,4 @@
-use gsm_core::Platform;
+use gsm_core::{Platform, ProviderExtensionsRegistry};
 use gsm_gateway::InMemoryBusClient;
 use gsm_gateway::config::GatewayConfig;
 use gsm_gateway::http::{GatewayState, NormalizedRequest, handle_ingress};
@@ -26,6 +26,7 @@ async fn ingress_is_normalized_and_published() {
         bus: bus.clone(),
         config: test_config(),
         adapters,
+        provider_extensions: ProviderExtensionsRegistry::default(),
         workers: std::collections::BTreeMap::new(),
         worker_default: None,
         worker_egress_subject: None,
@@ -96,6 +97,7 @@ async fn forwards_multiple_worker_messages_including_card() {
         bus: bus.clone(),
         config,
         adapters,
+        provider_extensions: ProviderExtensionsRegistry::default(),
         workers,
         worker_default: Some(worker_cfg),
         worker_egress_subject: Some("greentic.messaging.egress.dev.repo-worker".into()),
@@ -169,6 +171,7 @@ async fn worker_failure_does_not_block_ingress_publish() {
         bus: bus.clone(),
         config,
         adapters,
+        provider_extensions: ProviderExtensionsRegistry::default(),
         workers,
         worker_default: Some(worker_cfg),
         worker_egress_subject: Some("greentic.messaging.egress.dev.repo-worker".into()),
@@ -221,6 +224,7 @@ async fn forwards_to_worker_when_configured() {
         bus: bus.clone(),
         config,
         adapters,
+        provider_extensions: ProviderExtensionsRegistry::default(),
         workers: {
             let mut map = std::collections::BTreeMap::new();
             map.insert(

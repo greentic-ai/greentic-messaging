@@ -512,23 +512,27 @@ fn admin_wrappers_dry_run() {
         "chat",
     ]);
     assert!(
-        teams.contains("dry-run) cargo run --manifest-path scripts/Cargo.toml --bin teams_setup"),
+        teams.contains(
+            "dry-run) cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup"
+        ),
         "stdout did not contain teams setup marker:\n{}",
         teams
     );
 
     let telegram = run_and_capture(&["admin", "telegram", "setup"]);
     assert!(
-        telegram
-            .contains("dry-run) cargo run --manifest-path scripts/Cargo.toml --bin telegram_setup"),
+        telegram.contains(
+            "dry-run) cargo run --manifest-path legacy/scripts/Cargo.toml --bin telegram_setup"
+        ),
         "stdout did not contain telegram setup marker:\n{}",
         telegram
     );
 
     let whatsapp = run_and_capture(&["admin", "whatsapp", "setup"]);
     assert!(
-        whatsapp
-            .contains("dry-run) cargo run --manifest-path scripts/Cargo.toml --bin whatsapp_setup"),
+        whatsapp.contains(
+            "dry-run) cargo run --manifest-path legacy/scripts/Cargo.toml --bin whatsapp_setup"
+        ),
         "stdout did not contain whatsapp setup marker:\n{}",
         whatsapp
     );

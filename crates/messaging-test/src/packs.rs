@@ -1,17 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::env;
-use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
 use blake3::Hasher;
+use greentic_distributor_client::dist::{DistClient, DistOptions};
 use greentic_flow::lint::lint_builtin_rules;
 use greentic_pack::{SigningPolicy, open_pack};
 use greentic_secrets::core::seed::{DevContext, resolve_uri};
 use greentic_types::flow::{Node, Routing};
+use greentic_types::pack::extensions::component_sources::ArtifactLocationV1;
 use greentic_types::pack_manifest::{ExtensionInline, ExtensionRef, PackFlowEntry, PackManifest};
 use greentic_types::provider::{PROVIDER_EXTENSION_ID, ProviderExtensionInline};
 use greentic_types::{Flow, FlowId, NodeId};
@@ -89,7 +89,6 @@ pub trait PackMaterializer: Send + Sync {
 }
 
 pub struct DistributorClientMaterializer {
-    bin: OsString,
     cache_root: PathBuf,
 }
 
@@ -110,20 +109,19 @@ impl DistributorClientMaterializer {
         Ok(base.join("materialized").join(hash.to_hex().as_str()))
     }
 
-    fn cmd_bin(&self) -> &OsString {
-        &self.bin
+    fn components_root(&self, pack: &Path, base: &Path) -> Result<PathBuf> {
+        let cache_dir = self.cache_dir_for_pack(pack, base)?;
+        Ok(cache_dir.join("components"))
     }
 }
 
 impl Default for DistributorClientMaterializer {
     fn default() -> Self {
-        let bin = env::var_os("GREENTIC_DISTRIBUTOR_CLIENT")
-            .unwrap_or_else(|| OsString::from("greentic-distributor-client"));
         let cache_root = env::var_os("GREENTIC_HOME")
             .map(PathBuf::from)
             .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/greentic")))
             .unwrap_or_else(|| PathBuf::from(".cache/greentic"));
-        Self { bin, cache_root }
+        Self { cache_root }
     }
 }
 
@@ -141,55 +139,153 @@ impl PackMaterializer for DistributorClientMaterializer {
         } else {
             &opts.cache_root
         };
-        let cache_dir = self.cache_dir_for_pack(pack, base)?;
-        if opts.offline && !cache_dir.exists() {
+        let components_root = self.components_root(pack, base)?;
+        if opts.offline && !components_root.exists() {
             bail!(
                 "offline mode enabled; component cache missing for pack {}",
                 pack.display()
             );
         }
-        fs::create_dir_all(&cache_dir)
-            .with_context(|| format!("create cache dir {}", cache_dir.display()))?;
+        fs::create_dir_all(&components_root)
+            .with_context(|| format!("create cache dir {}", components_root.display()))?;
 
-        let mut cmd = Command::new(self.cmd_bin());
-        cmd.arg("materialize")
-            .arg("--pack")
-            .arg(pack)
-            .arg("--out")
-            .arg(&cache_dir);
-        if opts.offline {
-            cmd.arg("--offline");
-        }
-        if opts.allow_tags {
-            cmd.arg("--allow-tags");
-        }
-
-        let output = cmd.output().map_err(|err| {
-            if err.kind() == std::io::ErrorKind::NotFound {
-                anyhow!(
-                    "greentic-distributor-client not found; install it or set GREENTIC_DISTRIBUTOR_CLIENT"
-                )
-            } else {
-                anyhow!(err)
-            }
-        })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            bail!(
-                "failed to materialize components for {} (status {}):\nstdout: {}\nstderr: {}",
-                pack.display(),
-                output.status,
-                stdout,
-                stderr
-            );
-        }
+        let manifest = load_manifest(pack)?;
+        materialize_components(pack, &manifest, &components_root, opts)?;
 
         Ok(MaterializedPack {
             pack_path: pack.to_path_buf(),
-            components_dir: Some(cache_dir.join("components")),
+            components_dir: Some(components_root),
         })
     }
+}
+
+fn materialize_components(
+    pack: &Path,
+    manifest: &PackManifest,
+    components_root: &Path,
+    opts: &MaterializeOptions,
+) -> Result<()> {
+    let sources = manifest
+        .get_component_sources_v1()
+        .context("read component sources extension")?;
+
+    let mut manifest_map = BTreeMap::new();
+    for component in &manifest.components {
+        let bytes = serde_json::to_vec_pretty(component)
+            .with_context(|| format!("serialize component manifest {}", component.id.as_str()))?;
+        manifest_map.insert(component.id.as_str().to_string(), bytes);
+    }
+
+    if let Some(sources) = sources {
+        let dist_opts = DistOptions {
+            cache_dir: components_root.to_path_buf(),
+            allow_tags: opts.allow_tags,
+            offline: opts.offline,
+        };
+        let client = DistClient::new(dist_opts);
+        let mut runtime = None;
+
+        for entry in sources.components {
+            let digest = normalize_digest(entry.resolved.digest.as_str());
+            let component_dir = component_dir_for_digest(components_root, &digest);
+            fs::create_dir_all(&component_dir).with_context(|| {
+                format!("create component cache dir {}", component_dir.display())
+            })?;
+
+            if let Some(component_id) =
+                entry
+                    .component_id
+                    .as_ref()
+                    .map(|id| id.as_str())
+                    .or_else(|| {
+                        manifest_map
+                            .contains_key(entry.name.as_str())
+                            .then_some(entry.name.as_str())
+                    })
+                && let Some(bytes) = manifest_map.remove(component_id)
+            {
+                write_component_manifest(&component_dir, &bytes)?;
+            }
+
+            match entry.artifact {
+                ArtifactLocationV1::Inline { wasm_path, .. } => {
+                    let bytes = read_pack_file(pack, &wasm_path)?;
+                    let wasm_path = component_dir.join("component.wasm");
+                    fs::write(&wasm_path, bytes).with_context(|| {
+                        format!("write inline component {}", wasm_path.display())
+                    })?;
+                }
+                ArtifactLocationV1::Remote => {
+                    let reference = entry.source.to_string();
+                    let rt = runtime.get_or_insert_with(|| {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .expect("build async runtime")
+                    });
+                    rt.block_on(client.ensure_cached(&reference))
+                        .with_context(|| format!("materialize {}", reference))?;
+                }
+            }
+        }
+    }
+
+    if !manifest_map.is_empty() {
+        let fallback_root = components_root.join("manifests");
+        for (id, bytes) in manifest_map {
+            let dir = fallback_root.join(sanitize_component_dir(&id));
+            fs::create_dir_all(&dir)
+                .with_context(|| format!("create fallback manifest dir {}", dir.display()))?;
+            write_component_manifest(&dir, &bytes)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_component_manifest(dir: &Path, bytes: &[u8]) -> Result<()> {
+    let path = dir.join("component.manifest.json");
+    fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+fn component_dir_for_digest(root: &Path, digest: &str) -> PathBuf {
+    root.join(trim_digest_prefix(digest))
+}
+
+fn normalize_digest(digest: &str) -> String {
+    if digest.starts_with("sha256:") {
+        digest.to_string()
+    } else {
+        format!("sha256:{digest}")
+    }
+}
+
+fn trim_digest_prefix(digest: &str) -> &str {
+    digest.strip_prefix("sha256:").unwrap_or(digest)
+}
+
+fn sanitize_component_dir(id: &str) -> String {
+    id.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn read_pack_file(pack: &Path, pack_path: &str) -> Result<Vec<u8>> {
+    let file = File::open(pack)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    let mut buf = Vec::new();
+    archive
+        .by_name(pack_path)
+        .with_context(|| format!("missing pack entry {}", pack_path))?
+        .read_to_end(&mut buf)?;
+    Ok(buf)
 }
 
 pub fn discover_packs(args: &PackDiscoveryArgs) -> Result<Vec<DiscoveredPack>> {

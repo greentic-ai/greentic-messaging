@@ -20,6 +20,7 @@ pub mod interfaces;
 pub mod messaging_card;
 pub mod oauth;
 pub mod outbound;
+pub mod pack_extensions;
 pub mod path_safety;
 pub mod platforms;
 pub mod prelude;
@@ -75,6 +76,7 @@ pub use messaging_card::{
     tier::{Tier, TierPolicy},
 };
 pub use outbound::*;
+pub use pack_extensions::*;
 pub use platforms::*;
 pub use prelude::*;
 pub use provider::*;

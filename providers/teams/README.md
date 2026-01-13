@@ -39,7 +39,7 @@ export TEAMS_CHAT_ID=19:abc123def456@thread.v2
 Need help discovering the chat ID? Run the helper:
 
 ```bash
-cargo run --manifest-path scripts/Cargo.toml --bin teams_setup \
+cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup \
   --tenant "$TEAMS_TENANT_ID" \
   --client-id "$TEAMS_CLIENT_ID" \
   --client-secret "$TEAMS_CLIENT_SECRET" \

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use gsm_bus::InMemoryBusClient;
 use gsm_core::{
     AdapterDescriptor, ChannelMessage, LoggingRunnerClient, MessagingAdapterKind, OutKind,
-    OutMessage, Platform, make_tenant_ctx,
+    OutMessage, Platform, ProviderExtensionsRegistry, make_tenant_ctx,
 };
 use gsm_egress::adapter_registry::AdapterLookup;
 use gsm_egress::process_message_internal;
@@ -47,6 +47,7 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         bus: bus.clone(),
         config: test_gateway_config(),
         adapters,
+        provider_extensions: ProviderExtensionsRegistry::default(),
         workers: std::collections::BTreeMap::new(),
         worker_default: None,
         worker_egress_subject: None,

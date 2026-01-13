@@ -245,7 +245,7 @@ mock-http`).
 1. Register (or reuse) an Azure AD application with the Microsoft Graph `ChatMessage.Send` **application** permission and create a client secret dedicated to CI/testing.
 2. Collect the following values: `TEAMS_TENANT_ID`, `TEAMS_CLIENT_ID`, `TEAMS_CLIENT_SECRET`, and the target `TEAMS_CHAT_ID`.
 3. Verify the chat and persist the secrets with the helper:
-   `cargo run --manifest-path scripts/Cargo.toml --bin teams_setup -- --tenant <tenant> --client-id <client_id> --client-secret <client_secret> --chat-id <chat_id> --output .env`
+   `cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup -- --tenant <tenant> --client-id <client_id> --client-secret <client_secret> --chat-id <chat_id> --output .env`
 4. Run the Teams E2E test when needed:
    `cargo test -p gsm-egress-teams --features e2e -- --ignored --nocapture`
 
@@ -469,7 +469,7 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
 
 1. Generate a permanent user access token in the [Meta Developer Dashboard](https://developers.facebook.com/apps/) with the `whatsapp_business_messaging` permission and copy your phone number ID.
 2. Verify the credentials with the helper script (optionally writing them to `.env`):
-   `cargo run --manifest-path scripts/Cargo.toml --bin whatsapp_setup -- --token <token> --phone-id <phone_id> --recipient <E.164 number> --output .env`
+   `cargo run --manifest-path legacy/scripts/Cargo.toml --bin whatsapp_setup -- --token <token> --phone-id <phone_id> --recipient <E.164 number> --output .env`
 3. Your `.env` should now include `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, and `WHATSAPP_RECIPIENT`, which the WhatsApp E2E test consumes.
 
 ## Webex Integration

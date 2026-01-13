@@ -7,8 +7,9 @@ use anyhow::Result;
 use async_nats::Client as NatsClient;
 pub use gsm_bus::{BusClient, BusError, InMemoryBusClient, NatsBusClient};
 use gsm_core::{
-    AdapterRegistry, DefaultAdapterPacksConfig, WorkerClient, adapter_pack_paths_from_env,
-    adapter_registry::load_adapters_from_pack_files, default_adapter_pack_paths,
+    AdapterRegistry, DefaultAdapterPacksConfig, ProviderExtensionsRegistry, WorkerClient,
+    adapter_pack_paths_from_env, adapter_registry::load_adapters_from_pack_files,
+    default_adapter_pack_paths, load_provider_extensions_from_pack_files,
 };
 pub use main_logic::run;
 use std::path::PathBuf;
@@ -51,6 +52,33 @@ pub fn load_adapter_registry() -> AdapterRegistry {
     }
 }
 
+/// Builds the provider extensions registry from default and extra pack paths.
+pub fn load_provider_extensions_registry() -> ProviderExtensionsRegistry {
+    let packs_root =
+        PathBuf::from(std::env::var("MESSAGING_PACKS_ROOT").unwrap_or_else(|_| "packs".into()));
+    let default_packs_cfg = DefaultAdapterPacksConfig::from_env();
+    let extra_paths = adapter_pack_paths_from_env();
+    let mut pack_paths = default_adapter_pack_paths(packs_root.as_path(), &default_packs_cfg);
+    pack_paths.extend(extra_paths.clone());
+    match load_provider_extensions_from_pack_files(packs_root.as_path(), &pack_paths) {
+        Ok(registry) => {
+            if registry.is_empty() {
+                tracing::info!(
+                    install_all = default_packs_cfg.install_all,
+                    selected = ?default_packs_cfg.selected,
+                    extra_pack_paths = ?extra_paths,
+                    "no provider extensions loaded from packs"
+                );
+            }
+            registry
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to load provider extensions from packs");
+            ProviderExtensionsRegistry::default()
+        }
+    }
+}
+
 /// Constructs the production bus client.
 pub fn make_nats_bus(client: NatsClient) -> impl BusClient {
     NatsBusClient::new(client)
@@ -60,8 +88,9 @@ pub fn make_nats_bus(client: NatsClient) -> impl BusClient {
 pub async fn build_router_with_bus<B: BusClient + 'static>(
     config: GatewayConfig,
     adapters: AdapterRegistry,
+    provider_extensions: ProviderExtensionsRegistry,
     bus: Arc<B>,
     workers: std::collections::BTreeMap<String, Arc<dyn WorkerClient>>,
 ) -> Result<axum::Router> {
-    http::build_router_with_bus(config, adapters, bus, workers).await
+    http::build_router_with_bus(config, adapters, provider_extensions, bus, workers).await
 }

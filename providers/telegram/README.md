@@ -41,7 +41,7 @@ Legacy (deprecated) env setup:
 
      ```bash
      export TELEGRAM_CHAT_HANDLE=@yourchat
-     cargo run --manifest-path scripts/Cargo.toml --bin telegram_setup \
+     cargo run --manifest-path legacy/scripts/Cargo.toml --bin telegram_setup \
        --token "$TELEGRAM_BOT_TOKEN" --handle "$TELEGRAM_CHAT_HANDLE" \
        --output .env
      ```

@@ -15,8 +15,9 @@ use tracing::{Instrument, warn};
 use crate::config::GatewayConfig;
 use gsm_bus::{BusClient, BusError, to_value};
 use gsm_core::{
-    AdapterDescriptor, AdapterRegistry, ChannelMessage, Platform, WorkerClient,
-    WorkerRoutingConfig, forward_to_worker, infer_platform_from_adapter_name, make_tenant_ctx,
+    AdapterDescriptor, AdapterRegistry, ChannelMessage, Platform, ProviderExtensionsRegistry,
+    WorkerClient, WorkerRoutingConfig, forward_to_worker, infer_platform_from_adapter_name,
+    make_tenant_ctx,
 };
 use gsm_telemetry::set_current_tenant_ctx;
 
@@ -25,6 +26,7 @@ pub struct GatewayState {
     pub bus: Arc<dyn BusClient>,
     pub config: GatewayConfig,
     pub adapters: AdapterRegistry,
+    pub provider_extensions: ProviderExtensionsRegistry,
     pub workers: BTreeMap<String, Arc<dyn WorkerClient>>,
     pub worker_default: Option<WorkerRoutingConfig>,
     pub worker_egress_subject: Option<String>,
@@ -116,6 +118,7 @@ fn outbound_to_out_message(
 pub async fn build_router_with_bus(
     config: GatewayConfig,
     adapters: AdapterRegistry,
+    provider_extensions: ProviderExtensionsRegistry,
     bus: Arc<dyn BusClient>,
     workers: BTreeMap<String, Arc<dyn WorkerClient>>,
 ) -> anyhow::Result<Router> {
@@ -125,6 +128,7 @@ pub async fn build_router_with_bus(
         worker_egress_subject: config.worker_egress_subject.clone(),
         config,
         adapters,
+        provider_extensions,
         workers,
     });
 

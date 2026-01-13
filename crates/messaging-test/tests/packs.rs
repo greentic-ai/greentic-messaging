@@ -19,7 +19,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use zip::write::SimpleFileOptions;
@@ -265,29 +264,6 @@ fn packs_resolves_oci_component_via_distributor_client() {
         "greentic-ai.components.component-template",
     );
     let temp = tempfile::tempdir().expect("tempdir");
-    let stub = temp.path().join("greentic-distributor-client");
-    let mut script = File::create(&stub).expect("stub bin");
-    writeln!(
-        script,
-        r#"#!/bin/sh
-out_dir=""
-while [ $# -gt 0 ]; do
-  if [ "$1" = "--out" ]; then
-    shift
-    out_dir="$1"
-  fi
-  shift
-done
-mkdir -p "$out_dir/components"
-exit 0
-"#
-    )
-    .expect("write stub");
-    drop(script);
-    let mut perms = fs::metadata(&stub).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&stub, perms).unwrap();
-
     let out = run_cli_with_env(
         &[
             "packs",
@@ -301,10 +277,7 @@ exit 0
             "--team",
             "ci",
         ],
-        &[
-            ("GREENTIC_HOME", temp.path().to_str().unwrap()),
-            ("GREENTIC_DISTRIBUTOR_CLIENT", stub.to_str().unwrap()),
-        ],
+        &[("GREENTIC_HOME", temp.path().to_str().unwrap())],
     );
 
     assert!(

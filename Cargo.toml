@@ -16,7 +16,6 @@ members = [
   "libs/idempotency",
   "libs/backpressure",
   "libs/dlq",
-  "scripts",
   "tools/nats-demo",
   "tools/mock-weather-tool",
   "apps/cli-dlq",
@@ -32,7 +31,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.32"
+version = "0.4.33"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 
