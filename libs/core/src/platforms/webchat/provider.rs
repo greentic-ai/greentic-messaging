@@ -8,8 +8,8 @@ use crate::{
 };
 use anyhow::{Context as _, Result, anyhow, bail};
 use async_trait::async_trait;
-use greentic_secrets::spec::{Scope, SecretUri, SecretsBackend};
 use greentic_types::TenantCtx;
+use secrets_core::{Scope, SecretUri, SecretsBackend};
 
 use super::config::{Config, OAuthProviderConfig, SigningKeys};
 

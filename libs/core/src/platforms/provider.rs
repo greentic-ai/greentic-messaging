@@ -7,8 +7,8 @@ use crate::{
     ingress::VerifiedEvent,
     telemetry::TelemetryHandle,
 };
-use greentic_secrets::spec::SecretsBackend;
 use greentic_types::TenantCtx;
+use secrets_core::SecretsBackend;
 
 #[derive(Clone)]
 pub struct PlatformInit {

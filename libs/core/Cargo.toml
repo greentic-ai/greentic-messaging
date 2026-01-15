@@ -31,7 +31,7 @@ anyhow = { workspace = true }
 greentic-types = { workspace = true }
 jsonschema = { workspace = true }
 secrets-core = { workspace = true }
-greentic-secrets = { workspace = true }
+greentic-secrets-spec = { workspace = true }
 greentic-interfaces-host = { workspace = true }
 greentic-interfaces-wasmtime = { workspace = true, optional = true }
 async-trait = { workspace = true }

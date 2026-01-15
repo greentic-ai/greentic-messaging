@@ -1,11 +1,10 @@
-use greentic_secrets::spec::{
-    Scope, SecretUri, SecretVersion, SecretsBackend, VersionedSecret, helpers::record_from_plain,
-};
+use greentic_secrets_spec::record_from_plain;
 use gsm_core::platforms::webchat::{
     config::Config,
     standalone::{StandaloneState, router},
 };
 use http::{HeaderName, HeaderValue, Method};
+use secrets_core::{Scope, SecretUri, SecretVersion, SecretsBackend, VersionedSecret};
 use std::{fs::OpenOptions, sync::Arc, time::Duration};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -166,9 +165,9 @@ impl StaticSecretsBackend {
 impl SecretsBackend for StaticSecretsBackend {
     fn put(
         &self,
-        _record: greentic_secrets::spec::SecretRecord,
-    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
-        Err(greentic_secrets::spec::Error::Backend(
+        _record: secrets_core::SecretRecord,
+    ) -> secrets_core::Result<secrets_core::SecretVersion> {
+        Err(secrets_core::Error::Backend(
             "static backend is read-only".into(),
         ))
     }
@@ -177,7 +176,7 @@ impl SecretsBackend for StaticSecretsBackend {
         &self,
         uri: &SecretUri,
         _version: Option<u64>,
-    ) -> greentic_secrets::spec::Result<Option<VersionedSecret>> {
+    ) -> secrets_core::Result<Option<VersionedSecret>> {
         if uri.category() == "webchat" && uri.name() == "jwt_signing_key" {
             let record = record_from_plain(self.secret.clone());
             Ok(Some(VersionedSecret {
@@ -195,35 +194,35 @@ impl SecretsBackend for StaticSecretsBackend {
         _scope: &Scope,
         _category_prefix: Option<&str>,
         _name_prefix: Option<&str>,
-    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
+    ) -> secrets_core::Result<Vec<secrets_core::SecretListItem>> {
         let uri = SecretUri::new(
             _scope.clone(),
             "webchat".to_string(),
             "jwt_signing_key".to_string(),
         )
         .expect("uri");
-        Ok(vec![greentic_secrets::spec::SecretListItem {
+        Ok(vec![secrets_core::SecretListItem {
             uri,
-            visibility: greentic_secrets::spec::Visibility::Tenant,
+            visibility: secrets_core::Visibility::Tenant,
             latest_version: Some("1".into()),
-            content_type: greentic_secrets::spec::ContentType::Opaque,
+            content_type: secrets_core::ContentType::Opaque,
         }])
     }
 
-    fn delete(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {
-        Err(greentic_secrets::spec::Error::Backend(
+    fn delete(&self, _uri: &SecretUri) -> secrets_core::Result<SecretVersion> {
+        Err(secrets_core::Error::Backend(
             "static backend is read-only".into(),
         ))
     }
 
-    fn versions(&self, _uri: &SecretUri) -> greentic_secrets::spec::Result<Vec<SecretVersion>> {
+    fn versions(&self, _uri: &SecretUri) -> secrets_core::Result<Vec<SecretVersion>> {
         Ok(vec![SecretVersion {
             version: 1,
             deleted: false,
         }])
     }
 
-    fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {
+    fn exists(&self, uri: &SecretUri) -> secrets_core::Result<bool> {
         Ok(uri.category() == "webchat" && uri.name() == "jwt_signing_key")
     }
 }

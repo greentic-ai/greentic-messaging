@@ -3,12 +3,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use greentic_secrets::spec::{
-    Scope, SecretUri, SecretVersion, SecretsBackend, VersionedSecret, helpers::record_from_plain,
-};
+use greentic_secrets_spec::record_from_plain;
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
 use gsm_core::platforms::webchat::config::Config;
 use gsm_core::platforms::webchat::provider::WebChatProvider;
+use secrets_core::{Scope, SecretUri, SecretVersion, SecretsBackend, VersionedSecret};
 
 #[derive(Clone, Default)]
 pub struct TestSecretsBackend {
@@ -43,8 +42,8 @@ impl TestSecretsBackend {
 impl SecretsBackend for TestSecretsBackend {
     fn put(
         &self,
-        record: greentic_secrets::spec::SecretRecord,
-    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+        record: secrets_core::SecretRecord,
+    ) -> secrets_core::Result<secrets_core::SecretVersion> {
         self.inner.lock().expect("lock secrets map").insert(
             record.meta.uri.to_string(),
             VersionedSecret {
@@ -53,7 +52,7 @@ impl SecretsBackend for TestSecretsBackend {
                 record: Some(record),
             },
         );
-        Ok(greentic_secrets::spec::SecretVersion {
+        Ok(secrets_core::SecretVersion {
             version: 1,
             deleted: false,
         })
@@ -63,7 +62,7 @@ impl SecretsBackend for TestSecretsBackend {
         &self,
         uri: &SecretUri,
         _version: Option<u64>,
-    ) -> greentic_secrets::spec::Result<Option<VersionedSecret>> {
+    ) -> secrets_core::Result<Option<VersionedSecret>> {
         Ok(self
             .inner
             .lock()
@@ -77,7 +76,7 @@ impl SecretsBackend for TestSecretsBackend {
         scope: &Scope,
         category_prefix: Option<&str>,
         name_prefix: Option<&str>,
-    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
+    ) -> secrets_core::Result<Vec<secrets_core::SecretListItem>> {
         let items = self
             .inner
             .lock()
@@ -89,14 +88,12 @@ impl SecretsBackend for TestSecretsBackend {
                     && category_prefix.is_none_or(|p| record.meta.uri.category().starts_with(p))
                     && name_prefix.is_none_or(|p| record.meta.uri.name().starts_with(p))
             })
-            .map(|record| {
-                greentic_secrets::spec::SecretListItem::from_meta(&record.meta, Some("1".into()))
-            })
+            .map(|record| secrets_core::SecretListItem::from_meta(&record.meta, Some("1".into())))
             .collect();
         Ok(items)
     }
 
-    fn delete(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<SecretVersion> {
+    fn delete(&self, uri: &SecretUri) -> secrets_core::Result<SecretVersion> {
         let removed = self
             .inner
             .lock()
@@ -107,13 +104,13 @@ impl SecretsBackend for TestSecretsBackend {
                 version: secret.version,
                 deleted: secret.deleted,
             }),
-            None => Err(greentic_secrets::spec::Error::NotFound {
+            None => Err(secrets_core::Error::NotFound {
                 entity: uri.to_string(),
             }),
         }
     }
 
-    fn versions(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<Vec<SecretVersion>> {
+    fn versions(&self, uri: &SecretUri) -> secrets_core::Result<Vec<SecretVersion>> {
         Ok(self
             .inner
             .lock()
@@ -128,7 +125,7 @@ impl SecretsBackend for TestSecretsBackend {
             .unwrap_or_default())
     }
 
-    fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {
+    fn exists(&self, uri: &SecretUri) -> secrets_core::Result<bool> {
         Ok(self
             .inner
             .lock()

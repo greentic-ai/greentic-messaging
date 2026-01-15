@@ -31,7 +31,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.33"
+version = "0.4.34"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 
@@ -48,7 +48,7 @@ clap = { version = "4", features = ["derive"] }
 dashmap = "6"
 futures = "0.3"
 greentic-types = "0.4"
-greentic-secrets = "0.4"
+greentic-secrets-spec = "0.4"
 greentic-interfaces-host = "0.4"
 greentic-interfaces-wasmtime = "0.4"
 greentic-session = { version = "0.4", default-features = false, features = ["inmemory"] }

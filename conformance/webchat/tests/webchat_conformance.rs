@@ -6,9 +6,7 @@ use axum::{
     extract::{Path, State},
     response::IntoResponse,
 };
-use greentic_secrets::spec::{
-    Scope, SecretUri, SecretsBackend, VersionedSecret, helpers::record_from_plain,
-};
+use greentic_secrets_spec::record_from_plain;
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
 use gsm_core::platforms::webchat::{
     WebChatProvider,
@@ -30,6 +28,7 @@ use gsm_core::platforms::webchat::{
     types::{GreenticEvent, IncomingMessage, MessagePayload},
 };
 use reqwest::Client;
+use secrets_core::{Scope, SecretUri, SecretsBackend, VersionedSecret};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
@@ -66,8 +65,8 @@ impl TestSecretsBackend {
 impl SecretsBackend for TestSecretsBackend {
     fn put(
         &self,
-        record: greentic_secrets::spec::SecretRecord,
-    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+        record: secrets_core::SecretRecord,
+    ) -> secrets_core::Result<secrets_core::SecretVersion> {
         let uri = record.meta.uri.to_string();
         let secret = VersionedSecret {
             version: 1,
@@ -78,7 +77,7 @@ impl SecretsBackend for TestSecretsBackend {
             .lock()
             .expect("lock secrets map")
             .insert(uri, secret);
-        Ok(greentic_secrets::spec::SecretVersion {
+        Ok(secrets_core::SecretVersion {
             version: 1,
             deleted: false,
         })
@@ -88,7 +87,7 @@ impl SecretsBackend for TestSecretsBackend {
         &self,
         uri: &SecretUri,
         _version: Option<u64>,
-    ) -> greentic_secrets::spec::Result<Option<VersionedSecret>> {
+    ) -> secrets_core::Result<Option<VersionedSecret>> {
         Ok(self
             .inner
             .lock()
@@ -99,10 +98,10 @@ impl SecretsBackend for TestSecretsBackend {
 
     fn list(
         &self,
-        _scope: &greentic_secrets::spec::Scope,
+        _scope: &secrets_core::Scope,
         category_prefix: Option<&str>,
         name_prefix: Option<&str>,
-    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretListItem>> {
+    ) -> secrets_core::Result<Vec<secrets_core::SecretListItem>> {
         let mut items = Vec::new();
         for secret in self.inner.lock().expect("lock secrets map").values() {
             if let Some(record) = &secret.record {
@@ -117,7 +116,7 @@ impl SecretsBackend for TestSecretsBackend {
                 {
                     continue;
                 }
-                items.push(greentic_secrets::spec::SecretListItem::from_meta(
+                items.push(secrets_core::SecretListItem::from_meta(
                     &record.meta,
                     Some(secret.version.to_string()),
                 ));
@@ -126,37 +125,31 @@ impl SecretsBackend for TestSecretsBackend {
         Ok(items)
     }
 
-    fn delete(
-        &self,
-        uri: &SecretUri,
-    ) -> greentic_secrets::spec::Result<greentic_secrets::spec::SecretVersion> {
+    fn delete(&self, uri: &SecretUri) -> secrets_core::Result<secrets_core::SecretVersion> {
         let removed = self
             .inner
             .lock()
             .expect("lock secrets map")
             .remove(&uri.to_string());
         match removed {
-            Some(secret) => Ok(greentic_secrets::spec::SecretVersion {
+            Some(secret) => Ok(secrets_core::SecretVersion {
                 version: secret.version,
                 deleted: secret.deleted,
             }),
-            None => Err(greentic_secrets::spec::Error::NotFound {
+            None => Err(secrets_core::Error::NotFound {
                 entity: uri.to_string(),
             }),
         }
     }
 
-    fn versions(
-        &self,
-        uri: &SecretUri,
-    ) -> greentic_secrets::spec::Result<Vec<greentic_secrets::spec::SecretVersion>> {
+    fn versions(&self, uri: &SecretUri) -> secrets_core::Result<Vec<secrets_core::SecretVersion>> {
         Ok(self
             .inner
             .lock()
             .expect("lock secrets map")
             .get(&uri.to_string())
             .map(|secret| {
-                vec![greentic_secrets::spec::SecretVersion {
+                vec![secrets_core::SecretVersion {
                     version: secret.version,
                     deleted: secret.deleted,
                 }]
@@ -164,7 +157,7 @@ impl SecretsBackend for TestSecretsBackend {
             .unwrap_or_default())
     }
 
-    fn exists(&self, uri: &SecretUri) -> greentic_secrets::spec::Result<bool> {
+    fn exists(&self, uri: &SecretUri) -> secrets_core::Result<bool> {
         Ok(self
             .inner
             .lock()

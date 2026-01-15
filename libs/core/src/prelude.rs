@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-pub use greentic_secrets::spec::{Scope as SecretScope, SecretUri};
 pub use greentic_types::{
     EnvId, InvocationEnvelope, NodeError, NodeResult, TeamId, TenantCtx, TenantId, UserId,
 };
 pub use secrets_core::DefaultResolver;
+pub use secrets_core::{Scope as SecretScope, SecretUri};
 use secrets_core::{embedded::SecretsError, errors::Error as CoreError};
 
 #[derive(Clone, Debug)]
