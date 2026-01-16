@@ -470,9 +470,9 @@ checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 
 [[package]]
 name = "cc"
-version = "1.2.52"
+version = "1.2.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd4932aefd12402b36c60956a4fe0035421f544799057659ff86f923657aada3"
+checksum = "755d2fce177175ffca841e9a06afdb2c4ab0f593d53b4dee48147dfaade85932"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1121,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "dev-viewer"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "axum",
@@ -1383,9 +1383,9 @@ checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f449e6c6c08c865631d4890cfacf252b3d396c9bcc83adb6623cdb02a8336c41"
+checksum = "8591b0bcc8a98a64310a2fae1bb3e9b8564dd10e381e6e28010fde8e8e8568db"
 
 [[package]]
 name = "fixedbitset"
@@ -1635,12 +1635,13 @@ dependencies = [
 
 [[package]]
 name = "greentic-distributor-client"
-version = "0.4.12"
+version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33a0c5ddf87cde26ddc1f55d39ddcc215ee6a8d392b1898f6c331ce09c94ac45"
+checksum = "01d5598364598c474c49d4660b41e56a92f139be6ff2b7626040494d19a3cbb3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "clap",
  "dirs-next",
  "greentic-config-types",
  "greentic-interfaces-guest",
@@ -1694,7 +1695,7 @@ dependencies = [
  "thiserror 2.0.17",
  "time",
  "wasmtime",
- "wit-bindgen 0.51.0",
+ "wit-bindgen",
  "wit-bindgen-core",
  "wit-bindgen-rust",
 ]
@@ -1707,7 +1708,7 @@ checksum = "3250c68f0298e8e7460b3f188f6f1bcbd27e7ffc0f43815692aa318f05bac3cc"
 dependencies = [
  "greentic-interfaces",
  "greentic-types",
- "wit-bindgen 0.51.0",
+ "wit-bindgen",
  "wit-bindgen-core",
  "wit-bindgen-rust",
 ]
@@ -1742,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "clap",
@@ -1760,7 +1761,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging-security"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1787,7 +1788,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging-test"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1812,9 +1813,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-pack-lib"
-version = "0.4.54"
+version = "0.4.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72bc961ced9f96509f759b45eb08451151bbbc33bcc6e8fde32b78238ddbfd23"
+checksum = "f167b5707bbabfeb7c496f360c113b9d155be1a1e811f56f3e8c33d98d078d96"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2013,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-backpressure"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2030,7 +2031,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-bus"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2043,7 +2044,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-cli-dlq"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2060,7 +2061,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-core"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2112,7 +2113,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-dlq"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2129,7 +2130,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2154,7 +2155,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-egress-common"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2169,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-gateway"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2192,7 +2193,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-idempotency"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2209,7 +2210,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-ingress-common"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2236,7 +2237,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-provider-registry"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2253,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-runner"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2281,7 +2282,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-session"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "greentic-session",
@@ -2290,7 +2291,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-slack-oauth"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2312,7 +2313,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-telemetry"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "greentic-telemetry",
@@ -2323,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-testutil"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "dotenvy",
@@ -2342,7 +2343,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-translator"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "greentic-messaging-security",
@@ -2809,9 +2810,9 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.46.0"
+version = "1.46.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b66886d14d18d420ab5052cbff544fc5d34d0b2cdd35eb5976aaa10a4a472e5"
+checksum = "248b42847813a1550dafd15296fd9748c651d0c32194559dbc05d804d54b21e8"
 dependencies = [
  "console",
  "once_cell",
@@ -3132,7 +3133,7 @@ dependencies = [
 
 [[package]]
 name = "messaging-tenants"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "clap",
@@ -3184,7 +3185,7 @@ dependencies = [
 
 [[package]]
 name = "mock-weather-tool"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "axum",
@@ -3218,7 +3219,7 @@ dependencies = [
 
 [[package]]
 name = "nats-demo"
-version = "0.4.34"
+version = "0.4.35"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -4344,9 +4345,9 @@ dependencies = [
 
 [[package]]
 name = "rustc-demangle"
-version = "0.1.26"
+version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56f7d92ca342cea22a06f2121d944b4fd82af56988c270852495420f961d4ace"
+checksum = "b50b8869d9fc858ce7266cce0194bd74df58b9d0e3f6df3a9fc8eb470d95c09d"
 
 [[package]]
 name = "rustc-hash"
@@ -4395,7 +4396,7 @@ dependencies = [
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.8",
+ "rustls-webpki 0.103.9",
  "subtle",
  "zeroize",
 ]
@@ -4436,9 +4437,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.13.2"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21e6f2ab2928ca4291b86736a8bd920a277a399bba1589409d72154ff87c1282"
+checksum = "be040f8b0a225e40375822a563fa9524378b9d63112f53e19ffff34df5d33fdd"
 dependencies = [
  "web-time",
  "zeroize",
@@ -4458,7 +4459,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs 0.8.3",
  "rustls-platform-verifier-android",
- "rustls-webpki 0.103.8",
+ "rustls-webpki 0.103.9",
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
@@ -4483,9 +4484,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.8"
+version = "0.103.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ffdfa2f5286e2247234e03f680868ac2815974dc39e00ea15adc445d0aafe52"
+checksum = "d7df23109aa6c1567d1c575b9952556388da57401e4ace1d15f79eedad0d8f53"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -5735,11 +5736,11 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasip2"
-version = "1.0.1+wasi-0.2.4"
+version = "1.0.2+wasi-0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0562428422c63773dad2c345a1882263bbf4d65cf3f42e90921f787ef5ad58e7"
+checksum = "9517f9239f02c069db75e65f174b3da828fe5f5b945c4dd26bd25d89c03ebcf5"
 dependencies = [
- "wit-bindgen 0.46.0",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -6583,12 +6584,6 @@ checksum = "5a5364e9d77fcdeeaa6062ced926ee3381faa2ee02d3eb83a5c27a8825540829"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.46.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
-
-[[package]]
-name = "wit-bindgen"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
@@ -6924,15 +6919,15 @@ dependencies = [
 
 [[package]]
 name = "zune-core"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "111f7d9820f05fd715df3144e254d6fc02ee4088b0644c0ffd0efc9e6d9d2773"
+checksum = "cb8a0807f7c01457d0379ba880ba6322660448ddebc890ce29bb64da71fb40f9"
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.8"
+version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e35aee689668bf9bd6f6f3a6c60bb29ba1244b3b43adfd50edd554a371da37d5"
+checksum = "87c86acb70a85b2c16f071f171847d1945e8f44812630463cd14ec83900ad01c"
 dependencies = [
  "zune-core",
 ]

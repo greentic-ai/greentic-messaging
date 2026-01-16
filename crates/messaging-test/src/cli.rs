@@ -15,6 +15,42 @@ pub struct Cli {
     #[arg(long)]
     pub dry_run: bool,
 
+    /// Pack files to load (repeatable); when set, run/all invoke pack adapters via runner
+    #[arg(long = "pack", value_name = "FILE", global = true)]
+    pub pack_paths: Vec<PathBuf>,
+
+    /// Packs root for resolving relative pack paths
+    #[arg(long = "packs-root", default_value = "packs", global = true)]
+    pub packs_root: PathBuf,
+
+    /// Runner invoke URL used for pack-based execution
+    #[arg(long = "runner-url", global = true)]
+    pub runner_url: Option<String>,
+
+    /// Runner API key for pack-based execution
+    #[arg(long = "runner-api-key", global = true)]
+    pub runner_api_key: Option<String>,
+
+    /// Environment identifier for pack-based messages
+    #[arg(long, default_value = "dev", global = true)]
+    pub env: String,
+
+    /// Tenant identifier for pack-based messages
+    #[arg(long, default_value = "ci", global = true)]
+    pub tenant: String,
+
+    /// Team identifier for pack-based messages
+    #[arg(long, default_value = "ci", global = true)]
+    pub team: String,
+
+    /// Chat identifier for pack-based messages
+    #[arg(long = "chat-id", global = true, allow_hyphen_values = true)]
+    pub chat_id: Option<String>,
+
+    /// Platform override for adapters with unknown platform
+    #[arg(long = "platform", global = true)]
+    pub platform: Option<String>,
+
     #[command(subcommand)]
     pub command: CliCommand,
 }
@@ -35,9 +71,9 @@ pub enum CliCommand {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Run all fixtures (dry-run only)
+    /// Run all fixtures (dry-run only in legacy renderer mode)
     All {
-        /// Dry-run mode (required)
+        /// Dry-run mode
         #[arg(long)]
         dry_run: bool,
     },
@@ -170,5 +206,39 @@ mod tests {
             }
             other => panic!("unexpected command parsed: {other:?}"),
         }
+    }
+
+    #[test]
+    fn pack_flags_parse_for_run() {
+        let cli = Cli::try_parse_from([
+            "cli",
+            "run",
+            "card.basic",
+            "--pack",
+            "/tmp/messaging-telegram.gtpack",
+            "--runner-url",
+            "http://localhost:8081/invoke",
+            "--chat-id",
+            "-100123456",
+            "--env",
+            "dev",
+            "--tenant",
+            "acme",
+            "--team",
+            "default",
+        ])
+        .expect("parse cli");
+        assert_eq!(
+            cli.pack_paths,
+            vec![PathBuf::from("/tmp/messaging-telegram.gtpack")]
+        );
+        assert_eq!(
+            cli.runner_url.as_deref(),
+            Some("http://localhost:8081/invoke")
+        );
+        assert_eq!(cli.chat_id.as_deref(), Some("-100123456"));
+        assert_eq!(cli.env, "dev");
+        assert_eq!(cli.tenant, "acme");
+        assert_eq!(cli.team, "default");
     }
 }

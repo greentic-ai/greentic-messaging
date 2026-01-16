@@ -1,15 +1,26 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
+use tokio::runtime::Runtime;
 
 use crate::adapters::{AdapterConfig, AdapterMode, AdapterTarget, registry_from_env};
 use crate::cli::{Cli, CliCommand, PacksCommand};
 use crate::fixtures::{Fixture, discover};
 use crate::packs::{self, PackRunReport};
-use gsm_core::messaging_card::MessageCardEngine;
+use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
+use gsm_core::{
+    AdapterDescriptor, AdapterRegistry, HttpRunnerClient, LoggingRunnerClient, OutKind, OutMessage,
+    Platform, RunnerClient, infer_platform_from_adapter_name, messaging_card::MessageCardEngine,
+};
+
+struct PackAdapter {
+    target: AdapterTarget,
+    descriptor: AdapterDescriptor,
+}
 
 pub struct RunContext {
     cli: Cli,
@@ -94,6 +105,9 @@ impl RunContext {
     }
 
     fn run_interactive(&self, fixture_id: &str, dry_run: bool) -> Result<()> {
+        if self.pack_mode_enabled() {
+            return self.run_interactive_pack(fixture_id, dry_run);
+        }
         let mut index = self.fixture_index(fixture_id)?;
         let mode = self.adapter_mode(Some(dry_run));
         let mut adapters = registry_from_env(mode);
@@ -121,6 +135,9 @@ impl RunContext {
     }
 
     fn run_all(&self, dry_run: bool) -> Result<()> {
+        if self.pack_mode_enabled() {
+            return self.run_all_pack(dry_run);
+        }
         if !dry_run {
             return Err(anyhow!("run all currently supports dry-run only"));
         }
@@ -348,7 +365,7 @@ impl RunContext {
         for (idx, adapter) in adapters.iter().enumerate() {
             println!(
                 "[{idx}] {name} ({status}){details}",
-                name = adapter.name,
+                name = adapter.name.as_str(),
                 status = if adapter.enabled {
                     "enabled"
                 } else {
@@ -397,7 +414,7 @@ impl RunContext {
         let spec = self.engine.render_spec(&card).context("render spec")?;
         for adapter in adapters {
             if !adapter.enabled {
-                println!(" - {}: disabled", adapter.name);
+                println!(" - {}: disabled", adapter.name.as_str());
                 continue;
             }
             let payload = if let Some(snapshot) = self
@@ -408,13 +425,13 @@ impl RunContext {
             } else {
                 println!(
                     " - {}: render snapshot not available for platform {}",
-                    adapter.name,
+                    adapter.name.as_str(),
                     adapter.platform.as_str()
                 );
                 continue;
             };
             self.persist_artifacts(fixture, adapter, &payload)?;
-            println!(" - {} -> recorded", adapter.name);
+            println!(" - {} -> recorded", adapter.name.as_str());
         }
         Ok(())
     }
@@ -428,7 +445,7 @@ impl RunContext {
         let base = PathBuf::from(".gsm-test")
             .join("artifacts")
             .join(&fixture.id)
-            .join(adapter.name);
+            .join(adapter.name.as_str());
         fs::create_dir_all(&base).context("create artifact dir")?;
         let translated = sorted_and_redacted(payload);
         fs::write(
@@ -447,6 +464,293 @@ impl RunContext {
         .context("write response payload")?;
         Ok(())
     }
+
+    fn run_interactive_pack(&self, fixture_id: &str, dry_run: bool) -> Result<()> {
+        let mut index = self.fixture_index(fixture_id)?;
+        let mode = self.adapter_mode(Some(dry_run));
+        let mut adapters = self.load_pack_adapters(mode)?;
+        let runtime = Self::build_runtime()?;
+        let runner = self.build_pack_runner(dry_run)?;
+        loop {
+            let fixture = &self.fixtures[index];
+            self.show_status_pack(fixture, &adapters, index)?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            match input.trim() {
+                "" | "r" => {
+                    self.process_fixture_pack(fixture, &mut adapters, &runtime, runner.as_ref())?
+                }
+                "n" => index = (index + 1) % self.fixtures.len(),
+                "p" => {
+                    index = if index == 0 {
+                        self.fixtures.len() - 1
+                    } else {
+                        index - 1
+                    }
+                }
+                "a" => self.toggle_pack_adapters(&mut adapters)?,
+                "q" => break,
+                cmd => println!("Unknown command: {cmd}"),
+            }
+        }
+        Ok(())
+    }
+
+    fn run_all_pack(&self, dry_run: bool) -> Result<()> {
+        let mode = self.adapter_mode(Some(dry_run));
+        let mut adapters = self.load_pack_adapters(mode)?;
+        let runtime = Self::build_runtime()?;
+        let runner = self.build_pack_runner(dry_run)?;
+        for fixture in &self.fixtures {
+            self.process_fixture_pack(fixture, &mut adapters, &runtime, runner.as_ref())?;
+        }
+        Ok(())
+    }
+
+    fn show_status_pack(
+        &self,
+        fixture: &Fixture,
+        adapters: &[PackAdapter],
+        index: usize,
+    ) -> Result<()> {
+        println!("------------------------------");
+        println!(
+            "Fixture [{}/{}]: {}",
+            index + 1,
+            self.fixtures.len(),
+            fixture.id
+        );
+        println!("Path: {}", fixture.path.display());
+        for (idx, adapter) in adapters.iter().enumerate() {
+            println!(
+                "[{idx}] {name} ({status}){details}",
+                name = adapter.target.name.as_str(),
+                status = if adapter.target.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
+                details = adapter
+                    .target
+                    .reason
+                    .as_ref()
+                    .map(|reason| format!(" - {reason}"))
+                    .unwrap_or_default()
+            );
+        }
+        println!("Commands: Enter=send, r=resend, n=next, p=prev, a=toggle, q=quit");
+        Ok(())
+    }
+
+    fn toggle_pack_adapters(&self, adapters: &mut [PackAdapter]) -> Result<()> {
+        println!("Enter indexes (comma) to toggle or 'all':");
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+        if trimmed.eq_ignore_ascii_case("all") {
+            for adapter in adapters {
+                adapter.target.enabled = !adapter.target.enabled;
+            }
+            return Ok(());
+        }
+        for part in trimmed.split(',') {
+            let idx = match part.trim().parse::<usize>() {
+                Ok(i) => i,
+                Err(_) => continue,
+            };
+            if let Some(adapter) = adapters.get_mut(idx) {
+                adapter.target.enabled = !adapter.target.enabled;
+            }
+        }
+        Ok(())
+    }
+
+    fn process_fixture_pack(
+        &self,
+        fixture: &Fixture,
+        adapters: &mut [PackAdapter],
+        runtime: &Runtime,
+        runner: &dyn RunnerClient,
+    ) -> Result<()> {
+        println!("Processing {}", fixture.id);
+        let chat_id = self.pack_chat_id()?;
+        for adapter in adapters {
+            if !adapter.target.enabled {
+                println!(" - {}: disabled", adapter.target.name.as_str());
+                continue;
+            }
+            let out = self.build_out_message(fixture, adapter.target.platform.clone(), &chat_id);
+            self.persist_pack_artifacts(fixture, adapter, &out)?;
+            runtime
+                .block_on(runner.invoke_adapter(&out, &adapter.descriptor))
+                .with_context(|| {
+                    format!(
+                        "runner invocation failed for {}",
+                        adapter.target.name.as_str()
+                    )
+                })?;
+            println!(" - {} -> sent", adapter.target.name.as_str());
+        }
+        Ok(())
+    }
+
+    fn load_pack_adapters(&self, mode: AdapterMode) -> Result<Vec<PackAdapter>> {
+        let registry = self.load_pack_registry()?;
+        let mut adapters = Vec::new();
+        let platform_override = self
+            .cli
+            .platform
+            .as_deref()
+            .map(|value| value.parse::<Platform>())
+            .transpose()
+            .context("invalid --platform")?;
+        for descriptor in registry.all() {
+            if !descriptor.allows_egress() {
+                continue;
+            }
+            let platform = self
+                .infer_platform(&descriptor.name)
+                .or(platform_override.clone())
+                .ok_or_else(|| {
+                    anyhow!(
+                        "unable to infer platform for adapter {}; use --platform",
+                        descriptor.name
+                    )
+                })?;
+            adapters.push(PackAdapter {
+                target: AdapterTarget {
+                    name: descriptor.name.clone(),
+                    platform,
+                    enabled: true,
+                    reason: None,
+                    mode,
+                },
+                descriptor,
+            });
+        }
+        if adapters.is_empty() {
+            return Err(anyhow!(
+                "no egress adapters found in packs; ensure the pack exposes adapters"
+            ));
+        }
+        Ok(adapters)
+    }
+
+    fn load_pack_registry(&self) -> Result<AdapterRegistry> {
+        if self.cli.pack_paths.is_empty() {
+            return Err(anyhow!("no pack paths provided"));
+        }
+        AdapterRegistry::load_from_paths(&self.cli.packs_root, &self.cli.pack_paths)
+            .context("load pack adapters")
+    }
+
+    fn infer_platform(&self, name: &str) -> Option<Platform> {
+        infer_platform_from_adapter_name(name).or_else(|| infer_platform_from_tokens(name))
+    }
+
+    fn pack_chat_id(&self) -> Result<String> {
+        self.cli
+            .chat_id
+            .clone()
+            .ok_or_else(|| anyhow!("--chat-id is required for pack-based runs"))
+    }
+
+    fn build_out_message(
+        &self,
+        fixture: &Fixture,
+        platform: Platform,
+        chat_id: &str,
+    ) -> OutMessage {
+        let mut meta = BTreeMap::new();
+        meta.insert("fixture_id".to_string(), Value::String(fixture.id.clone()));
+        let ctx = build_tenant_ctx(&self.cli.env, &self.cli.tenant, &self.cli.team);
+        OutMessage {
+            ctx,
+            tenant: self.cli.tenant.clone(),
+            platform,
+            chat_id: chat_id.to_string(),
+            thread_id: None,
+            kind: OutKind::Card,
+            text: None,
+            message_card: None,
+            adaptive_card: Some(fixture.card.clone()),
+            meta,
+        }
+    }
+
+    fn persist_pack_artifacts(
+        &self,
+        fixture: &Fixture,
+        adapter: &PackAdapter,
+        out: &OutMessage,
+    ) -> Result<()> {
+        let base = PathBuf::from(".gsm-test")
+            .join("artifacts")
+            .join(&fixture.id)
+            .join(adapter.target.name.as_str());
+        fs::create_dir_all(&base).context("create artifact dir")?;
+        let payload = json!({
+            "adapter": {
+                "name": adapter.descriptor.name.as_str(),
+                "component": adapter.descriptor.component.as_str(),
+                "flow": adapter.descriptor.flow_path(),
+            },
+            "message": out,
+        });
+        fs::write(
+            base.join("invocation.json"),
+            serde_json::to_string_pretty(&payload)?,
+        )
+        .context("write invocation payload")?;
+        Ok(())
+    }
+
+    fn build_pack_runner(&self, dry_run: bool) -> Result<Box<dyn RunnerClient>> {
+        if dry_run {
+            return Ok(Box::new(LoggingRunnerClient));
+        }
+        let url = self
+            .cli
+            .runner_url
+            .clone()
+            .ok_or_else(|| anyhow!("--runner-url is required for pack-based runs"))?;
+        let client = HttpRunnerClient::new(url, self.cli.runner_api_key.clone())?;
+        Ok(Box::new(client))
+    }
+
+    fn pack_mode_enabled(&self) -> bool {
+        !self.cli.pack_paths.is_empty()
+    }
+
+    fn build_runtime() -> Result<Runtime> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .context("build async runtime")
+    }
+}
+
+fn infer_platform_from_tokens(name: &str) -> Option<Platform> {
+    let lowered = name.to_ascii_lowercase();
+    for (token, platform) in [
+        ("slack", Platform::Slack),
+        ("teams", Platform::Teams),
+        ("telegram", Platform::Telegram),
+        ("whatsapp", Platform::WhatsApp),
+        ("webchat", Platform::WebChat),
+        ("webex", Platform::Webex),
+    ] {
+        if lowered.contains(token) {
+            return Some(platform);
+        }
+    }
+    None
+}
+
+fn build_tenant_ctx(env: &str, tenant: &str, team: &str) -> TenantCtx {
+    let mut ctx = TenantCtx::new(EnvId(env.to_string()), TenantId(tenant.to_string()));
+    ctx = ctx.with_team(Some(TeamId(team.to_string())));
+    ctx
 }
 
 fn sorted_and_redacted(value: &Value) -> Value {

@@ -235,11 +235,11 @@ mod webchat {
                 |s: &mut HostState| s,
             )
             .expect("linker");
-            let mut store = Store::new(&engine, HostState::default());
+            let mut store = Store::new(&engine, HostState);
             let bindings =
                 bindings::Webchat::instantiate(&mut store, &component, &linker).expect("inst");
             bindings
-                .call_init_runtime_config(&mut store, "{}".into())
+                .call_init_runtime_config(&mut store, "{}")
                 .expect("init call")
                 .expect("init runtime config");
             Self { store, bindings }
@@ -319,6 +319,12 @@ impl WebchatHarness {
 
     pub fn encode(&mut self, plan: &RenderPlan) -> EncodedPayload {
         self.inner.encode(plan)
+    }
+}
+
+impl Default for WebchatHarness {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -11,5 +11,6 @@ pub fn add_host_imports<T>(linker: &mut Linker<T>) -> Result<()>
 where
     T: runner_host_v1::RunnerHost + Send + Sync + 'static,
 {
-    runner_host_v1::add_to_linker(linker, |host| host).map_err(Into::into)
+    runner_host_v1::add_to_linker(linker, |host| host)?;
+    Ok(())
 }

@@ -181,6 +181,7 @@ fn materialize_components(
             cache_dir: components_root.to_path_buf(),
             allow_tags: opts.allow_tags,
             offline: opts.offline,
+            allow_insecure_local_http: false,
         };
         let client = DistClient::new(dist_opts);
         let mut runtime = None;

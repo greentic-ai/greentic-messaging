@@ -34,11 +34,16 @@
   **Key functionality:** Provider manifest parsing, builder hooks, outbox idempotency keys, adapter traits for send/receive pipelines.
 - **Path:** `libs/telemetry`, `libs/testutil`, `libs/backpressure`, `libs/dlq`, `libs/idempotency`, `libs/security`
   **Role:** Supporting utilities for telemetry, testing fixtures/mocks, rate limiting, DLQ, idempotency, and security primitives shared across binaries.
-- **Path:** `apps/ingress-*` (`ingress-slack`, `ingress-teams`, `ingress-telegram`, `ingress-webchat`, `ingress-webex`, `ingress-whatsapp`)
-  **Role:** HTTP ingress services per platform that validate requests (signing secrets/tokens), enforce idempotency, record telemetry, attach sessions, normalize events into `InvocationEnvelope`, and publish to NATS subjects. WebChat ingress also handles Direct Line polling and session wiring.
-- **Path:** `apps/egress-*` (`egress-slack`, `egress-teams`, `egress-telegram`, `egress-webchat`, `egress-webex`, `egress-whatsapp`)
-  **Role:** JetStream consumers that pop `OutMessage` payloads, apply rate limiting, translate via `gsm-translator` or platform senders, send to provider APIs, and publish DLQ entries on failure. OAuth-aware rendering for cards where applicable.
-  **Key dependencies / integration points:** Use `apps/egress-common` for JetStream consumer bootstrap and telemetry helpers; rely on `gsm-translator`, per-platform sender structs, DLQ/backpressure/idempotency crates.
+- **Path:** `apps/ingress-common`
+  **Role:** Shared middleware, telemetry, and rate limiting used by ingress services.
+- **Path:** `apps/egress-common`
+  **Role:** Shared JetStream consumer bootstrap and telemetry helpers for egress workers.
+- **Path:** `apps/messaging-gateway`
+  **Role:** Pack-aware HTTP ingress gateway that normalizes inbound traffic and publishes to NATS subjects.
+- **Path:** `apps/messaging-egress`
+  **Role:** Pack-aware JetStream worker that invokes greentic-runner and publishes outbound envelopes.
+- **Path:** `legacy/apps/*`
+  **Role:** Per-platform ingress/egress binaries retained for migration (Slack/Teams/Telegram/WebChat/Webex/WhatsApp).
 - **Path:** `apps/runner`
   **Role:** Flow orchestrator that loads YAML-defined flows, executes QA/tool/template/card nodes, maintains per-user session state, and emits `OutMessage` to NATS out-subjects.
   **Key functionality:** Handlebars templating, tool execution, session persistence via greentic-session, DLQ replay handling, auth card telemetry.
@@ -67,8 +72,10 @@
 
 ## 4. Broken, Failing, or Conflicting Areas
 - **Location:** None
-  **Evidence:** Latest `cargo test --workspace` run passes.
+  **Evidence:** `cargo test --workspace` passes in this checkout.
   **Likely cause / nature of issue:** N/A.
 
 ## 5. Notes for Future Work
 - Provider migration to WASM components is tracked via parity dossiers under `.codex/providers/PROVIDER_PARITY_INDEX.md`.
+- Added pack-backed fixture execution to `greentic-messaging-test` run/all when `--pack` is provided, invoking adapters via greentic-runner.
+- New CLI flags for pack-backed runs: `--pack`, `--packs-root`, `--runner-url`, `--runner-api-key`, `--env`, `--tenant`, `--team`, `--chat-id`, `--platform`.

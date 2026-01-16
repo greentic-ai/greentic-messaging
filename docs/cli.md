@@ -113,6 +113,17 @@ greentic-messaging test adapters
 greentic-messaging test run oauth_slack --dry-run
 greentic-messaging test all --dry-run   # hard requirement enforced by the CLI
 greentic-messaging test gen-golden
+# Pack-backed fixture execution (invoke adapters via runner)
+greentic-messaging test run card.basic \
+  --pack /abs/path/to/messaging-telegram.gtpack \
+  --runner-url http://localhost:8081/invoke \
+  --chat-id -100123456 \
+  --env dev --tenant acme --team default
+greentic-messaging test all \
+  --pack /abs/path/to/messaging-telegram.gtpack \
+  --runner-url http://localhost:8081/invoke \
+  --chat-id -100123456 \
+  --env dev --tenant acme --team default
 # gtpack-aware smoke checks
 greentic-messaging test packs list --packs dist/packs
 greentic-messaging test packs run dist/packs/messaging-telegram.gtpack --dry-run --env dev --tenant ci --team ci

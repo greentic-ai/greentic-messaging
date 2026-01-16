@@ -25,7 +25,7 @@ pub enum AdapterMode {
 }
 
 pub struct AdapterTarget {
-    pub name: &'static str,
+    pub name: String,
     pub platform: Platform,
     pub enabled: bool,
     pub reason: Option<String>,
@@ -34,14 +34,14 @@ pub struct AdapterTarget {
 
 impl AdapterTarget {
     fn new(
-        name: &'static str,
+        name: &str,
         platform: Platform,
         enabled: bool,
         reason: Option<String>,
         mode: AdapterMode,
     ) -> Self {
         Self {
-            name,
+            name: name.to_string(),
             platform,
             enabled,
             reason,
