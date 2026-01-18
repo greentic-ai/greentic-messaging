@@ -10,3 +10,4 @@ node_modules/
 .gsm-test/
 tmpfile
 .greentic/
+_evidence/

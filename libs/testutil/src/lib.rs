@@ -47,7 +47,6 @@ impl TestConfig {
         let env = env::var("GREENTIC_ENV").ok();
         let tenant = env::var("TENANT").ok();
         let team = env::var("TEAM").ok();
-        let upper = platform.to_ascii_uppercase();
 
         if let Some(credentials) = load_seed_credentials(platform)? {
             let secret_uri =
@@ -62,141 +61,8 @@ impl TestConfig {
             }));
         }
 
-        let disable_env = env::var("MESSAGING_DISABLE_ENV")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        let disable_secrets_root = env::var("MESSAGING_DISABLE_SECRETS_ROOT")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
-        if !disable_env && let Some(credentials) = load_env_credentials(&upper)? {
-            eprintln!(
-                "warning: using env-based credentials for {platform}; prefer greentic-secrets seed files (set MESSAGING_DISABLE_ENV=1 to forbid)"
-            );
-            let secret_uri =
-                build_secret_uri(env.as_deref(), tenant.as_deref(), team.as_deref(), platform);
-            return Ok(Some(Self {
-                platform: platform.to_string(),
-                env,
-                tenant,
-                team,
-                credentials: Some(credentials),
-                secret_uri,
-            }));
-        }
-
-        if !disable_secrets_root
-            && let Some(credentials) = load_secret_credentials(
-                platform,
-                env.as_deref(),
-                tenant.as_deref(),
-                team.as_deref(),
-            )?
-        {
-            eprintln!(
-                "warning: using GREENTIC_SECRETS_DIR/SECRETS_ROOT fallback for {platform}; prefer greentic-secrets seed files (set MESSAGING_DISABLE_SECRETS_ROOT=1 to forbid)"
-            );
-            let secret_uri =
-                build_secret_uri(env.as_deref(), tenant.as_deref(), team.as_deref(), platform);
-            return Ok(Some(Self {
-                platform: platform.to_string(),
-                env,
-                tenant,
-                team,
-                credentials: Some(credentials),
-                secret_uri,
-            }));
-        }
-
-        if disable_env || disable_secrets_root {
-            eprintln!(
-                "info: env/SECRETS_ROOT fallbacks disabled via MESSAGING_DISABLE_ENV={} MESSAGING_DISABLE_SECRETS_ROOT={}",
-                disable_env, disable_secrets_root
-            );
-        }
-
         Ok(None)
     }
-}
-
-fn load_env_credentials(key: &str) -> Result<Option<Value>> {
-    let var = format!("MESSAGING_{key}_CREDENTIALS");
-    if let Ok(raw) = env::var(&var) {
-        if raw.trim().is_empty() {
-            return Ok(None);
-        }
-        let json = serde_json::from_str(&raw).with_context(|| format!("failed to parse {var}"))?;
-        return Ok(Some(json));
-    }
-
-    let path_var = format!("MESSAGING_{key}_CREDENTIALS_PATH");
-    if let Ok(path) = env::var(&path_var) {
-        let credentials_path = PathBuf::from(path);
-        let safe_path = absolute_path(credentials_path)?;
-        let content = fs::read_to_string(&safe_path)
-            .with_context(|| format!("failed to read {}", safe_path.display()))?;
-        let json = serde_json::from_str(&content)
-            .with_context(|| format!("failed to parse {}", safe_path.display()))?;
-        return Ok(Some(json));
-    }
-
-    Ok(None)
-}
-
-fn load_secret_credentials(
-    platform: &str,
-    env: Option<&str>,
-    tenant: Option<&str>,
-    team: Option<&str>,
-) -> Result<Option<Value>> {
-    let env = match env {
-        Some(value) => value,
-        None => return Ok(None),
-    };
-    let tenant = match tenant {
-        Some(value) => value,
-        None => return Ok(None),
-    };
-    let team = team.unwrap_or("default");
-
-    let root = match env::var("GREENTIC_SECRETS_DIR").or_else(|_| env::var("SECRETS_ROOT")) {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
-    };
-
-    let root = PathBuf::from(root)
-        .canonicalize()
-        .with_context(|| "failed to canonicalize secrets root")?;
-    let base = Path::new(env).join(tenant).join(team).join("messaging");
-
-    // Preferred filename (post-migration): messaging/<platform>.credentials.json
-    let primary = path_safety::normalize_under_root(
-        &root,
-        &base.join(format!("{platform}.credentials.json")),
-    )?;
-    // Legacy filename (pre-migration): messaging/<platform>-<team>-credentials.json
-    let legacy = path_safety::normalize_under_root(
-        &root,
-        &base.join(format!("{platform}-{team}-credentials.json")),
-    )?;
-
-    let file = if primary.exists() {
-        primary
-    } else if legacy.exists() {
-        eprintln!(
-            "warning: using legacy secrets path {}; prefer messaging/<platform>.credentials.json",
-            legacy.display()
-        );
-        legacy
-    } else {
-        return Ok(None);
-    };
-
-    let content =
-        fs::read_to_string(&file).with_context(|| format!("failed to read {}", file.display()))?;
-    let json = serde_json::from_str(&content)
-        .with_context(|| format!("failed to parse {}", file.display()))?;
-    Ok(Some(json))
 }
 
 /// Load credentials from a greentic-secrets seed file when specified.

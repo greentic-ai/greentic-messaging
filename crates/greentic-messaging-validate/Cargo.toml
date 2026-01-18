@@ -1,0 +1,17 @@
+[package]
+name = "greentic-messaging-validate"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Messaging pack validators for Greentic provider packs."
+repository = "https://github.com/greentic-ai/greentic-messaging"
+homepage = "https://github.com/greentic-ai/greentic-messaging"
+readme = "../../README.md"
+
+[dependencies]
+greentic-types = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+semver = "1"

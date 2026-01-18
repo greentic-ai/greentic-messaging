@@ -1,9 +1,12 @@
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
+use greentic_config::ConfigResolver;
+use greentic_config_types::{GreenticConfig, ServiceTransportConfig};
 use greentic_types::EnvId;
-use gsm_core::WorkerTransport;
+use gsm_core::DefaultAdapterPacksConfig;
 
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
@@ -14,54 +17,75 @@ pub struct GatewayConfig {
     pub subject_prefix: String,
     pub worker_routing: Option<gsm_core::WorkerRoutingConfig>,
     pub worker_routes: std::collections::BTreeMap<String, gsm_core::WorkerRoutingConfig>,
-    pub worker_egress_subject: Option<String>,
+    pub packs_root: PathBuf,
+    pub default_packs: DefaultAdapterPacksConfig,
+    pub extra_pack_paths: Vec<PathBuf>,
 }
 
 impl GatewayConfig {
-    pub fn from_env() -> Result<Self> {
-        let env = EnvId(std::env::var("GREENTIC_ENV").unwrap_or_else(|_| "dev".into()));
-        let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-        let default_addr =
-            std::env::var("MESSAGING_GATEWAY_ADDR").unwrap_or_else(|_| "0.0.0.0".into());
-        let port = std::env::var("MESSAGING_GATEWAY_PORT")
-            .ok()
-            .and_then(|value| value.parse::<u16>().ok())
-            .unwrap_or(8080);
-        let ip = IpAddr::from_str(&default_addr).context("invalid MESSAGING_GATEWAY_ADDR")?;
-        let worker_routes = gsm_core::worker_routes_from_env();
-        let worker_routing = {
-            let enabled = std::env::var("REPO_WORKER_ENABLE")
-                .ok()
-                .map(|v| v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false);
-            if enabled {
-                let cfg = gsm_core::WorkerRoutingConfig::from_env();
-                if cfg.transport == WorkerTransport::Http
-                    && cfg.http_url.as_deref().map(str::is_empty).unwrap_or(true)
-                {
-                    bail!("REPO_WORKER_HTTP_URL must be set when REPO_WORKER_TRANSPORT=http");
-                }
-                Some(cfg)
-            } else {
-                None
-            }
-        };
+    pub fn load() -> Result<Self> {
+        let resolved = ConfigResolver::new().load()?;
+        Self::from_config(&resolved.config)
+    }
+
+    pub fn from_config(config: &GreenticConfig) -> Result<Self> {
+        let env = config.environment.env_id.clone();
+        let (nats_url, subject_prefix_override) =
+            nats_settings(config)?.unwrap_or_else(|| ("nats://127.0.0.1:4222".to_string(), None));
+        let (bind_addr, port) = gateway_bind_addr(config);
+        let ip = IpAddr::from_str(&bind_addr).context("invalid gateway bind addr")?;
+        let worker_routes = std::collections::BTreeMap::new();
+        let worker_routing = None;
+        let packs_root = config.paths.greentic_root.join("packs");
         Ok(Self {
-            env: env.clone(),
+            env,
             nats_url,
             addr: SocketAddr::new(ip, port),
-            default_team: std::env::var("MESSAGING_GATEWAY_DEFAULT_TEAM")
-                .unwrap_or_else(|_| "default".into()),
-            subject_prefix: std::env::var("MESSAGING_INGRESS_SUBJECT_PREFIX")
-                .unwrap_or_else(|_| gsm_bus::INGRESS_SUBJECT_PREFIX.to_string()),
+            default_team: config
+                .dev
+                .as_ref()
+                .and_then(|dev| dev.default_team.clone())
+                .unwrap_or_else(|| "default".into()),
+            subject_prefix: subject_prefix_override
+                .unwrap_or_else(|| gsm_core::INGRESS_SUBJECT_PREFIX.to_string()),
             worker_routing,
             worker_routes,
-            worker_egress_subject: {
-                let base = std::env::var("MESSAGING_EGRESS_SUBJECT")
-                    .unwrap_or_else(|_| format!("greentic.messaging.egress.{}", env.0.clone()));
-                let trimmed = base.trim_end_matches('>').trim_end_matches('.');
-                Some(format!("{trimmed}.repo-worker"))
-            },
+            packs_root,
+            default_packs: DefaultAdapterPacksConfig::default(),
+            extra_pack_paths: Vec::new(),
         })
+    }
+}
+
+fn gateway_bind_addr(config: &GreenticConfig) -> (String, u16) {
+    let service = config
+        .services
+        .as_ref()
+        .and_then(|services| services.source.as_ref())
+        .and_then(|svc| svc.service.as_ref());
+    let addr = service
+        .and_then(|svc| svc.bind_addr.as_deref())
+        .unwrap_or("0.0.0.0")
+        .to_string();
+    let port = service.and_then(|svc| svc.port).unwrap_or(8080);
+    (addr, port)
+}
+
+fn nats_settings(config: &GreenticConfig) -> Result<Option<(String, Option<String>)>> {
+    let transport = config
+        .services
+        .as_ref()
+        .and_then(|services| services.events_transport.as_ref())
+        .and_then(|svc| svc.transport.as_ref());
+    match transport {
+        Some(ServiceTransportConfig::Nats {
+            url,
+            subject_prefix,
+        }) => Ok(Some((url.to_string(), subject_prefix.clone()))),
+        Some(ServiceTransportConfig::Http { .. }) => {
+            bail!("services.events_transport must use NATS for messaging gateway");
+        }
+        Some(ServiceTransportConfig::Noop) => Ok(None),
+        None => Ok(None),
     }
 }

@@ -1,5 +1,3 @@
-use std::env;
-
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use reqwest::{Client, Url};
@@ -78,12 +76,6 @@ impl<T: StartTransport> OauthClient<T> {
 impl OauthClient<ReqwestTransport> {
     pub fn new(http: Client, base_url: Url) -> Self {
         Self::with_transport(ReqwestTransport::new(http), base_url)
-    }
-
-    pub fn from_env(http: Client) -> Result<Self> {
-        let raw = env::var("OAUTH_BASE_URL").context("OAUTH_BASE_URL must be set")?;
-        let base_url = Url::parse(&raw).context("invalid OAUTH_BASE_URL")?;
-        Ok(Self::new(http, base_url))
     }
 }
 

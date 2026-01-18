@@ -43,15 +43,13 @@ fn envelope_invalid_timestamp() {
 #[test]
 fn subjects_helpers_ok() {
     assert_eq!(
-        in_subject("acme", "teams", "chat/42"),
-        "greentic.msg.in.acme.teams.chat-42"
+        ingress_subject("dev", "acme", "team", "slack"),
+        "greentic.messaging.ingress.dev.acme.team.slack"
     );
     assert_eq!(
-        out_subject("acme", "telegram", "a b"),
-        "greentic.msg.out.acme.telegram.a-b"
+        egress_subject("dev", "acme", "team a", "web chat"),
+        "greentic.messaging.egress.dev.acme.team-a.web-chat"
     );
-    assert!(dlq_subject("out", "t", "p").starts_with("greentic.msg.dlq.out."));
-    assert!(subs_subject("events", "t", "p").starts_with("greentic.subs.events."));
 }
 
 #[test]
@@ -88,58 +86,18 @@ fn out_text_and_card_validate() {
 #[test]
 fn current_env_defaults_to_dev() {
     let _guard = env_lock().lock().unwrap();
-    let prev = std::env::var("GREENTIC_ENV").ok();
-    unsafe {
-        std::env::remove_var("GREENTIC_ENV");
-    }
+    let prev = current_env();
+    set_current_env(EnvId::try_from("dev").expect("valid env id"));
     let env = current_env();
     assert_eq!(env.as_str(), "dev");
-    if let Some(prev) = prev {
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", prev);
-        }
-    }
-}
-
-#[test]
-fn provider_key_hash_matches() {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let key_a = ProviderKey {
-        platform: Platform::Teams,
-        env: EnvId("prod".into()),
-        tenant: TenantId("acme".into()),
-        team: Some(TeamId("alpha".into())),
-    };
-    let key_b = ProviderKey {
-        platform: Platform::Teams,
-        env: EnvId("prod".into()),
-        tenant: TenantId("acme".into()),
-        team: Some(TeamId("alpha".into())),
-    };
-    assert_eq!(key_a, key_b);
-
-    let mut hasher_a = DefaultHasher::new();
-    key_a.hash(&mut hasher_a);
-    let mut hasher_b = DefaultHasher::new();
-    key_b.hash(&mut hasher_b);
-    assert_eq!(hasher_a.finish(), hasher_b.finish());
-
-    let key_c = ProviderKey {
-        team: Some(TeamId("beta".into())),
-        ..key_a.clone()
-    };
-    assert_ne!(key_a, key_c);
+    set_current_env(prev);
 }
 
 #[test]
 fn messaging_credentials_path_includes_env() {
     let _guard = env_lock().lock().unwrap();
-    let prev = std::env::var("GREENTIC_ENV").ok();
-    unsafe {
-        std::env::set_var("GREENTIC_ENV", "test");
-    }
+    let prev = current_env();
+    set_current_env(EnvId::try_from("test").expect("valid env id"));
 
     let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), Some("user-9".into()));
     let secret = messaging_credentials("telegram", &ctx);
@@ -152,15 +110,7 @@ fn messaging_credentials_path_includes_env() {
     assert!(rendered.contains("/acme/"));
     assert!(rendered.contains("/team-1/"));
 
-    if let Some(prev) = prev {
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", prev);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var("GREENTIC_ENV");
-        }
-    }
+    set_current_env(prev);
 }
 
 #[test]
@@ -199,10 +149,8 @@ fn teams_conversations_secret_includes_scope() {
 #[test]
 fn webex_credentials_path_includes_scope() {
     let _guard = env_lock().lock().unwrap();
-    let prev = std::env::var("GREENTIC_ENV").ok();
-    unsafe {
-        std::env::set_var("GREENTIC_ENV", "dev");
-    }
+    let prev = current_env();
+    set_current_env(EnvId::try_from("dev").expect("valid env id"));
 
     let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
     let path = webex_credentials(&ctx);
@@ -212,15 +160,7 @@ fn webex_credentials_path_includes_scope() {
         "secrets://dev/acme/team-1/messaging/webex.credentials.json"
     );
 
-    if let Some(prev) = prev {
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", prev);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var("GREENTIC_ENV");
-        }
-    }
+    set_current_env(prev);
 }
 
 #[test]

@@ -18,23 +18,21 @@ pub mod ingress;
 pub mod interfaces;
 #[cfg(feature = "adaptive-cards")]
 pub mod messaging_card;
+pub mod messaging_subjects;
 pub mod oauth;
 pub mod outbound;
 pub mod pack_extensions;
 pub mod path_safety;
 pub mod platforms;
 pub mod prelude;
-pub mod provider;
 pub mod provider_capabilities;
 pub mod provider_ops;
 pub mod provider_registry;
-pub mod registry;
 pub mod render_mode;
 pub mod render_plan;
 pub mod render_planner;
 pub mod runner_client;
 pub mod secrets_paths;
-pub mod subjects;
 pub mod telemetry;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
@@ -75,24 +73,22 @@ pub use messaging_card::{
     telemetry::{CardTelemetry, NullTelemetry, TelemetryEvent, TelemetryHook},
     tier::{Tier, TierPolicy},
 };
+pub use messaging_subjects::*;
 pub use outbound::*;
 pub use pack_extensions::*;
 pub use platforms::*;
 pub use prelude::*;
-pub use provider::*;
 pub use provider_capabilities::*;
 pub use provider_ops::{
     AttachmentInput, IngestInput, IngestOutput, MessageEnvelope as ProviderMessageEnvelope,
     ReplyInput, ReplyMetadata, ReplyOutput, SendInput, SendMetadata, SendOutput, SendStatus,
 };
 pub use provider_registry::{CapsSource, ProviderCapsRegistry, ProviderRecord};
-pub use registry::*;
 pub use render_mode::*;
 pub use render_plan::*;
 pub use render_planner::*;
 pub use runner_client::*;
 pub use secrets_paths::*;
-pub use subjects::*;
 pub use telemetry::*;
 #[cfg(any(test, feature = "testkit"))]
 pub use testkit::*;

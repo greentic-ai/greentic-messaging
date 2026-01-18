@@ -9,6 +9,14 @@ repository = "https://github.com/greentic-ai/greentic-messaging"
 homepage = "https://github.com/greentic-ai/greentic-messaging"
 publish = false
 
+[features]
+legacy = []
+
+[[bin]]
+name = "gsm-ingress-whatsapp"
+path = "src/main.rs"
+required-features = ["legacy"]
+
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
@@ -19,7 +27,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 async-nats = { workspace = true }
 time = { workspace = true }
-gsm-core = { path = "../../libs/core" }
+gsm-core = { path = "../../libs/core", features = ["legacy"] }
 gsm-idempotency = { path = "../../libs/idempotency" }
 gsm-ingress-common = { path = "../ingress-common" }
 gsm-dlq = { path = "../../libs/dlq" }

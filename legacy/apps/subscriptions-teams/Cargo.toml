@@ -9,6 +9,14 @@ repository = "https://github.com/greentic-ai/greentic-messaging"
 homepage = "https://github.com/greentic-ai/greentic-messaging"
 publish = false
 
+[features]
+legacy = []
+
+[[bin]]
+name = "gsm-subscriptions-teams"
+path = "src/main.rs"
+required-features = ["legacy"]
+
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }

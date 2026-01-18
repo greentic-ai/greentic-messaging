@@ -142,6 +142,7 @@ where
 mod tests {
     use super::*;
     use crate::make_tenant_ctx;
+    use crate::{current_env, set_current_env};
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -187,10 +188,8 @@ mod tests {
 
     #[tokio::test]
     async fn loads_credentials_and_returns_mock() {
-        let prev_env = std::env::var("GREENTIC_ENV").ok();
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
         let ctx = make_tenant_ctx("acme".into(), Some("team1".into()), None);
         let secrets = Arc::new(InMemorySecrets::default());
         let path = messaging_credentials("whatsapp", &ctx);
@@ -220,15 +219,7 @@ mod tests {
             .unwrap();
         assert_eq!(res.message_id.as_deref(), Some("mock:123"));
 
-        if let Some(env) = prev_env {
-            unsafe {
-                std::env::set_var("GREENTIC_ENV", env);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("GREENTIC_ENV");
-            }
-        }
+        set_current_env(prev_env);
     }
 
     #[tokio::test]

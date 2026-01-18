@@ -30,13 +30,14 @@ const MAX_ATTEMPTS: usize = 3;
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let env = std::env::var("GREENTIC_ENV").unwrap_or_else(|_| "dev".into());
     #[cfg(feature = "mock-http")]
     // Short-circuit outbound Webex traffic during tests.
     let api_base = Some("mock://webex".into());
     #[cfg(not(feature = "mock-http"))]
     let api_base = std::env::var("WEBEX_API_BASE").ok();
 
-    let queue = bootstrap(&nats_url, Platform::Webex.as_str()).await?;
+    let queue = bootstrap(&nats_url, &env, Platform::Webex.as_str()).await?;
     info!(stream = %queue.stream, consumer = %queue.consumer, "egress-webex consuming from JetStream");
 
     let dlq = Arc::new(DlqPublisher::new("egress", queue.client()).await?);

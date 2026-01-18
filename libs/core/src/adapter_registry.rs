@@ -160,8 +160,8 @@ fn adapters_from_gtpack(path: &Path) -> Result<Vec<AdapterDescriptor>> {
         .map_err(|err| anyhow!(err.message))
         .with_context(|| format!("failed to open {}", path.display()))?;
     // Greentic pack reader converts gpack manifests into PackManifest and drops extensions.
-    // Re-read the raw manifest to recover provider extensions while keeping legacy messaging
-    // adapters for compatibility.
+    // Re-read the raw manifest to recover provider extensions while keeping messaging adapters
+    // for compatibility.
     // Pull manifest.cbor out of the archive without full validation to avoid reimplementing
     // the reader; fall back to the already-parsed manifest if extraction fails.
     let raw_manifest = zip_manifest_bytes(path);
@@ -226,19 +226,19 @@ fn extract_from_sources(
         }
     }
 
-    let legacy = extract_from_legacy_messaging(pack_id, pack_version, messaging, source)?;
-    if !legacy.is_empty() {
+    let messaging_adapters = extract_from_pack_messaging(pack_id, pack_version, messaging, source)?;
+    if !messaging_adapters.is_empty() {
         tracing::warn!(
             pack_id = %pack_id,
-            "legacy messaging.adapters used; switch to provider extension {}",
+            "messaging.adapters used; prefer provider extension {}",
             PROVIDER_EXTENSION_ID
         );
-        return Ok(legacy);
+        return Ok(messaging_adapters);
     }
 
     tracing::warn!(
         pack_id = %pack_id,
-        "no adapters found; add provider extension {} or legacy messaging.adapters",
+        "no adapters found; add provider extension {} or messaging.adapters",
         PROVIDER_EXTENSION_ID
     );
     Ok(Vec::new())
@@ -293,7 +293,7 @@ fn map_provider_feature(feature: &str) -> Option<String> {
     Some(feature.to_string())
 }
 
-fn extract_from_legacy_messaging(
+fn extract_from_pack_messaging(
     pack_id: &str,
     pack_version: &str,
     messaging: Option<&MessagingSection>,
@@ -647,19 +647,6 @@ messaging:
         }
     }
 
-    fn legacy_messaging_single(name: &str) -> MessagingSection {
-        MessagingSection {
-            adapters: Some(vec![MessagingAdapter {
-                name: name.to_string(),
-                kind: MessagingAdapterKind::IngressEgress,
-                component: format!("{name}-component@1.0.0"),
-                default_flow: None,
-                custom_flow: None,
-                capabilities: None,
-            }]),
-        }
-    }
-
     #[test]
     fn extracts_from_provider_extension() {
         let providers = provider_inline_single("comp@1.0.0", "messaging.demo");
@@ -670,36 +657,6 @@ messaging:
         assert_eq!(adapter.name, "messaging.demo");
         assert_eq!(adapter.component, "comp@1.0.0");
         assert!(adapter.capabilities.is_some());
-    }
-
-    #[test]
-    fn provider_extension_wins_over_legacy() {
-        let providers = provider_inline_single("comp@1.0.0", "messaging.demo");
-        let adapters = extract_from_sources(
-            "pack.id",
-            "1.0.0",
-            Some(providers),
-            Some(&legacy_messaging_single("legacy-name")),
-            None,
-        )
-        .expect("extract");
-        assert_eq!(adapters.len(), 1);
-        assert_eq!(adapters[0].name, "messaging.demo");
-    }
-
-    #[test]
-    fn falls_back_to_legacy_when_no_provider_extension() {
-        let adapters = extract_from_sources(
-            "pack.id",
-            "1.0.0",
-            None,
-            Some(&legacy_messaging_single("legacy-name")),
-            None,
-        )
-        .expect("extract");
-        assert_eq!(adapters.len(), 1);
-        assert_eq!(adapters[0].name, "legacy-name");
-        assert_eq!(adapters[0].component, "legacy-name-component@1.0.0");
     }
 
     #[test]

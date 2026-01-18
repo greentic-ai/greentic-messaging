@@ -3,9 +3,7 @@
 use std::fs;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use gsm_core::messaging_card::renderers::{
-    override_url_allow_list, reload_url_allow_list_from_env,
-};
+use gsm_core::messaging_card::renderers::override_url_allow_list;
 use gsm_core::messaging_card::{MessageCard, MessageCardEngine, TelemetryEvent, TelemetryHook};
 use once_cell::sync::Lazy;
 use serde_json::Value;
@@ -204,6 +202,6 @@ impl AllowListGuard {
 
 impl Drop for AllowListGuard {
     fn drop(&mut self) {
-        reload_url_allow_list_from_env();
+        override_url_allow_list(None);
     }
 }

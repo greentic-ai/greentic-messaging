@@ -18,6 +18,7 @@ use gsm_core::messaging_card::{
 };
 use gsm_core::oauth::{OauthClient, ReqwestTransport};
 use gsm_core::{TenantCtx, Tier, make_tenant_ctx};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::signal;
@@ -69,7 +70,8 @@ async fn main() -> anyhow::Result<()> {
     ));
     let oauth_client = env::var("OAUTH_BASE_URL")
         .ok()
-        .and_then(|_| OauthClient::from_env(reqwest::Client::new()).ok())
+        .and_then(|raw| Url::parse(raw.trim()).ok())
+        .map(|base_url| OauthClient::new(reqwest::Client::new(), base_url))
         .map(Arc::new);
     if oauth_client.is_none() {
         info!("OAUTH_BASE_URL not set or invalid; OAuth preview disabled");

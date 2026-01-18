@@ -8,23 +8,23 @@ use async_nats::Client as NatsClient;
 pub use gsm_bus::{BusClient, BusError, InMemoryBusClient, NatsBusClient};
 use gsm_core::{
     AdapterRegistry, DefaultAdapterPacksConfig, ProviderExtensionsRegistry, WorkerClient,
-    adapter_pack_paths_from_env, adapter_registry::load_adapters_from_pack_files,
-    default_adapter_pack_paths, load_provider_extensions_from_pack_files,
+    adapter_registry::load_adapters_from_pack_files, default_adapter_pack_paths,
+    load_provider_extensions_from_pack_files,
 };
 pub use main_logic::run;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::info;
 
 /// Builds the adapter registry from default and extra pack paths.
-pub fn load_adapter_registry() -> AdapterRegistry {
-    let packs_root =
-        PathBuf::from(std::env::var("MESSAGING_PACKS_ROOT").unwrap_or_else(|_| "packs".into()));
-    let default_packs_cfg = DefaultAdapterPacksConfig::from_env();
-    let extra_paths = adapter_pack_paths_from_env();
-    let mut pack_paths = default_adapter_pack_paths(packs_root.as_path(), &default_packs_cfg);
-    pack_paths.extend(extra_paths.clone());
-    match load_adapters_from_pack_files(packs_root.as_path(), &pack_paths) {
+pub fn load_adapter_registry(
+    packs_root: &Path,
+    default_packs_cfg: &DefaultAdapterPacksConfig,
+    extra_paths: &[PathBuf],
+) -> AdapterRegistry {
+    let mut pack_paths = default_adapter_pack_paths(packs_root, default_packs_cfg);
+    pack_paths.extend(extra_paths.iter().cloned());
+    match load_adapters_from_pack_files(packs_root, &pack_paths) {
         Ok(registry) => {
             let names: Vec<_> = registry.all().into_iter().map(|a| a.name).collect();
             if names.is_empty() {
@@ -53,14 +53,14 @@ pub fn load_adapter_registry() -> AdapterRegistry {
 }
 
 /// Builds the provider extensions registry from default and extra pack paths.
-pub fn load_provider_extensions_registry() -> ProviderExtensionsRegistry {
-    let packs_root =
-        PathBuf::from(std::env::var("MESSAGING_PACKS_ROOT").unwrap_or_else(|_| "packs".into()));
-    let default_packs_cfg = DefaultAdapterPacksConfig::from_env();
-    let extra_paths = adapter_pack_paths_from_env();
-    let mut pack_paths = default_adapter_pack_paths(packs_root.as_path(), &default_packs_cfg);
-    pack_paths.extend(extra_paths.clone());
-    match load_provider_extensions_from_pack_files(packs_root.as_path(), &pack_paths) {
+pub fn load_provider_extensions_registry(
+    packs_root: &Path,
+    default_packs_cfg: &DefaultAdapterPacksConfig,
+    extra_paths: &[PathBuf],
+) -> ProviderExtensionsRegistry {
+    let mut pack_paths = default_adapter_pack_paths(packs_root, default_packs_cfg);
+    pack_paths.extend(extra_paths.iter().cloned());
+    match load_provider_extensions_from_pack_files(packs_root, &pack_paths) {
         Ok(registry) => {
             if registry.is_empty() {
                 tracing::info!(

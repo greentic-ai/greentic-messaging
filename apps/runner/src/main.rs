@@ -1,4 +1,5 @@
 mod card_node;
+mod flow_registry;
 mod model;
 mod qa_node;
 mod template_node;
@@ -7,38 +8,87 @@ mod tool_node;
 use anyhow::Result;
 use async_nats::Client as Nats;
 use futures::StreamExt;
-use greentic_types::{FlowId, SessionCursor, SessionKey, UserId};
+use greentic_config::ConfigResolver;
+use greentic_config_types::{GreenticConfig, ServiceTransportConfig};
+use greentic_types::{FlowId, PackId, SessionCursor, SessionKey, UserId};
 use gsm_core::*;
-use gsm_dlq::{DlqError, DlqPublisher, replay_subject};
+use gsm_dlq::{DlqConfig, DlqError, DlqPublisher, replay_subject_with_config};
 use gsm_session::{SessionData, SharedSessionStore, store_from_env};
 use gsm_telemetry::{
     AuthRenderMode, MessageContext, TelemetryLabels, install as init_telemetry,
     record_auth_card_render, set_current_tenant_ctx,
 };
 use serde_json::json;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
+
+use crate::flow_registry::FlowRegistry;
+
+struct RunnerConfig {
+    env: EnvId,
+    nats_url: String,
+    packs_root: PathBuf,
+    default_packs: DefaultAdapterPacksConfig,
+    extra_pack_paths: Vec<PathBuf>,
+    tool_endpoint: String,
+    dlq: DlqConfig,
+}
+
+impl RunnerConfig {
+    fn load() -> Result<Self> {
+        let resolved = ConfigResolver::new().load()?;
+        Self::from_config(&resolved.config)
+    }
+
+    fn from_config(config: &GreenticConfig) -> Result<Self> {
+        let env = config.environment.env_id.clone();
+        let nats_url =
+            nats_url_from_config(config)?.unwrap_or_else(|| "nats://127.0.0.1:4222".to_string());
+        let packs_root = config.paths.greentic_root.join("packs");
+        let tool_endpoint =
+            tool_endpoint_from_config(config).unwrap_or_else(|| "http://localhost:18081".into());
+        Ok(Self {
+            env,
+            nats_url,
+            packs_root,
+            default_packs: DefaultAdapterPacksConfig::default(),
+            extra_pack_paths: Vec::new(),
+            tool_endpoint,
+            dlq: DlqConfig::default(),
+        })
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
-    let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let tenant = std::env::var("TENANT").unwrap_or_else(|_| "acme".into());
-    let platform = std::env::var("PLATFORM").unwrap_or_else(|_| "telegram".into());
-    let chat_prefix = std::env::var("CHAT_PREFIX").unwrap_or_else(|_| ">".into());
-    let flow_path =
-        std::env::var("FLOW").unwrap_or_else(|_| "examples/flows/weather_telegram.yaml".into());
+    let config = RunnerConfig::load()?;
+    set_current_env(config.env.clone());
+    if !config.packs_root.exists() {
+        let _ = std::fs::create_dir_all(&config.packs_root);
+    }
+    let mut pack_paths =
+        default_adapter_pack_paths(config.packs_root.as_path(), &config.default_packs);
+    pack_paths.extend(config.extra_pack_paths.clone());
 
-    let flow = model::Flow::load_from_file(&flow_path)?;
-    tracing::info!("Loaded flow id={} entry={}", flow.id, flow.r#in);
+    let flow_registry = FlowRegistry::load_from_paths(config.packs_root.as_path(), &pack_paths)?;
+    if flow_registry.is_empty() {
+        return Err(anyhow::anyhow!("no flows loaded from pack metadata"));
+    }
 
-    let nats = async_nats::connect(nats_url).await?;
-    let dlq = DlqPublisher::new("translate", nats.clone()).await?;
+    let nats = async_nats::connect(config.nats_url).await?;
+    let dlq = DlqPublisher::new_with_config("translate", nats.clone(), config.dlq.clone()).await?;
 
-    let subject = format!("greentic.msg.in.{tenant}.{platform}.{chat_prefix}");
+    let subject = format!(
+        "{}.{}.>",
+        gsm_core::INGRESS_SUBJECT_PREFIX,
+        config.env.as_str()
+    );
     let mut sub = nats.subscribe(subject.clone()).await?;
     tracing::info!("runner subscribed to {subject}");
 
-    let replay_subject = replay_subject(&tenant, "translate");
+    let replay_subject = replay_subject_with_config(&config.dlq, "*", "translate");
     let mut replay_sub = nats.subscribe(replay_subject.clone()).await?;
     tracing::info!("runner subscribed to {replay_subject} for replays");
 
@@ -47,18 +97,19 @@ async fn main() -> Result<()> {
 
     let ctx = Arc::new(ProcessContext {
         nats: nats.clone(),
-        flow: flow.clone(),
+        flow_registry: Arc::new(flow_registry),
         hbs: hbs.clone(),
         sessions: sessions.clone(),
         dlq: dlq.clone(),
+        tool_endpoint: config.tool_endpoint.clone(),
     });
 
     {
         let ctx = Arc::clone(&ctx);
         tokio::spawn(async move {
             while let Some(msg) = replay_sub.next().await {
-                match serde_json::from_slice::<InvocationEnvelope>(&msg.payload) {
-                    Ok(inv) => handle_env(ctx.clone(), inv).await,
+                match serde_json::from_slice::<ChannelMessage>(&msg.payload) {
+                    Ok(env) => handle_env(ctx.clone(), env).await,
                     Err(e) => tracing::warn!("bad replay envelope: {e}"),
                 }
             }
@@ -66,38 +117,71 @@ async fn main() -> Result<()> {
     }
 
     while let Some(msg) = sub.next().await {
-        let invocation: InvocationEnvelope = match serde_json::from_slice(&msg.payload) {
+        let channel: ChannelMessage = match serde_json::from_slice(&msg.payload) {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("bad invocation envelope: {e}");
+                tracing::warn!("bad channel envelope: {e}");
                 continue;
             }
         };
         let ctx = Arc::clone(&ctx);
         tokio::spawn(async move {
-            handle_env(ctx, invocation).await;
+            handle_env(ctx, channel).await;
         });
     }
 
     Ok(())
 }
 
-async fn run_one(
+fn nats_url_from_config(config: &GreenticConfig) -> Result<Option<String>> {
+    let transport = config
+        .services
+        .as_ref()
+        .and_then(|services| services.events_transport.as_ref())
+        .and_then(|svc| svc.transport.as_ref());
+    match transport {
+        Some(ServiceTransportConfig::Nats { url, .. }) => Ok(Some(url.to_string())),
+        Some(ServiceTransportConfig::Http { .. }) => {
+            anyhow::bail!("services.events_transport must use NATS for runner");
+        }
+        Some(ServiceTransportConfig::Noop) => Ok(None),
+        None => Ok(None),
+    }
+}
+
+fn tool_endpoint_from_config(config: &GreenticConfig) -> Option<String> {
+    let transport = config
+        .services
+        .as_ref()
+        .and_then(|services| services.metadata.as_ref())
+        .and_then(|svc| svc.transport.as_ref());
+    match transport {
+        Some(ServiceTransportConfig::Http { url, .. }) => Some(url.to_string()),
+        _ => None,
+    }
+}
+
+struct RunOneContext {
     nats: Nats,
     flow: model::Flow,
     hbs: handlebars::Handlebars<'static>,
     sessions: SharedSessionStore,
     tenant_ctx: TenantCtx,
     env: MessageEnvelope,
-) -> Result<()> {
-    let active_user = tenant_ctx
+    tool_endpoint: String,
+    pack_id: Option<PackId>,
+}
+
+async fn run_one(ctx: RunOneContext) -> Result<()> {
+    let active_user = ctx
+        .tenant_ctx
         .user
         .clone()
-        .or_else(|| tenant_ctx.user_id.clone())
-        .or_else(|| UserId::try_from(env.user_id.as_str()).ok());
+        .or_else(|| ctx.tenant_ctx.user_id.clone())
+        .or_else(|| UserId::try_from(ctx.env.user_id.as_str()).ok());
     let mut previous_session: Option<SessionKey> = None;
     let mut state = if let Some(user) = active_user.clone() {
-        match sessions.find_by_user(&tenant_ctx, &user).await {
+        match ctx.sessions.find_by_user(&ctx.tenant_ctx, &user).await {
             Ok(Some((key, data))) => {
                 previous_session = Some(key);
                 match serde_json::from_str::<serde_json::Value>(&data.context_json) {
@@ -119,32 +203,34 @@ async fn run_one(
         json!({})
     };
 
-    let mut current = flow.r#in.clone();
+    let mut current = ctx.flow.r#in.clone();
     let mut payload: serde_json::Value = serde_json::json!({});
 
     loop {
-        let node = flow
+        let node = ctx
+            .flow
             .nodes
             .get(&current)
             .ok_or_else(|| anyhow::anyhow!("node not found: {current}"))?;
         tracing::info!("node={}", current);
 
         if let Some(qa) = &node.qa {
-            qa_node::run_qa(qa, &env, &mut state, &hbs).await?;
+            qa_node::run_qa(qa, &ctx.env, &mut state, &ctx.hbs).await?;
         }
 
         if let Some(tool) = &node.tool {
-            payload = tool_node::run_tool(tool, &env, &state).await?;
+            payload =
+                tool_node::run_tool(tool, &ctx.env, &state, ctx.tool_endpoint.as_str()).await?;
         }
 
         if let Some(tpl) = &node.template {
-            let out = template_node::render_template(tpl, &hbs, &env, &state, &payload)?;
+            let out = template_node::render_template(tpl, &ctx.hbs, &ctx.env, &state, &payload)?;
             let outmsg = OutMessage {
-                ctx: tenant_ctx.clone(),
-                tenant: env.tenant.clone(),
-                platform: env.platform.clone(),
-                chat_id: env.chat_id.clone(),
-                thread_id: env.thread_id.clone(),
+                ctx: ctx.tenant_ctx.clone(),
+                tenant: ctx.env.tenant.clone(),
+                platform: ctx.env.platform.clone(),
+                chat_id: ctx.env.chat_id.clone(),
+                thread_id: ctx.env.thread_id.clone(),
                 kind: OutKind::Text,
                 text: Some(out),
                 message_card: None,
@@ -152,19 +238,31 @@ async fn run_one(
                 meta: Default::default(),
             };
             emit_pending_auth_telemetry(&outmsg);
-            let subject = out_subject(&env.tenant, env.platform.as_str(), &env.chat_id);
-            nats.publish(subject, serde_json::to_vec(&outmsg)?.into())
+            let team = ctx
+                .tenant_ctx
+                .team
+                .as_ref()
+                .map(|team| team.as_str())
+                .unwrap_or("default");
+            let subject = egress_subject(
+                ctx.tenant_ctx.env.as_str(),
+                ctx.tenant_ctx.tenant.as_str(),
+                team,
+                ctx.env.platform.as_str(),
+            );
+            ctx.nats
+                .publish(subject, serde_json::to_vec(&outmsg)?.into())
                 .await?;
         }
 
         if let Some(card) = &node.card {
-            let card = card_node::render_card(card, &hbs, &env, &state, &payload)?;
+            let card = card_node::render_card(card, &ctx.hbs, &ctx.env, &state, &payload)?;
             let outmsg = OutMessage {
-                ctx: tenant_ctx.clone(),
-                tenant: env.tenant.clone(),
-                platform: env.platform.clone(),
-                chat_id: env.chat_id.clone(),
-                thread_id: env.thread_id.clone(),
+                ctx: ctx.tenant_ctx.clone(),
+                tenant: ctx.env.tenant.clone(),
+                platform: ctx.env.platform.clone(),
+                chat_id: ctx.env.chat_id.clone(),
+                thread_id: ctx.env.thread_id.clone(),
                 kind: OutKind::Card,
                 text: None,
                 message_card: Some(card),
@@ -172,8 +270,20 @@ async fn run_one(
                 meta: Default::default(),
             };
             emit_pending_auth_telemetry(&outmsg);
-            let subject = out_subject(&env.tenant, env.platform.as_str(), &env.chat_id);
-            nats.publish(subject, serde_json::to_vec(&outmsg)?.into())
+            let team = ctx
+                .tenant_ctx
+                .team
+                .as_ref()
+                .map(|team| team.as_str())
+                .unwrap_or("default");
+            let subject = egress_subject(
+                ctx.tenant_ctx.env.as_str(),
+                ctx.tenant_ctx.tenant.as_str(),
+                team,
+                ctx.env.platform.as_str(),
+            );
+            ctx.nats
+                .publish(subject, serde_json::to_vec(&outmsg)?.into())
                 .await?;
         }
 
@@ -188,16 +298,21 @@ async fn run_one(
     }
 
     let session_data = SessionData {
-        tenant_ctx: tenant_ctx.clone(),
-        flow_id: flow_id(&flow.id)?,
+        tenant_ctx: ctx.tenant_ctx.clone(),
+        flow_id: flow_id(&ctx.flow.id)?,
+        pack_id: ctx.pack_id,
         cursor: SessionCursor::new(current),
         context_json: serde_json::to_string(&state)?,
     };
 
     if let Some(existing_key) = previous_session {
-        sessions.update_session(&existing_key, session_data).await?;
+        ctx.sessions
+            .update_session(&existing_key, session_data)
+            .await?;
     } else if active_user.is_some() {
-        sessions.create_session(&tenant_ctx, session_data).await?;
+        ctx.sessions
+            .create_session(&ctx.tenant_ctx, session_data)
+            .await?;
     } else {
         tracing::debug!("skipping session persistence; no user context available");
     }
@@ -207,28 +322,55 @@ async fn run_one(
 #[derive(Clone)]
 struct ProcessContext {
     nats: Nats,
-    flow: model::Flow,
+    flow_registry: Arc<FlowRegistry>,
     hbs: handlebars::Handlebars<'static>,
     sessions: SharedSessionStore,
     dlq: DlqPublisher,
+    tool_endpoint: String,
 }
 
-async fn handle_env(ctx: Arc<ProcessContext>, invocation: InvocationEnvelope) {
+async fn handle_env(ctx: Arc<ProcessContext>, channel: ChannelMessage) {
     let nats = ctx.nats.clone();
-    let flow = ctx.flow.clone();
+    let flow_entry = match ctx.flow_registry.select_flow(&channel) {
+        Ok(flow) => flow,
+        Err(err) => {
+            tracing::error!(error = %err, "failed to select flow for channel message");
+            return;
+        }
+    };
+    let flow = flow_entry.flow.clone();
     let hbs = ctx.hbs.clone();
     let sessions = ctx.sessions.clone();
-    let tenant_ctx = invocation.ctx.clone();
+    let tenant_ctx = channel.tenant.clone();
     set_current_tenant_ctx(tenant_ctx.clone());
-    let env = match MessageEnvelope::try_from(invocation.clone()) {
+    let env = match message_from_channel(&channel) {
         Ok(env) => env,
         Err(err) => {
-            tracing::error!(error = %err, "failed to decode invocation payload");
+            tracing::error!(error = %err, "failed to decode channel payload");
             return;
         }
     };
 
-    if let Err(e) = run_one(nats, flow, hbs, sessions, tenant_ctx.clone(), env.clone()).await {
+    tracing::info!(
+        pack_id = %flow_entry.pack_id,
+        flow_id = %flow_entry.flow_id,
+        platform = %env.platform.as_str(),
+        "selected flow for inbound message"
+    );
+
+    let pack_id = PackId::new(flow_entry.pack_id.as_str()).ok();
+    if let Err(e) = run_one(RunOneContext {
+        nats,
+        flow,
+        hbs,
+        sessions,
+        tenant_ctx: tenant_ctx.clone(),
+        env: env.clone(),
+        tool_endpoint: ctx.tool_endpoint.clone(),
+        pack_id,
+    })
+    .await
+    {
         tracing::error!("run failed: {e}");
         if let Err(err) = ctx
             .dlq
@@ -242,13 +384,72 @@ async fn handle_env(ctx: Arc<ProcessContext>, invocation: InvocationEnvelope) {
                     message: e.to_string(),
                     stage: None,
                 },
-                &invocation,
+                &channel,
             )
             .await
         {
             tracing::error!("failed to publish dlq entry: {err}");
         }
     }
+}
+
+fn message_from_channel(channel: &ChannelMessage) -> Result<MessageEnvelope> {
+    let platform = Platform::from_str(channel.channel_id.as_str())
+        .map_err(|err| anyhow::anyhow!("invalid platform: {err}"))?;
+    let payload = &channel.payload;
+    let chat_id = payload
+        .get("chat_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| channel.session_id.clone());
+    if chat_id.trim().is_empty() {
+        return Err(anyhow::anyhow!("channel message missing chat_id"));
+    }
+    let msg_id = payload
+        .get("msg_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let timestamp = payload
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .unwrap_or("1970-01-01T00:00:00Z")
+        .to_string();
+    let user_id = payload
+        .get("user_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let thread_id = payload
+        .get("thread_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let text = payload
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
+    let mut context = std::collections::BTreeMap::new();
+    if let Some(meta) = payload.get("metadata").and_then(|v| v.as_object()) {
+        for (k, v) in meta {
+            context.insert(k.clone(), v.clone());
+        }
+    }
+    if let Some(headers) = payload.get("headers") {
+        context.insert("headers".into(), headers.clone());
+    }
+
+    Ok(MessageEnvelope {
+        tenant: channel.tenant.tenant.as_str().to_string(),
+        platform,
+        chat_id,
+        user_id,
+        thread_id,
+        msg_id,
+        text,
+        timestamp,
+        context,
+    })
 }
 
 fn emit_pending_auth_telemetry(out: &OutMessage) {

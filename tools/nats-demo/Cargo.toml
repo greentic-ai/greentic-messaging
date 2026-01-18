@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[[bin]]
+name = "nats-demo"
+path = "src/main.rs"
+
 [dependencies]
 greentic-types = { workspace = true }
 anyhow = { workspace = true }

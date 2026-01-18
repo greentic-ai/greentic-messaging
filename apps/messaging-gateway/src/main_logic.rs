@@ -12,8 +12,16 @@ use tracing::info;
 
 /// Starts the gateway HTTP server using the provided configuration.
 pub async fn run(config: GatewayConfig) -> Result<()> {
-    let adapter_registry = load_adapter_registry();
-    let provider_extensions = load_provider_extensions_registry();
+    let adapter_registry = load_adapter_registry(
+        config.packs_root.as_path(),
+        &config.default_packs,
+        &config.extra_pack_paths,
+    );
+    let provider_extensions = load_provider_extensions_registry(
+        config.packs_root.as_path(),
+        &config.default_packs,
+        &config.extra_pack_paths,
+    );
     let nats = async_nats::connect(&config.nats_url).await?;
     let bus = NatsBusClient::new(nats.clone());
 

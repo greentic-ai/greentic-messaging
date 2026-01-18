@@ -13,6 +13,12 @@ publish = false
 default = []
 mock-http = []
 e2e = ["dep:gsm-testutil"]
+legacy = []
+
+[[bin]]
+name = "gsm-egress-webex"
+path = "src/main.rs"
+required-features = ["legacy"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -25,7 +31,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
 time = { workspace = true }
-gsm-core = { workspace = true }
+gsm-core = { workspace = true, features = ["legacy"] }
 gsm-translator = { workspace = true }
 gsm-egress-common = { path = "../egress-common" }
 gsm-backpressure = { workspace = true }

@@ -7,6 +7,7 @@ use gsm_gateway::{config::GatewayConfig, run};
 async fn main() -> Result<()> {
     init_telemetry("gsm-gateway")?;
 
-    let config = GatewayConfig::from_env()?;
+    let config = GatewayConfig::load()?;
+    gsm_core::set_current_env(config.env.clone());
     run(config).await
 }

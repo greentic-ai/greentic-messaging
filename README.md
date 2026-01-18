@@ -40,28 +40,26 @@ greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --
 Then run the messaging orchestration CLI:
 
 ```bash
-greentic-messaging -- info
-greentic-messaging -- dev up
-greentic-messaging -- serve ingress slack --tenant acme
-greentic-messaging -- flows run --flow examples/flows/weather_telegram.yaml --platform telegram --tenant acme
-greentic-messaging -- test fixtures
-greentic-messaging -- admin guard-rails show
+greentic-messaging info
+greentic-messaging dev up
+greentic-messaging dev logs
+greentic-messaging serve ingress slack --tenant acme
+greentic-messaging test fixtures
+greentic-messaging admin guard-rails show
 
 # run ingress against a provider bundle (.gtpack)
-greentic-messaging -- serve ingress webchat \
+greentic-messaging serve ingress webchat \
   --tenant acme \
   --pack fixtures/packs/messaging-provider-bundle.gtpack \
   --no-default-packs
 ```
 
-The CLI now assumes secrets are managed through `greentic-secrets` (ctx/seed/apply);
-legacy env/`./secrets` layouts are deprecated. Refer to [docs/cli.md](docs/cli.md)
-for the updated command reference.
+The CLI assumes secrets are managed through `greentic-secrets` (ctx/seed/apply).
+Refer to [docs/README.md](docs/README.md) for the current command reference.
 
 ## Design Docs
 
-- [Generic worker envelopes](docs/repo_worker_envelopes.md)
-- [Telemetry, secrets, and session wiring](docs/DESIGN-telemetry-secrets.md)
+- [Messaging stack overview](docs/README.md)
 
 ## Releases & Publishing
 
@@ -242,15 +240,6 @@ mock-http`).
    FLOW=examples/flows/weather_telegram.yaml PLATFORM=teams make run-runner
    ```
 4. Add the Graph subscription through the admin subject (`greentic.subs.admin`) or use the runner to trigger messages; cards are translated into Adaptive Cards for Teams.
-
-### Teams Test Credentials
-
-1. Register (or reuse) an Azure AD application with the Microsoft Graph `ChatMessage.Send` **application** permission and create a client secret dedicated to CI/testing.
-2. Collect the following values: `TEAMS_TENANT_ID`, `TEAMS_CLIENT_ID`, `TEAMS_CLIENT_SECRET`, and the target `TEAMS_CHAT_ID`.
-3. Verify the chat and persist the secrets with the helper:
-   `cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup -- --tenant <tenant> --client-id <client_id> --client-secret <client_secret> --chat-id <chat_id> --output .env`
-4. Run the Teams E2E test when needed:
-   `cargo test -p gsm-egress-teams --features e2e -- --ignored --nocapture`
 
 ## Admin & Security Helpers
 
@@ -467,13 +456,6 @@ FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
    make run-egress-whatsapp
    ```
 5. Configure Meta to call `/ingress/whatsapp/{tenant}` with your verify token. Inbound messages publish to NATS and are delivered via egress; card responses automatically fall back to templates or deep links when the 24-hour session window has expired.
-
-### WhatsApp Cloud API Test Credentials
-
-1. Generate a permanent user access token in the [Meta Developer Dashboard](https://developers.facebook.com/apps/) with the `whatsapp_business_messaging` permission and copy your phone number ID.
-2. Verify the credentials with the helper script (optionally writing them to `.env`):
-   `cargo run --manifest-path legacy/scripts/Cargo.toml --bin whatsapp_setup -- --token <token> --phone-id <phone_id> --recipient <E.164 number> --output .env`
-3. Your `.env` should now include `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, and `WHATSAPP_RECIPIENT`, which the WhatsApp E2E test consumes.
 
 ## Webex Integration
 

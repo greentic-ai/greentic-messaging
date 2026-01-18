@@ -41,6 +41,7 @@ struct AppConfig {
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let env = std::env::var("GREENTIC_ENV").unwrap_or_else(|_| "dev".into());
     let template_name =
         std::env::var("WA_TEMPLATE_NAME").unwrap_or_else(|_| "weather_update".into());
     let template_lang = std::env::var("WA_TEMPLATE_LANG").unwrap_or_else(|_| "en".into());
@@ -60,7 +61,7 @@ async fn main() -> Result<()> {
         fallback_url,
     };
 
-    let queue = bootstrap(&nats_url, Platform::WhatsApp.as_str()).await?;
+    let queue = bootstrap(&nats_url, &env, Platform::WhatsApp.as_str()).await?;
     tracing::info!(
         stream = %queue.stream,
         consumer = %queue.consumer,

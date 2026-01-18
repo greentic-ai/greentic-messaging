@@ -26,6 +26,8 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 gsm-core = { workspace = true }
+greentic-config = "0.4"
+greentic-config-types = "0.4"
 greentic-types = { workspace = true }
 greentic-flow = { workspace = true }
 greentic-pack-lib = { workspace = true }

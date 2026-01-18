@@ -1,8 +1,9 @@
-use gsm_core::{Platform, ProviderExtensionsRegistry};
+use gsm_core::{DefaultAdapterPacksConfig, Platform, ProviderExtensionsRegistry};
 use gsm_gateway::InMemoryBusClient;
 use gsm_gateway::config::GatewayConfig;
 use gsm_gateway::http::{GatewayState, NormalizedRequest, handle_ingress};
 use gsm_gateway::load_adapter_registry;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 fn test_config() -> GatewayConfig {
@@ -11,17 +12,27 @@ fn test_config() -> GatewayConfig {
         nats_url: "nats://localhost".into(),
         addr: "127.0.0.1:0".parse().unwrap(),
         default_team: "default".into(),
-        subject_prefix: gsm_bus::INGRESS_SUBJECT_PREFIX.to_string(),
+        subject_prefix: gsm_core::INGRESS_SUBJECT_PREFIX.to_string(),
         worker_routing: None,
         worker_routes: std::collections::BTreeMap::new(),
-        worker_egress_subject: None,
+        packs_root: PathBuf::from("packs"),
+        default_packs: DefaultAdapterPacksConfig::default(),
+        extra_pack_paths: Vec::new(),
     }
+}
+
+fn load_default_adapters() -> gsm_core::AdapterRegistry {
+    load_adapter_registry(
+        Path::new("packs"),
+        &DefaultAdapterPacksConfig::default(),
+        &[],
+    )
 }
 
 #[tokio::test]
 async fn ingress_is_normalized_and_published() {
     let bus = Arc::new(InMemoryBusClient::default());
-    let adapters = load_adapter_registry();
+    let adapters = load_default_adapters();
     let state = Arc::new(GatewayState {
         bus: bus.clone(),
         config: test_config(),
@@ -29,7 +40,6 @@ async fn ingress_is_normalized_and_published() {
         provider_extensions: ProviderExtensionsRegistry::default(),
         workers: std::collections::BTreeMap::new(),
         worker_default: None,
-        worker_egress_subject: None,
     });
 
     let payload = NormalizedRequest {
@@ -66,9 +76,8 @@ async fn ingress_is_normalized_and_published() {
 #[tokio::test]
 async fn forwards_multiple_worker_messages_including_card() {
     let bus = Arc::new(InMemoryBusClient::default());
-    let adapters = load_adapter_registry();
-    let mut config = test_config();
-    config.worker_egress_subject = Some("greentic.messaging.egress.dev.repo-worker".into());
+    let adapters = load_default_adapters();
+    let config = test_config();
     let worker_cfg = gsm_core::WorkerRoutingConfig::default();
     let worker = gsm_core::InMemoryWorkerClient::new(|req| {
         let mut resp = gsm_core::empty_worker_response_for(&req);
@@ -100,7 +109,6 @@ async fn forwards_multiple_worker_messages_including_card() {
         provider_extensions: ProviderExtensionsRegistry::default(),
         workers,
         worker_default: Some(worker_cfg),
-        worker_egress_subject: Some("greentic.messaging.egress.dev.repo-worker".into()),
     });
 
     let payload = NormalizedRequest {
@@ -157,9 +165,8 @@ impl gsm_core::WorkerClient for FailingWorker {
 #[tokio::test]
 async fn worker_failure_does_not_block_ingress_publish() {
     let bus = Arc::new(InMemoryBusClient::default());
-    let adapters = load_adapter_registry();
-    let mut config = test_config();
-    config.worker_egress_subject = Some("greentic.messaging.egress.dev.repo-worker".into());
+    let adapters = load_default_adapters();
+    let config = test_config();
     let worker_cfg = gsm_core::WorkerRoutingConfig::default();
     let mut workers = std::collections::BTreeMap::new();
     workers.insert(
@@ -174,7 +181,6 @@ async fn worker_failure_does_not_block_ingress_publish() {
         provider_extensions: ProviderExtensionsRegistry::default(),
         workers,
         worker_default: Some(worker_cfg),
-        worker_egress_subject: Some("greentic.messaging.egress.dev.repo-worker".into()),
     });
 
     let payload = NormalizedRequest {
@@ -202,9 +208,8 @@ async fn worker_failure_does_not_block_ingress_publish() {
 #[tokio::test]
 async fn forwards_to_worker_when_configured() {
     let bus = Arc::new(InMemoryBusClient::default());
-    let adapters = load_adapter_registry();
-    let mut config = test_config();
-    config.worker_egress_subject = Some("greentic.messaging.egress.dev.repo-worker".into());
+    let adapters = load_default_adapters();
+    let config = test_config();
     let worker_config = Some(gsm_core::WorkerRoutingConfig::default());
     let worker = gsm_core::InMemoryWorkerClient::new(|req| gsm_core::WorkerResponse {
         version: req.version.clone(),
@@ -234,7 +239,6 @@ async fn forwards_to_worker_when_configured() {
             map
         },
         worker_default: worker_config.clone(),
-        worker_egress_subject: Some("greentic.messaging.egress.dev.repo-worker".into()),
     });
 
     let payload = NormalizedRequest {

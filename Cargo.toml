@@ -6,7 +6,6 @@ members = [
   "apps/messaging-egress",
   "apps/messaging-gateway",
   "apps/messaging-tenants",
-  "libs/gsm-provider-registry",
   "libs/core",
   "libs/session",
   "libs/translator",
@@ -23,6 +22,7 @@ members = [
   "conformance/webchat",
   "tools/dev-viewer",
   "crates/greentic-messaging-cli",
+  "crates/greentic-messaging-validate",
   "crates/messaging-test",
   "crates/gsm-bus",
 ]
@@ -31,7 +31,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.35"
+version = "0.4.36"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 
@@ -48,6 +48,8 @@ clap = { version = "4", features = ["derive"] }
 dashmap = "6"
 futures = "0.3"
 greentic-types = "0.4"
+greentic-config = "0.4"
+greentic-config-types = "0.4"
 greentic-secrets-spec = "0.4"
 greentic-interfaces-host = "0.4"
 greentic-interfaces-wasmtime = "0.4"

@@ -20,6 +20,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 greentic-types = { workspace = true }
+greentic-config = { workspace = true }
+greentic-config-types = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true, optional = true }
 thiserror = { workspace = true }

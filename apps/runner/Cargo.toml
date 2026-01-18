@@ -9,6 +9,9 @@ repository = "https://github.com/greentic-ai/greentic-messaging"
 homepage = "https://github.com/greentic-ai/greentic-messaging"
 publish = false
 
+[[bin]]
+name = "gsm-runner"
+path = "src/main.rs"
 [features]
 default = []
 chaos = []
@@ -19,6 +22,8 @@ async-nats = { workspace = true }
 tokio = { workspace = true, features = ["time", "macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
+greentic-config = { workspace = true }
+greentic-config-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml_bw = { workspace = true }
@@ -33,6 +38,7 @@ gsm-dlq = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
 gsm-telemetry = { workspace = true }
+greentic-pack-lib = { workspace = true }
 
 [dev-dependencies]
 gsm-backpressure = { path = "../../libs/backpressure" }

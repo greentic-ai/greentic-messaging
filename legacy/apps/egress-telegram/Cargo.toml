@@ -13,10 +13,16 @@ publish = false
 default = []
 mock-http = []
 e2e = ["dep:gsm-testutil"]
+legacy = []
+
+[[bin]]
+name = "egress-telegram"
+path = "src/main.rs"
+required-features = ["legacy"]
 
 [dependencies]
 anyhow = { workspace = true }
-gsm-core = { path = "../../libs/core" }
+gsm-core = { path = "../../libs/core", features = ["legacy"] }
 gsm-translator = { path = "../../libs/translator" }
 reqwest = { workspace = true }
 serde_json = { workspace = true }

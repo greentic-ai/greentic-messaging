@@ -9,6 +9,14 @@ repository = "https://github.com/greentic-ai/greentic-messaging"
 homepage = "https://github.com/greentic-ai/greentic-messaging"
 publish = false
 
+[features]
+legacy = []
+
+[[bin]]
+name = "mock-telegram"
+path = "src/main.rs"
+required-features = ["legacy"]
+
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }

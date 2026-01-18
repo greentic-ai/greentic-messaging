@@ -28,7 +28,7 @@ async fn publishes_outbound_payload_via_bus() {
         .default_for_platform(Platform::Slack.as_str())
         .unwrap();
     let out = OutMessage {
-        ctx: make_tenant_ctx("dev".into(), Some("acme".into()), None),
+        ctx: make_tenant_ctx("acme".into(), Some("team".into()), None),
         tenant: "acme".into(),
         platform: Platform::Slack,
         chat_id: "C123".into(),
@@ -46,7 +46,7 @@ async fn publishes_outbound_payload_via_bus() {
         subject_filter: "greentic.messaging.egress.dev.>".into(),
         adapter: None,
         packs_root: "packs".into(),
-        egress_prefix: gsm_bus::EGRESS_SUBJECT_PREFIX.to_string(),
+        egress_prefix: gsm_core::EGRESS_SUBJECT_PREFIX.to_string(),
         runner_http_url: None,
         runner_http_api_key: None,
     };
@@ -60,7 +60,7 @@ async fn publishes_outbound_payload_via_bus() {
     let published = bus.take_published().await;
     assert_eq!(published.len(), 1);
     let (subject, payload) = &published[0];
-    assert!(subject.contains("greentic.messaging.egress.out.acme.slack"));
+    assert!(subject.contains("greentic.messaging.egress.dev.acme.team.slack"));
     assert_eq!(payload["text"], "hi");
     assert_eq!(payload["adapter"], "slack-main");
 }

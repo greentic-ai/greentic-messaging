@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -492,17 +491,7 @@ fn normalize_state_payload(value: &Value) -> Option<&Value> {
 }
 
 static TAG_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[^>]+>").unwrap());
-static URL_ALLOW_LIST: Lazy<RwLock<Option<Vec<String>>>> =
-    Lazy::new(|| RwLock::new(read_allow_list_from_env()));
-
-fn read_allow_list_from_env() -> Option<Vec<String>> {
-    env::var("CARD_URL_ALLOW_LIST").ok().map(|v| {
-        v.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-    })
-}
+static URL_ALLOW_LIST: Lazy<RwLock<Option<Vec<String>>>> = Lazy::new(|| RwLock::new(None));
 
 fn sanitize_text_for_tier(text: &str, tier: Tier, metrics: &mut RenderMetrics) -> String {
     if matches!(tier, Tier::Premium) {
@@ -560,10 +549,6 @@ pub fn override_url_allow_list(list: Option<Vec<String>>) {
         .write()
         .expect("url allow list lock poisoned");
     *guard = list;
-}
-
-pub fn reload_url_allow_list_from_env() {
-    override_url_allow_list(read_allow_list_from_env());
 }
 
 fn enforce_payload_limit(

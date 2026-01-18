@@ -13,6 +13,12 @@ publish = false
 default = []
 mock-http = []
 e2e = ["dep:gsm-testutil"]
+legacy = []
+
+[[bin]]
+name = "gsm-egress-slack"
+path = "src/main.rs"
+required-features = ["legacy"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -23,7 +29,7 @@ greentic-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
-gsm-core = { path = "../../libs/core" }
+gsm-core = { path = "../../libs/core", features = ["legacy"] }
 gsm-translator = { path = "../../libs/translator" }
 gsm-egress-common = { path = "../egress-common" }
 gsm-backpressure = { path = "../../libs/backpressure" }

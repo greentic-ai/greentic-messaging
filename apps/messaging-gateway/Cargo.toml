@@ -19,6 +19,8 @@ axum = { workspace = true, features = ["macros"] }
 gsm-core = { workspace = true, features = ["nats"] }
 gsm-telemetry = { workspace = true }
 greentic-types = { workspace = true }
+greentic-config = { workspace = true }
+greentic-config-types = { workspace = true }
 metrics = { workspace = true }
 hyper = { workspace = true }
 gsm-bus = { workspace = true }

@@ -29,7 +29,21 @@ impl SharedSessionStore {
         ctx: &TenantCtx,
         user: &UserId,
     ) -> Result<Option<(SessionKey, SessionData)>> {
-        self.inner.find_by_user(ctx, user).map_err(Into::into)
+        let waits = self.inner.list_waits_for_user(ctx, user)?;
+        match waits.len() {
+            0 => Ok(None),
+            1 => {
+                let key = waits.into_iter().next().expect("single wait entry");
+                let data = self
+                    .inner
+                    .get_session(&key)?
+                    .ok_or_else(|| anyhow::anyhow!("session not found for wait"))?;
+                Ok(Some((key, data)))
+            }
+            _ => Err(anyhow::anyhow!(
+                "multiple waits exist for user; use scope-based routing instead"
+            )),
+        }
     }
 
     /// Creates a new session and returns its key.

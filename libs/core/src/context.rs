@@ -1,9 +1,18 @@
 use crate::prelude::*;
-use std::env;
+use once_cell::sync::Lazy;
+use std::sync::RwLock;
 
 /// Returns the current environment identifier, defaulting to `dev`.
 pub fn current_env() -> EnvId {
-    EnvId(env::var("GREENTIC_ENV").unwrap_or_else(|_| "dev".to_string()))
+    CURRENT_ENV
+        .read()
+        .expect("current env lock poisoned")
+        .clone()
+}
+
+/// Updates the process-wide environment identifier used for tenant contexts.
+pub fn set_current_env(env: EnvId) {
+    *CURRENT_ENV.write().expect("current env lock poisoned") = env;
 }
 
 /// Constructs a tenant context from the provided identifiers.
@@ -15,3 +24,5 @@ pub fn make_tenant_ctx(tenant: String, team: Option<String>, user: Option<String
     ctx = ctx.with_user(user.map(UserId));
     ctx
 }
+
+static CURRENT_ENV: Lazy<RwLock<EnvId>> = Lazy::new(|| RwLock::new(EnvId("dev".to_string())));

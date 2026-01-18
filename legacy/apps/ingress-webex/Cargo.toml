@@ -9,6 +9,14 @@ repository = "https://github.com/greentic-ai/greentic-messaging"
 homepage = "https://github.com/greentic-ai/greentic-messaging"
 publish = false
 
+[features]
+legacy = []
+
+[[bin]]
+name = "gsm-ingress-webex"
+path = "src/main.rs"
+required-features = ["legacy"]
+
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
@@ -25,7 +33,7 @@ sha1 = { workspace = true }
 subtle = { workspace = true }
 hex = { workspace = true }
 async-trait = { workspace = true }
-gsm-core = { path = "../../libs/core" }
+gsm-core = { path = "../../libs/core", features = ["legacy"] }
 gsm-idempotency = { path = "../../libs/idempotency" }
 gsm-ingress-common = { path = "../ingress-common" }
 gsm-telemetry = { workspace = true }

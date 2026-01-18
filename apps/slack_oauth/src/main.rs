@@ -9,8 +9,8 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use gsm_core::platforms::slack::workspace::{SlackWorkspace, SlackWorkspaceIndex};
 use gsm_core::{
-    DefaultResolver, NodeResult, SecretsResolver, TenantCtx, make_tenant_ctx,
-    slack_workspace_index, slack_workspace_secret,
+    DefaultResolver, EnvId, NodeResult, SecretsResolver, TenantCtx, make_tenant_ctx,
+    set_current_env, slack_workspace_index, slack_workspace_secret,
 };
 use gsm_telemetry::install as init_telemetry;
 use rand::{
@@ -90,6 +90,11 @@ struct CallbackQuery {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_telemetry("greentic-messaging")?;
+    if let Ok(env) = std::env::var("GREENTIC_ENV")
+        && let Ok(env_id) = EnvId::try_from(env.as_str())
+    {
+        set_current_env(env_id);
+    }
     let client_id = std::env::var("SLACK_CLIENT_ID")?;
     let client_secret = std::env::var("SLACK_CLIENT_SECRET")?;
     let redirect_uri = std::env::var("SLACK_REDIRECT_URI")?;

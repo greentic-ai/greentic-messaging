@@ -46,9 +46,6 @@ use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
 
-const DLQ_ENABLED_ENV: &str = "DLQ_ENABLED";
-const DLQ_SUBJECT_FMT_ENV: &str = "DLQ_SUBJECT_FMT";
-const REPLAY_SUBJECT_FMT_ENV: &str = "REPLAY_SUBJECT_FMT";
 const DEFAULT_DLQ_SUBJECT_FMT: &str = "dlq.{tenant}.{stage}";
 const DEFAULT_REPLAY_SUBJECT_FMT: &str = "replay.{tenant}.{stage}";
 const DLQ_STREAM_NAME: &str = "DLQ";
@@ -85,13 +82,31 @@ pub struct DlqPublisher {
     enabled: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct DlqConfig {
+    pub enabled: bool,
+    pub subject_fmt: String,
+    pub replay_subject_fmt: String,
+}
+
+impl Default for DlqConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            subject_fmt: DEFAULT_DLQ_SUBJECT_FMT.to_string(),
+            replay_subject_fmt: DEFAULT_REPLAY_SUBJECT_FMT.to_string(),
+        }
+    }
+}
+
 impl DlqPublisher {
     pub async fn new(stage: &str, client: Client) -> Result<Self> {
-        let enabled = std::env::var(DLQ_ENABLED_ENV)
-            .map(|v| v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true);
-        let fmt =
-            std::env::var(DLQ_SUBJECT_FMT_ENV).unwrap_or_else(|_| DEFAULT_DLQ_SUBJECT_FMT.into());
+        Self::new_with_config(stage, client, DlqConfig::default()).await
+    }
+
+    pub async fn new_with_config(stage: &str, client: Client, config: DlqConfig) -> Result<Self> {
+        let enabled = config.enabled;
+        let fmt = config.subject_fmt;
 
         let js = async_nats::jetstream::new(client.clone());
         ensure_stream(&js, &fmt).await?;
@@ -100,7 +115,7 @@ impl DlqPublisher {
             client,
             js,
             stage: stage.to_string(),
-            subject_fmt: fmt,
+            subject_fmt: fmt.clone(),
             enabled,
         })
     }
@@ -196,9 +211,11 @@ async fn ensure_stream(js: &JsContext, subject_fmt: &str) -> Result<()> {
 }
 
 pub fn replay_subject(tenant: &str, stage: &str) -> String {
-    let fmt =
-        std::env::var(REPLAY_SUBJECT_FMT_ENV).unwrap_or_else(|_| DEFAULT_REPLAY_SUBJECT_FMT.into());
-    format_subject(&fmt, tenant, stage, None)
+    replay_subject_with_config(&DlqConfig::default(), tenant, stage)
+}
+
+pub fn replay_subject_with_config(config: &DlqConfig, tenant: &str, stage: &str) -> String {
+    format_subject(&config.replay_subject_fmt, tenant, stage, None)
 }
 
 pub fn format_subject(fmt: &str, tenant: &str, stage: &str, platform: Option<&str>) -> String {
@@ -245,19 +262,11 @@ pub async fn list_entries(
     stage: &str,
     limit: usize,
 ) -> Result<Vec<DlqEntry>> {
+    let config = DlqConfig::default();
     let js = async_nats::jetstream::new(client.clone());
-    ensure_stream(
-        &js,
-        &std::env::var(DLQ_SUBJECT_FMT_ENV).unwrap_or_else(|_| DEFAULT_DLQ_SUBJECT_FMT.into()),
-    )
-    .await?;
+    ensure_stream(&js, &config.subject_fmt).await?;
     let stream = js.get_stream(DLQ_STREAM_NAME).await?;
-    let filter_subject = format_subject(
-        &std::env::var(DLQ_SUBJECT_FMT_ENV).unwrap_or_else(|_| DEFAULT_DLQ_SUBJECT_FMT.into()),
-        tenant,
-        stage,
-        None,
-    );
+    let filter_subject = format_subject(&config.subject_fmt, tenant, stage, None);
     let durable = format!("dlq-list-{tenant}-{stage}-{rand}", rand = nanoid!(6));
     let consumer = stream
         .create_consumer(PullConfig {
@@ -302,9 +311,9 @@ pub async fn get_entry(client: &Client, sequence: u64) -> Result<Option<DlqEntry
 }
 
 pub async fn replay_entry(client: &Client, entry: &DlqEntry, target_stage: &str) -> Result<()> {
+    let config = DlqConfig::default();
     let subject = format_subject(
-        &std::env::var(REPLAY_SUBJECT_FMT_ENV)
-            .unwrap_or_else(|_| DEFAULT_REPLAY_SUBJECT_FMT.into()),
+        &config.replay_subject_fmt,
         &entry.record.tenant,
         target_stage,
         None,
@@ -326,19 +335,11 @@ pub async fn replay_entries(
     target_stage: &str,
     limit: usize,
 ) -> Result<Vec<DlqEntry>> {
+    let config = DlqConfig::default();
     let js = async_nats::jetstream::new(client.clone());
-    ensure_stream(
-        &js,
-        &std::env::var(DLQ_SUBJECT_FMT_ENV).unwrap_or_else(|_| DEFAULT_DLQ_SUBJECT_FMT.into()),
-    )
-    .await?;
+    ensure_stream(&js, &config.subject_fmt).await?;
     let stream = js.get_stream(DLQ_STREAM_NAME).await?;
-    let filter_subject = format_subject(
-        &std::env::var(DLQ_SUBJECT_FMT_ENV).unwrap_or_else(|_| DEFAULT_DLQ_SUBJECT_FMT.into()),
-        tenant,
-        stage,
-        None,
-    );
+    let filter_subject = format_subject(&config.subject_fmt, tenant, stage, None);
     let durable = format!("dlq-replay-{tenant}-{stage}-{rand}", rand = nanoid!(6));
     let consumer = stream
         .create_consumer(PullConfig {
@@ -372,12 +373,6 @@ pub async fn replay_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     #[test]
     fn format_subject_inserts_placeholders() {
@@ -397,15 +392,12 @@ mod tests {
     }
 
     #[test]
-    fn replay_subject_uses_env_override() {
-        let _guard = env_lock().lock().unwrap();
-        unsafe {
-            std::env::set_var(REPLAY_SUBJECT_FMT_ENV, "replay.{tenant}.{stage}");
-        }
-        assert_eq!(replay_subject("acme", "translate"), "replay.acme.translate");
-        unsafe {
-            std::env::remove_var(REPLAY_SUBJECT_FMT_ENV);
-        }
+    fn replay_subject_uses_default_format() {
+        let config = DlqConfig::default();
+        assert_eq!(
+            replay_subject_with_config(&config, "acme", "translate"),
+            "replay.acme.translate"
+        );
     }
 
     #[test]

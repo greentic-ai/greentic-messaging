@@ -141,6 +141,13 @@ impl Flow {
         Ok(flow)
     }
 
+    pub fn load_from_str(label: &str, raw: &str) -> anyhow::Result<Self> {
+        let flow: Flow = serde_yaml_bw::from_str(raw)
+            .with_context(|| format!("parsing flow yaml at {label}"))?;
+        flow.validate()?;
+        Ok(flow)
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
         if self.id.trim().is_empty() {
             bail!("flow missing id");

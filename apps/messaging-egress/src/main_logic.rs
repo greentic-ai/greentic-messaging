@@ -6,8 +6,7 @@ use async_nats::jetstream::{
 use futures::StreamExt;
 use gsm_core::{
     AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, HttpRunnerClient,
-    LoggingRunnerClient, OutMessage, RunnerClient, adapter_pack_paths_from_env,
-    default_adapter_pack_paths, shared_client,
+    LoggingRunnerClient, OutMessage, RunnerClient, default_adapter_pack_paths, shared_client,
 };
 use metrics::counter;
 use std::path::PathBuf;
@@ -16,17 +15,19 @@ use tracing::{error, info, warn};
 
 use crate::adapter_registry::AdapterLookup;
 use crate::config::EgressConfig;
-use gsm_bus::{BusClient, NatsBusClient, egress_subject_with_prefix, to_value};
+use gsm_bus::{BusClient, NatsBusClient, to_value};
 
 pub async fn run() -> Result<()> {
-    let config = EgressConfig::from_env()?;
+    let config = EgressConfig::load()?;
+    gsm_core::set_current_env(config.env.clone());
     let client = async_nats::connect(&config.nats_url).await?;
     let js = async_nats::jetstream::new(client.clone());
 
-    let default_cfg = DefaultAdapterPacksConfig::from_env();
+    let default_cfg = DefaultAdapterPacksConfig::default();
     let mut pack_paths =
         default_adapter_pack_paths(PathBuf::from(&config.packs_root).as_path(), &default_cfg);
-    pack_paths.extend(adapter_pack_paths_from_env());
+    let extra_paths: Vec<PathBuf> = Vec::new();
+    pack_paths.extend(extra_paths);
     let packs_root = PathBuf::from(&config.packs_root);
     let registry = AdapterRegistry::load_from_paths(packs_root.as_path(), &pack_paths)
         .unwrap_or_else(|err| {
@@ -172,9 +173,17 @@ pub async fn process_message_internal(
         "adapter" => adapter.name.clone()
     );
 
-    let subject = egress_subject_with_prefix(
+    let team = out
+        .ctx
+        .team
+        .as_ref()
+        .map(|team| team.as_str())
+        .unwrap_or("default");
+    let subject = gsm_core::egress_subject_with_prefix(
         config.egress_prefix.as_str(),
-        &out.tenant,
+        out.ctx.env.as_str(),
+        out.ctx.tenant.as_str(),
+        team,
         out.platform.as_str(),
     );
     let payload = serde_json::json!({

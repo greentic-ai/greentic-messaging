@@ -29,12 +29,11 @@ pub struct GatewayState {
     pub provider_extensions: ProviderExtensionsRegistry,
     pub workers: BTreeMap<String, Arc<dyn WorkerClient>>,
     pub worker_default: Option<WorkerRoutingConfig>,
-    pub worker_egress_subject: Option<String>,
 }
 
 impl GatewayState {
     fn subject(&self, tenant: &str, team: &str, platform: &str) -> String {
-        gsm_bus::ingress_subject_with_prefix(
+        gsm_core::ingress_subject_with_prefix(
             self.config.subject_prefix.as_str(),
             self.config.env.0.as_str(),
             tenant,
@@ -125,7 +124,6 @@ pub async fn build_router_with_bus(
     let state = Arc::new(GatewayState {
         bus,
         worker_default: config.worker_routing.clone(),
-        worker_egress_subject: config.worker_egress_subject.clone(),
         config,
         adapters,
         provider_extensions,
@@ -133,7 +131,7 @@ pub async fn build_router_with_bus(
     });
 
     if state.adapters.is_empty() {
-        warn!("gsm-gateway running with no adapter packs; legacy platform names only");
+        warn!("gsm-gateway running with no adapter packs; channel must match platform names");
     }
 
     let router = Router::new()
@@ -287,8 +285,7 @@ async fn publish(
         .or_else(|| state.config.worker_routes.values().next().cloned())
         .or_else(|| state.worker_default.clone());
 
-    if let (Some(cfg), Some(egress_subject)) = (selected_cfg, state.worker_egress_subject.as_ref())
-    {
+    if let Some(cfg) = selected_cfg {
         let worker = state
             .workers
             .get(cfg.worker_id.as_str())
@@ -319,7 +316,20 @@ async fn publish(
                         );
                         let out_value = to_value(&out_msg)
                             .map_err(|err| (StatusCode::SERVICE_UNAVAILABLE, err.to_string()))?;
-                        if let Err(err) = state.bus.publish_value(egress_subject, out_value).await {
+                        let team = envelope
+                            .tenant
+                            .team
+                            .as_ref()
+                            .map(|team| team.as_str())
+                            .unwrap_or("default");
+                        let egress_subject = gsm_core::egress_subject(
+                            envelope.tenant.env.as_str(),
+                            envelope.tenant.tenant.as_str(),
+                            team,
+                            envelope.channel_id.as_str(),
+                        );
+                        if let Err(err) = state.bus.publish_value(&egress_subject, out_value).await
+                        {
                             tracing::error!(
                                 subject = %egress_subject,
                                 error = %err,
@@ -343,14 +353,19 @@ async fn publish(
         "messaging_ingress_total",
         "tenant" => tenant.to_string(),
         "platform" => envelope.channel_id.clone(),
-        "adapter" => adapter.map(|a| a.name.clone()).unwrap_or_else(|| "legacy".into())
+        "adapter" => adapter
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "unknown".into())
     );
 
     tracing::info_span!(
         "ingress_request",
         tenant = %tenant,
         platform = %envelope.channel_id,
-        adapter = %adapter.as_ref().map(|a| a.name.as_str()).unwrap_or("legacy")
+        adapter = %adapter
+            .as_ref()
+            .map(|a| a.name.as_str())
+            .unwrap_or("unknown")
     )
     .in_scope(|| tracing::trace!("ingress request dispatched"));
 

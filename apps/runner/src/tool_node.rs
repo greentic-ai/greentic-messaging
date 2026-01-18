@@ -10,12 +10,11 @@ pub async fn run_tool(
     cfg: &crate::model::ToolNode,
     env: &MessageEnvelope,
     state: &Value,
+    endpoint: &str,
 ) -> Result<Value> {
     let mut input = cfg.input.clone();
     render_json_strings(&mut input, &json!({"state":state, "envelope":env}))?;
 
-    let endpoint =
-        std::env::var("TOOL_ENDPOINT").unwrap_or_else(|_| "http://localhost:18081".into());
     let url = format!(
         "{}/{}/{}",
         endpoint.trim_end_matches('/'),

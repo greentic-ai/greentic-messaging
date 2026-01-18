@@ -55,6 +55,7 @@ pub async fn ensure_provisioned(
 mod tests {
     use super::*;
     use crate::make_tenant_ctx;
+    use crate::{current_env, set_current_env};
     use async_trait::async_trait;
     use serde::de::DeserializeOwned;
     use std::collections::HashMap;
@@ -103,9 +104,8 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_provisioned_updates_secret() {
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
         let ctx = make_tenant_ctx("acme".into(), Some("team-1".into()), None);
 
         let creds = TelegramCreds {
@@ -131,5 +131,6 @@ mod tests {
 
         let stored: TelegramCreds = resolver.get_json(&path, &ctx).await.unwrap().unwrap();
         assert!(stored.webhook_set, "webhook flag should be persisted");
+        set_current_env(prev_env);
     }
 }

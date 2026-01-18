@@ -262,6 +262,7 @@ where
 mod tests {
     use super::*;
     use crate::make_tenant_ctx;
+    use crate::{current_env, set_current_env};
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -308,10 +309,8 @@ mod tests {
 
     #[tokio::test]
     async fn loads_credentials_and_conversation() {
-        let prev_env = std::env::var("GREENTIC_ENV").ok();
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("tenant-a".into(), Some("team-a".into()), None);
@@ -352,23 +351,13 @@ mod tests {
             .unwrap();
         assert_eq!(res.message_id.as_deref(), Some("mock:chat-123"));
 
-        if let Some(env) = prev_env {
-            unsafe {
-                std::env::set_var("GREENTIC_ENV", env);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("GREENTIC_ENV");
-            }
-        }
+        set_current_env(prev_env);
     }
 
     #[tokio::test]
     async fn missing_conversation_errors() {
-        let prev_env = std::env::var("GREENTIC_ENV").ok();
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("tenant-a".into(), Some("team-a".into()), None);
@@ -408,15 +397,7 @@ mod tests {
             "teams_missing_conversation: no conversation for channel 'missing' under secrets://test/tenant-a/team-a/messaging/teams.conversations.json"
         );
 
-        if let Some(env) = prev_env {
-            unsafe {
-                std::env::set_var("GREENTIC_ENV", env);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("GREENTIC_ENV");
-            }
-        }
+        set_current_env(prev_env);
     }
 
     #[test]

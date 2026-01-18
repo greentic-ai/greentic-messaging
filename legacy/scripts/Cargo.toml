@@ -4,17 +4,23 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+legacy = []
+
 [[bin]]
 name = "telegram_setup"
 path = "telegram_setup.rs"
+required-features = ["legacy"]
 
 [[bin]]
 name = "teams_setup"
 path = "teams_setup.rs"
+required-features = ["legacy"]
 
 [[bin]]
 name = "whatsapp_setup"
 path = "whatsapp_setup.rs"
+required-features = ["legacy"]
 
 [dependencies]
 anyhow = { workspace = true }

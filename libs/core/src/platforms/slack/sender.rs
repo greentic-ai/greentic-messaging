@@ -212,6 +212,7 @@ mod tests {
     use super::*;
     use crate::make_tenant_ctx;
     use crate::secrets_paths::{slack_workspace_index, slack_workspace_secret};
+    use crate::{current_env, set_current_env};
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -258,10 +259,8 @@ mod tests {
 
     #[tokio::test]
     async fn fetches_workspace_token_per_context() {
-        let prev_env = std::env::var("GREENTIC_ENV").ok();
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx_a = make_tenant_ctx("tenant-a".into(), Some("team-a".into()), None);
@@ -352,15 +351,7 @@ mod tests {
             .unwrap();
         assert_eq!(res_b.message_id.as_deref(), Some(workspace_b_primary));
 
-        if let Some(env) = prev_env {
-            unsafe {
-                std::env::set_var("GREENTIC_ENV", env);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("GREENTIC_ENV");
-            }
-        }
+        set_current_env(prev_env);
     }
 
     #[test]
@@ -397,10 +388,8 @@ mod tests {
 
     #[tokio::test]
     async fn falls_back_to_team_workspace_without_index() {
-        let prev_env = std::env::var("GREENTIC_ENV").ok();
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
 
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("tenant".into(), Some("team".into()), None);
@@ -424,15 +413,7 @@ mod tests {
             .unwrap();
         assert_eq!(res.message_id.as_deref(), Some("team"));
 
-        if let Some(env) = prev_env {
-            unsafe {
-                std::env::set_var("GREENTIC_ENV", env);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("GREENTIC_ENV");
-            }
-        }
+        set_current_env(prev_env);
     }
 
     #[tokio::test]
@@ -459,10 +440,8 @@ mod tests {
 
     #[tokio::test]
     async fn requires_channel() {
-        let prev_env = std::env::var("GREENTIC_ENV").ok();
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
         let secrets = Arc::new(InMemorySecrets::default());
         let ctx = make_tenant_ctx("acme".into(), Some("team".into()), None);
         let path = slack_workspace_secret(&ctx, "team");
@@ -483,14 +462,6 @@ mod tests {
             .await
             .expect_err("missing channel");
         assert_eq!(err.to_string(), "slack_missing_channel: channel missing");
-        if let Some(env) = prev_env {
-            unsafe {
-                std::env::set_var("GREENTIC_ENV", env);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("GREENTIC_ENV");
-            }
-        }
+        set_current_env(prev_env);
     }
 }

@@ -99,6 +99,7 @@ async fn create_webhook(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{current_env, set_current_env};
     use crate::{make_tenant_ctx, webex_credentials};
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -147,10 +148,8 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_webhooks_posts_and_persists_ids() {
-        let prev_env = std::env::var("GREENTIC_ENV").ok();
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
         let ctx = make_tenant_ctx("acme".into(), Some("default".into()), None);
         let resolver = InMemorySecrets::default();
         let path = webex_credentials(&ctx);
@@ -178,14 +177,6 @@ mod tests {
             .expect("webhooks");
         assert_eq!(again.webhooks.len(), 2);
 
-        if let Some(env) = prev_env {
-            unsafe {
-                std::env::set_var("GREENTIC_ENV", env);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("GREENTIC_ENV");
-            }
-        }
+        set_current_env(prev_env);
     }
 }

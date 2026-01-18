@@ -3,14 +3,16 @@ use std::sync::Arc;
 
 use gsm_bus::InMemoryBusClient;
 use gsm_core::{
-    AdapterDescriptor, ChannelMessage, LoggingRunnerClient, MessagingAdapterKind, OutKind,
-    OutMessage, Platform, ProviderExtensionsRegistry, make_tenant_ctx,
+    AdapterDescriptor, ChannelMessage, DefaultAdapterPacksConfig, LoggingRunnerClient,
+    MessagingAdapterKind, OutKind, OutMessage, Platform, ProviderExtensionsRegistry,
+    make_tenant_ctx,
 };
 use gsm_egress::adapter_registry::AdapterLookup;
 use gsm_egress::process_message_internal;
 use gsm_gateway::config::GatewayConfig;
 use gsm_gateway::http::{GatewayState, NormalizedRequest, handle_ingress};
 use gsm_gateway::load_adapter_registry;
+use std::path::{Path, PathBuf};
 
 fn test_gateway_config() -> GatewayConfig {
     GatewayConfig {
@@ -18,10 +20,12 @@ fn test_gateway_config() -> GatewayConfig {
         nats_url: "nats://localhost".into(),
         addr: "127.0.0.1:0".parse().unwrap(),
         default_team: "default".into(),
-        subject_prefix: gsm_bus::INGRESS_SUBJECT_PREFIX.to_string(),
+        subject_prefix: gsm_core::INGRESS_SUBJECT_PREFIX.to_string(),
         worker_routing: None,
         worker_routes: std::collections::BTreeMap::new(),
-        worker_egress_subject: None,
+        packs_root: PathBuf::from("packs"),
+        default_packs: DefaultAdapterPacksConfig::default(),
+        extra_pack_paths: Vec::new(),
     }
 }
 
@@ -42,7 +46,11 @@ fn adapter(name: &str, kind: MessagingAdapterKind) -> AdapterDescriptor {
 #[tokio::test]
 async fn ingress_to_egress_round_trip_over_in_memory_bus() {
     let bus = Arc::new(InMemoryBusClient::default());
-    let adapters = load_adapter_registry();
+    let adapters = load_adapter_registry(
+        Path::new("packs"),
+        &DefaultAdapterPacksConfig::default(),
+        &[],
+    );
     let state = Arc::new(GatewayState {
         bus: bus.clone(),
         config: test_gateway_config(),
@@ -50,7 +58,6 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         provider_extensions: ProviderExtensionsRegistry::default(),
         workers: std::collections::BTreeMap::new(),
         worker_default: None,
-        worker_egress_subject: None,
     });
 
     let payload = NormalizedRequest {
@@ -88,7 +95,7 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         .unwrap();
 
     let out = OutMessage {
-        ctx: make_tenant_ctx("dev".into(), Some("acme".into()), None),
+        ctx: make_tenant_ctx("acme".into(), Some("team".into()), None),
         tenant: "acme".into(),
         platform: Platform::from_str(channel.channel_id.as_str()).unwrap(),
         chat_id: channel.session_id.clone(),
@@ -106,7 +113,7 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
         subject_filter: "greentic.messaging.egress.dev.>".into(),
         adapter: None,
         packs_root: "packs".into(),
-        egress_prefix: gsm_bus::EGRESS_SUBJECT_PREFIX.to_string(),
+        egress_prefix: gsm_core::EGRESS_SUBJECT_PREFIX.to_string(),
         runner_http_url: None,
         runner_http_api_key: None,
     };
@@ -120,7 +127,7 @@ async fn ingress_to_egress_round_trip_over_in_memory_bus() {
     let published = bus.take_published().await;
     assert_eq!(published.len(), 1);
     let (egress_subject, payload) = &published[0];
-    assert!(egress_subject.contains("greentic.messaging.egress.out.acme.slack"));
+    assert!(egress_subject.contains("greentic.messaging.egress.dev.acme.team.slack"));
     assert_eq!(payload["text"], text);
     assert_eq!(payload["adapter"], "slack-main");
 }

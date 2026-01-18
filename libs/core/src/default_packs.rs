@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::path_safety::normalize_under_root;
 
 /// Configuration controlling which default messaging adapter packs to load.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DefaultAdapterPacksConfig {
     /// Load all default packs shipped in `packs/messaging`.
     pub install_all: bool,

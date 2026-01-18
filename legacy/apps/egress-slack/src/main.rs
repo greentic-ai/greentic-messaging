@@ -35,8 +35,9 @@ const MAX_ATTEMPTS: usize = 3;
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let env = std::env::var("GREENTIC_ENV").unwrap_or_else(|_| "dev".into());
 
-    let queue = bootstrap(&nats_url, Platform::Slack.as_str()).await?;
+    let queue = bootstrap(&nats_url, &env, Platform::Slack.as_str()).await?;
     tracing::info!(
         stream = %queue.stream,
         consumer = %queue.consumer,

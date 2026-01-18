@@ -161,9 +161,10 @@ struct EventsQuery {
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let env = default_env();
     let platform = std::env::var("PLATFORM").unwrap_or_else(|_| "webchat".into());
 
-    let queue = bootstrap(&nats_url, &platform).await?;
+    let queue = bootstrap(&nats_url, &env, &platform).await?;
     tracing::info!(
         stream = %queue.stream,
         consumer = %queue.consumer,

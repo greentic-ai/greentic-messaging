@@ -1,5 +1,3 @@
-use greentic_pack::builder::{PackMeta, Signing};
-use greentic_pack::messaging::{MessagingAdapter, MessagingAdapterKind, MessagingSection};
 use greentic_types::flow::FlowHasher;
 use greentic_types::pack_manifest::{
     ExtensionInline, ExtensionRef, PackFlowEntry, PackKind, PackManifest, PackSignatures,
@@ -74,26 +72,6 @@ fn serve_ingress_with_pack_sets_env() {
 }
 
 #[test]
-fn flows_run_dry_run() {
-    let tmp = NamedTempFile::new().unwrap();
-    let stdout = run_and_capture(&[
-        "flows",
-        "run",
-        "--flow",
-        tmp.path().to_str().unwrap(),
-        "--platform",
-        "slack",
-        "--tenant",
-        "acme",
-    ]);
-    assert!(
-        stdout.contains("dry-run) make run-runner"),
-        "stdout did not contain dry-run marker:\n{}",
-        stdout
-    );
-}
-
-#[test]
 fn messaging_test_wrapper_dry_run() {
     let stdout = run_and_capture(&["test", "fixtures"]);
     assert!(
@@ -104,49 +82,40 @@ fn messaging_test_wrapper_dry_run() {
 }
 
 #[test]
-fn dev_down_dry_run() {
-    let stdout = run_and_capture(&["dev", "down"]);
+fn dev_up_dry_run() {
+    let stdout = run_and_capture(&["dev", "up"]);
     assert!(
-        stdout.contains("dry-run) make stack-down"),
-        "stdout did not contain stack-down marker:\n{}",
+        stdout.contains("cargo run -p gsm-gateway"),
+        "stdout did not contain gateway run:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("cargo run -p gsm-runner"),
+        "stdout did not contain runner run:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("cargo run -p gsm-egress"),
+        "stdout did not contain egress run:\n{}",
         stdout
     );
 }
 
 #[test]
 fn info_lists_adapters_from_pack() {
-    let pack = NamedTempFile::new().unwrap();
-    std::fs::write(
-        pack.path(),
-        r#"
-id: info-pack
-version: 0.0.1
-messaging:
-  adapters:
-    - name: info-ingress
-      kind: ingress
-      component: info@0.0.1
-    - name: info-egress
-      kind: egress
-      component: info@0.0.1
-    - name: info-both
-      kind: ingress-egress
-      component: info@0.0.1
-"#,
-    )
-    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let pack_path = dir.path().join("provider.gtpack");
+    write_provider_pack(&pack_path);
 
     let stdout = run_and_capture(&[
         "info",
         "--pack",
-        pack.path().to_str().unwrap(),
+        pack_path.to_str().unwrap(),
         "--no-default-packs",
     ]);
     assert!(
-        stdout.contains("info-ingress")
-            && stdout.contains("info-egress")
-            && stdout.contains("info-both"),
-        "stdout did not list adapters:\n{}",
+        stdout.contains("messaging.slack.bot"),
+        "stdout did not list provider-derived adapter:\n{}",
         stdout
     );
 }
@@ -238,11 +207,6 @@ fn info_lists_adapters_from_provider_extension_pack() {
         pack_path.to_str().unwrap(),
         "--no-default-packs",
     ]);
-    assert!(
-        stdout.contains("messaging.slack.bot"),
-        "stdout did not list provider-derived adapter:\n{}",
-        stdout
-    );
     assert!(
         stdout.contains("provider-flow") && stdout.contains("kind=Messaging"),
         "stdout did not list provider flows:\n{}",
@@ -379,110 +343,8 @@ fn info_lists_provider_flow_hints_and_missing_annotation() {
     );
 }
 
-fn write_legacy_pack(path: &std::path::Path) {
-    let flow_yaml = r#"id: legacy-flow
-type: messaging
-in: start
-nodes:
-  start:
-    routes: []
-"#;
-    let flow_bundle = greentic_flow::flow_bundle::FlowBundle {
-        id: "legacy-flow".to_string(),
-        kind: "messaging".to_string(),
-        entry: "start".to_string(),
-        yaml: flow_yaml.to_string(),
-        json: serde_json::json!({
-            "id": "legacy-flow",
-            "type": "messaging",
-            "in": "start",
-            "nodes": { "start": { "routes": [] } }
-        }),
-        hash_blake3: greentic_flow::flow_bundle::blake3_hex(flow_yaml),
-        nodes: Vec::new(),
-    };
-    let meta = PackMeta {
-        pack_version: greentic_pack::builder::PACK_VERSION,
-        pack_id: "cli.legacy".to_string(),
-        version: semver::Version::new(0, 0, 1),
-        name: "legacy-pack".to_string(),
-        kind: None,
-        description: None,
-        authors: Vec::new(),
-        license: None,
-        homepage: None,
-        support: None,
-        vendor: None,
-        imports: Vec::new(),
-        entry_flows: vec![flow_bundle.id.clone()],
-        created_at_utc: "1970-01-01T00:00:00Z".to_string(),
-        events: None,
-        repo: None,
-        messaging: Some(MessagingSection {
-            adapters: Some(vec![MessagingAdapter {
-                name: "legacy-main".into(),
-                kind: MessagingAdapterKind::IngressEgress,
-                component: "legacy-comp@1.0.0".into(),
-                default_flow: Some("flows/messaging/legacy/default.ygtc".into()),
-                custom_flow: None,
-                capabilities: None,
-            }]),
-        }),
-        interfaces: Vec::new(),
-        annotations: serde_json::Map::new(),
-        distribution: None,
-        components: Vec::new(),
-    };
-    let wasm_path = path.with_extension("wasm");
-    std::fs::write(&wasm_path, b"00").expect("write wasm stub");
-    greentic_pack::builder::PackBuilder::new(meta)
-        .with_flow(flow_bundle)
-        .with_component(greentic_pack::builder::ComponentArtifact {
-            name: "legacy-comp".to_string(),
-            version: semver::Version::new(0, 0, 1),
-            wasm_path,
-            schema_json: None,
-            manifest_json: None,
-            capabilities: None,
-            world: None,
-            hash_blake3: None,
-        })
-        .with_signing(Signing::Dev)
-        .build(path)
-        .expect("build legacy pack");
-}
-
 #[test]
-fn info_lists_flows_and_legacy_adapter_flow_hint() {
-    let dir = tempfile::tempdir().unwrap();
-    let pack_path = dir.path().join("legacy.gtpack");
-    write_legacy_pack(&pack_path);
-
-    let stdout = run_and_capture(&[
-        "info",
-        "--pack",
-        pack_path.to_str().unwrap(),
-        "--no-default-packs",
-    ]);
-    assert!(
-        stdout.contains("legacy-main"),
-        "stdout did not list legacy adapter:\n{}",
-        stdout
-    );
-    assert!(
-        stdout.contains("flow=flows/messaging/legacy/default.ygtc"),
-        "stdout did not show legacy flow hint:\n{}",
-        stdout
-    );
-    assert!(
-        stdout.contains("legacy-flow") && stdout.to_lowercase().contains("kind=messaging"),
-        "stdout did not list legacy flow:\n{}",
-        stdout
-    );
-}
-
-#[test]
-fn admin_wrappers_dry_run() {
+fn admin_slack_wrapper_dry_run() {
     let slack = run_and_capture(&[
         "admin",
         "slack",
@@ -495,45 +357,5 @@ fn admin_wrappers_dry_run() {
         slack.contains("dry-run) cargo run -p gsm-slack-oauth"),
         "stdout did not contain dry-run marker:\n{}",
         slack
-    );
-
-    let teams = run_and_capture(&[
-        "admin",
-        "teams",
-        "setup",
-        "--",
-        "--tenant",
-        "t",
-        "--client-id",
-        "c",
-        "--client-secret",
-        "s",
-        "--chat-id",
-        "chat",
-    ]);
-    assert!(
-        teams.contains(
-            "dry-run) cargo run --manifest-path legacy/scripts/Cargo.toml --bin teams_setup"
-        ),
-        "stdout did not contain teams setup marker:\n{}",
-        teams
-    );
-
-    let telegram = run_and_capture(&["admin", "telegram", "setup"]);
-    assert!(
-        telegram.contains(
-            "dry-run) cargo run --manifest-path legacy/scripts/Cargo.toml --bin telegram_setup"
-        ),
-        "stdout did not contain telegram setup marker:\n{}",
-        telegram
-    );
-
-    let whatsapp = run_and_capture(&["admin", "whatsapp", "setup"]);
-    assert!(
-        whatsapp.contains(
-            "dry-run) cargo run --manifest-path legacy/scripts/Cargo.toml --bin whatsapp_setup"
-        ),
-        "stdout did not contain whatsapp setup marker:\n{}",
-        whatsapp
     );
 }

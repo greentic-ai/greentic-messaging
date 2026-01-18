@@ -80,6 +80,7 @@ pub async fn ensure_subscription(
 mod tests {
     use super::*;
     use crate::make_tenant_ctx;
+    use crate::{current_env, set_current_env};
     use async_trait::async_trait;
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -127,9 +128,8 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_subscription_sets_signature_and_is_idempotent() {
-        unsafe {
-            std::env::set_var("GREENTIC_ENV", "test");
-        }
+        let prev_env = current_env();
+        set_current_env(EnvId::try_from("test").expect("valid env id"));
         let ctx = make_tenant_ctx("acme".into(), None, None);
         let resolver = InMemorySecrets::default();
         let path = whatsapp_credentials(&ctx);
@@ -191,5 +191,6 @@ mod tests {
             rotated_result.subscription_signature.as_deref(),
             Some(rotated_result.fingerprint().as_str())
         );
+        set_current_env(prev_env);
     }
 }

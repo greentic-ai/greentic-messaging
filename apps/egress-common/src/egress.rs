@@ -34,14 +34,19 @@ impl QueueConsumer {
 }
 
 /// Connect to NATS JetStream and prepare a queue-group consumer for the egress worker.
-pub async fn bootstrap(nats_url: &str, platform: &str) -> Result<QueueConsumer> {
+pub async fn bootstrap(nats_url: &str, env: &str, platform: &str) -> Result<QueueConsumer> {
     let client = async_nats::connect(nats_url).await?;
     let js = async_nats::jetstream::new(client.clone());
     let limiter = HybridLimiter::new(Some(&js)).await?;
 
     // Subscribe to all tenants for this platform; tenant context is carried in the message.
-    let subject = format!("greentic.msg.out.*.{platform}.>");
-    let stream_name = format!("msg-out-{platform}");
+    let subject = format!(
+        "{}.{}.*.*.{}",
+        gsm_core::EGRESS_SUBJECT_PREFIX,
+        env,
+        platform
+    );
+    let stream_name = format!("msg-out-{}-{platform}", env);
     let stream_cfg = StreamConfig {
         name: stream_name.clone(),
         subjects: vec![subject.clone()],
@@ -57,8 +62,8 @@ pub async fn bootstrap(nats_url: &str, platform: &str) -> Result<QueueConsumer> 
         .await
         .with_context(|| format!("ensure stream {stream_name}"))?;
 
-    let deliver_subject = format!("deliver.egress.{platform}");
-    let consumer_name = format!("egress-{platform}");
+    let deliver_subject = format!("deliver.egress.{}.{}", env, platform);
+    let consumer_name = format!("egress-{}-{platform}", env);
     let consumer = stream
         .get_or_create_consumer(
             &consumer_name,

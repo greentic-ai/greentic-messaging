@@ -9,6 +9,14 @@ repository = "https://github.com/greentic-ai/greentic-messaging"
 homepage = "https://github.com/greentic-ai/greentic-messaging"
 publish = false
 
+[features]
+legacy = []
+
+[[bin]]
+name = "gsm-egress-webchat"
+path = "src/main.rs"
+required-features = ["legacy"]
+
 [dependencies]
 anyhow = { workspace = true }
 async-nats = { workspace = true }
@@ -19,7 +27,7 @@ axum = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 include_dir = { workspace = true }
-gsm-core = { workspace = true, features = ["adaptive-cards"] }
+gsm-core = { workspace = true, features = ["adaptive-cards", "legacy"] }
 gsm-translator = { workspace = true }
 gsm-egress-common = { path = "../egress-common" }
 gsm-backpressure = { workspace = true }
