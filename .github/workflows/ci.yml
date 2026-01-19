@@ -97,8 +97,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mold
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: providers probe + vectors
-        run: cargo test -p gsm-core --test providers_new_probe --test providers_backend_gate --test providers_vectors
+      - name: providers core tests
+        run: cargo test -p gsm-core --test provider_registry --test provider_capabilities --test provider_ops
 
   oauth:
     name: oauth suites
