@@ -82,7 +82,7 @@ pub enum CliCommand {
     /// Work with provider gtpack bundles
     Packs {
         #[command(subcommand)]
-        command: PacksCommand,
+        command: Box<PacksCommand>,
     },
 }
 
@@ -111,6 +111,28 @@ pub enum PacksCommand {
         /// Stop on first failure
         #[arg(long)]
         fail_fast: bool,
+    },
+    /// Run end-to-end conformance for pack flows
+    Conformance {
+        #[command(flatten)]
+        discovery: PackDiscoveryArgs,
+        #[command(flatten)]
+        runtime: PackRuntimeArgs,
+        /// Explicit pack paths to validate (repeatable)
+        #[arg(long, value_name = "PATH")]
+        pack: Vec<PathBuf>,
+        /// Public base URL injected into setup flows
+        #[arg(long, default_value = "https://example.invalid")]
+        public_base_url: String,
+        /// Fixture used to simulate ingress payloads
+        #[arg(
+            long,
+            default_value = "crates/messaging-test/tests/fixtures/ingress/basic.json"
+        )]
+        ingress_fixture: PathBuf,
+        /// Only run requirements + setup flow
+        #[arg(long)]
+        setup_only: bool,
     },
 }
 
@@ -177,9 +199,10 @@ mod tests {
     fn packs_all_defaults_to_dry_run() {
         let cli = Cli::try_parse_from(["cli", "packs", "all"]).expect("parse cli");
         match cli.command {
-            CliCommand::Packs {
-                command: PacksCommand::All { runtime, .. },
-            } => assert!(runtime.dry_run),
+            CliCommand::Packs { command } => match *command {
+                PacksCommand::All { runtime, .. } => assert!(runtime.dry_run),
+                other => panic!("unexpected packs command parsed: {other:?}"),
+            },
             other => panic!("unexpected command parsed: {other:?}"),
         }
     }
@@ -197,13 +220,14 @@ mod tests {
         ])
         .expect("parse cli");
         match cli.command {
-            CliCommand::Packs {
-                command: PacksCommand::List { discovery, .. },
-            } => {
-                assert_eq!(discovery.roots.len(), 2);
-                assert!(discovery.roots.contains(&PathBuf::from("dist/packs")));
-                assert!(discovery.roots.contains(&PathBuf::from("extra/packs")));
-            }
+            CliCommand::Packs { command } => match *command {
+                PacksCommand::List { discovery, .. } => {
+                    assert_eq!(discovery.roots.len(), 2);
+                    assert!(discovery.roots.contains(&PathBuf::from("dist/packs")));
+                    assert!(discovery.roots.contains(&PathBuf::from("extra/packs")));
+                }
+                other => panic!("unexpected packs command parsed: {other:?}"),
+            },
             other => panic!("unexpected command parsed: {other:?}"),
         }
     }

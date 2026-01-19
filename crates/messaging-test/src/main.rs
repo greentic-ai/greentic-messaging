@@ -1,5 +1,6 @@
 mod adapters;
 mod cli;
+mod conformance;
 mod fixtures;
 mod packs;
 mod run;

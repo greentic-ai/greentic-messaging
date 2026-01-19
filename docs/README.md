@@ -25,7 +25,7 @@ Defaults live under `packs/messaging`. Override or add more packs with:
 - `MESSAGING_ADAPTER_PACK_PATHS` (comma-separated paths).
 - `MESSAGING_PACKS_ROOT` (root for default packs).
 
-Use `tools/generate_packs.sh` to build `.gtpack` bundles.
+Pack generation now lives in the providers repo; this repo no longer builds provider components.
 
 ## Dev CLI
 

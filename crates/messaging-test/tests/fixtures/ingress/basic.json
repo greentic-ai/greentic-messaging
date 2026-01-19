@@ -1,0 +1,13 @@
+{
+  "tenant": "example",
+  "platform": "slack",
+  "chat_id": "C123",
+  "user_id": "U456",
+  "thread_id": null,
+  "msg_id": "msg-1",
+  "text": "conformance ingress fixture",
+  "timestamp": "2024-01-01T00:00:00Z",
+  "context": {
+    "source": "conformance"
+  }
+}

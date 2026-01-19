@@ -15,7 +15,7 @@ Testing with seeds:
 - Point tests at a greentic-secrets seed file via `MESSAGING_SEED_FILE=/path/to/seed.yaml`.
 - Prefer `messaging/<platform>.credentials.json` entries in the seed; legacy env/`SECRETS_ROOT`
   fallbacks can be disabled with `MESSAGING_DISABLE_ENV=1` and/or `MESSAGING_DISABLE_SECRETS_ROOT=1`.
-- If you build packs locally, ensure component artifacts exist under `target/components/*.wasm` before running `tools/generate_packs.sh`; see `docs/pack_generation.md`.
+- Pack generation now lives in the providers repo; this repo no longer builds provider components.
 
 ## Installation
 

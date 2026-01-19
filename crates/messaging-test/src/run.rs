@@ -9,6 +9,7 @@ use tokio::runtime::Runtime;
 
 use crate::adapters::{AdapterConfig, AdapterMode, AdapterTarget, registry_from_env};
 use crate::cli::{Cli, CliCommand, PacksCommand};
+use crate::conformance::{self, ConformanceReport, ConformanceStatus};
 use crate::fixtures::{Fixture, discover};
 use crate::packs::{self, PackRunReport};
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
@@ -58,7 +59,7 @@ impl RunContext {
             } => self.run_interactive(fixture, dry_run),
             CliCommand::All { dry_run } => self.run_all(dry_run),
             CliCommand::GenGolden => self.gen_golden(),
-            CliCommand::Packs { ref command } => self.packs(command),
+            CliCommand::Packs { ref command } => self.packs(command.as_ref()),
         }
     }
 
@@ -261,6 +262,39 @@ impl RunContext {
                     Ok(())
                 }
             }
+            PacksCommand::Conformance {
+                discovery,
+                runtime,
+                public_base_url,
+                ingress_fixture,
+                pack,
+                setup_only,
+            } => {
+                let reports = conformance::run_conformance(conformance::ConformanceOptions {
+                    discovery: discovery.clone(),
+                    runtime: runtime.clone(),
+                    pack_paths: pack.clone(),
+                    public_base_url: public_base_url.clone(),
+                    ingress_fixture: ingress_fixture.clone(),
+                    setup_only: *setup_only,
+                })?;
+                if reports.is_empty() {
+                    println!("No packs matched {}", discovery.glob);
+                    return Ok(());
+                }
+                let mut failures = 0;
+                for report in &reports {
+                    self.print_conformance_report(report);
+                    if !report.is_success() {
+                        failures += 1;
+                    }
+                }
+                if failures > 0 {
+                    Err(anyhow!("{failures} pack(s) failed conformance"))
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
@@ -338,6 +372,22 @@ impl RunContext {
             }
         } else {
             println!("  result: ok");
+        }
+    }
+
+    fn print_conformance_report(&self, report: &ConformanceReport) {
+        println!("Pack {} ({})", report.pack_id, report.pack_path.display());
+        println!("  conformance:");
+        for step in &report.steps {
+            let status = match step.status {
+                ConformanceStatus::Ok => "ok",
+                ConformanceStatus::Skipped => "skipped",
+                ConformanceStatus::Failed => "failed",
+            };
+            println!("    - {}: {}", step.name, status);
+            for detail in &step.details {
+                println!("      - {}", detail);
+            }
         }
     }
 

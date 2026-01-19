@@ -847,6 +847,7 @@ fn handle_dev_setup(
     let secrets_cli = greentic_secrets_binary();
     run_cli_command(
         &secrets_cli,
+        "greentic-secrets",
         &[
             "init".into(),
             "--pack".into(),
@@ -865,6 +866,7 @@ fn handle_dev_setup(
             env::var("GREENTIC_OAUTH_ADMIN").unwrap_or_else(|_| "greentic-oauth-admin".into());
         run_cli_command(
             &oauth_admin,
+            "greentic-oauth-admin",
             &[
                 "start".into(),
                 provider.clone(),
@@ -874,11 +876,45 @@ fn handle_dev_setup(
         )?;
     }
 
+    let public_base_url = resolve_public_base_url();
+    let setup_args = vec![
+        "packs".to_string(),
+        "conformance".to_string(),
+        "--setup-only".to_string(),
+        "--public-base-url".to_string(),
+        public_base_url.clone(),
+        "--pack".to_string(),
+        pack_path.display().to_string(),
+        "--env".to_string(),
+        context.env.clone(),
+        "--tenant".to_string(),
+        context.tenant.clone(),
+        "--team".to_string(),
+        context.team.clone(),
+    ];
+    run_messaging_test_cli_str(setup_args)?;
+
     println!(
         "Setup complete for {provider} (env={}, tenant={}, team={})",
         context.env, context.tenant, context.team
     );
     Ok(())
+}
+
+fn resolve_public_base_url() -> String {
+    if let Ok(runtime) = read_dev_runtime()
+        && let Some(url) = runtime.public_base_url
+    {
+        return url;
+    }
+    if let Ok(url) = env::var("PUBLIC_BASE_URL") {
+        return url;
+    }
+    let gateway_port = env::var("MESSAGING_GATEWAY_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_GATEWAY_PORT);
+    format!("http://localhost:{gateway_port}")
 }
 
 fn handle_dev_down() -> Result<()> {
@@ -1035,9 +1071,15 @@ fn tail_logs(entries: Vec<(String, PathBuf)>) -> Result<()> {
 }
 
 fn tail_log_file(name: &str, path: &Path) -> Result<()> {
-    let file = match fs::OpenOptions::new().read(true).open(path) {
-        Ok(file) => file,
-        Err(err) => return Err(anyhow!("cannot open log file {}: {err}", path.display())),
+    let file = loop {
+        match fs::OpenOptions::new().read(true).open(path) {
+            Ok(file) => break file,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+            Err(err) => return Err(anyhow!("cannot open log file {}: {err}", path.display())),
+        }
     };
     let mut reader = BufReader::new(file);
     reader.seek(io::SeekFrom::End(0))?;
@@ -1105,9 +1147,9 @@ fn find_pack_with_provider(
     }
 }
 
-fn run_cli_command(binary: &str, args: &[String]) -> Result<()> {
+fn run_cli_command(binary: &str, display: &str, args: &[String]) -> Result<()> {
     if cli_dry_run() {
-        println!("(dry-run) {binary} {}", args.join(" "));
+        println!("(dry-run) {display} [args redacted: {}]", args.len());
         return Ok(());
     }
     let status = ProcessCommand::new(binary)

@@ -48,7 +48,7 @@ This forces test utilities to use the seed and ignore legacy env/dir fallbacks.
 ## Use gtpack adapters with greentic-messaging
 
 1) Build or fetch `.gtpack` bundles  
-   - Dev: `tools/generate_packs.sh` expects component WASM artifacts under `target/components/*.wasm` and emits `target/packs/*.gtpack`.  
+   - Dev: pack generation now lives in the providers repo; this repo no longer builds provider components.  
    - CI/consumers: use the signed packs published alongside releases or artifacts you trust.
 
 2) Start gateway/egress with the packs loaded  

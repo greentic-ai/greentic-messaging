@@ -99,6 +99,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: providers core tests
         run: cargo test -p gsm-core --test provider_registry --test provider_capabilities --test provider_ops
+      - name: providers conformance
+        run: cargo run -p greentic-messaging-test -- packs conformance --packs greentic-messaging-providers/dist/packs --glob "messaging-*.gtpack"
 
   oauth:
     name: oauth suites

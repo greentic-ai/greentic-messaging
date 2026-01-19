@@ -1,12 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 const sourceMapShim = fileURLToPath(new URL("./src/shims/source-map-js.ts", import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), nodePolyfills()],
+  plugins: [react()],
   envPrefix: ["VITE_", "WEBCHAT_"],
   resolve: {
     alias: {

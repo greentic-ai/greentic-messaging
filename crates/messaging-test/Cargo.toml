@@ -19,6 +19,10 @@ targets = [
 [dependencies]
 anyhow = "1"
 clap = { workspace = true, features = ["derive"] }
+futures = { workspace = true }
+handlebars = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -26,6 +30,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 greentic-types = { workspace = true }
 greentic-flow = { workspace = true }
 greentic-pack-lib = { workspace = true }
+greentic-messaging-validate = { path = "../greentic-messaging-validate" }
 greentic-distributor-client = { version = "0.4", features = ["dist-client"] }
 blake3 = "1"
 gsm-core = { workspace = true }
