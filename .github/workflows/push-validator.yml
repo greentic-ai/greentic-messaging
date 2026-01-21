@@ -1,8 +1,6 @@
-name: validator-pack
+name: push-validator
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 jobs:

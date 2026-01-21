@@ -74,7 +74,9 @@ jobs:
           name: greentic-tools
           path: .greentic-tools/bin
       - name: Add greentic tools to PATH
-        run: echo "${{ github.workspace }}/.greentic-tools/bin" >> "$GITHUB_PATH"
+        run: |
+          chmod +x .greentic-tools/bin/*
+          echo "${{ github.workspace }}/.greentic-tools/bin" >> "$GITHUB_PATH"
       - name: build
         run: cargo build --workspace --all-targets --exclude dev-viewer ${{ matrix.cargo_args }}
       - name: test
