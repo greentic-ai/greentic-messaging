@@ -7,6 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  greentic-tools:
+    uses: ./.github/workflows/greentic-tools.yml
+
   lint:
     runs-on: ubuntu-latest
     permissions:
@@ -32,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    needs: lint
+    needs: [lint, greentic-tools]
     env:
       CARGO_BUILD_JOBS: 1
       RUSTFLAGS: "-C debuginfo=0 -C link-arg=-fuse-ld=mold"

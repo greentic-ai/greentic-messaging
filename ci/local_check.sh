@@ -15,6 +15,7 @@ PASSED_STEPS=0
 SKIPPED_STEPS=0
 STACK_STARTED=0
 CARGO_OFFLINE_READY=""
+declare -a CARGO_OFFLINE_ARGS=()
 
 export CARGO_TERM_COLOR=always
 if [ "$ONLINE" != "1" ]; then
@@ -259,6 +260,20 @@ run_messaging_test_step() {
   cargo run -p greentic-messaging-test --locked "${CARGO_OFFLINE_ARGS[@]}" -- all --dry-run
 }
 
+validator_pack_step() {
+  ensure_tools cargo python3 jq rsync greentic-pack
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  scripts/build-validator-pack.sh
+}
+
 coverage_step() {
   if [ "$STRICT" != "1" ]; then
     printf '[info] Coverage runs only when LOCAL_CHECK_STRICT=1\n'
@@ -424,6 +439,9 @@ main() {
 
   step "cargo build"
   run_or_skip "cargo build" build_step
+
+  step "validator pack"
+  run_or_skip "validator pack" validator_pack_step
 
   step "cargo build (all features)"
   run_or_skip "cargo build --all-features" build_all_features_step

@@ -1,0 +1,53 @@
+name: greentic-tools
+
+on:
+  workflow_call:
+    inputs:
+      tools:
+        description: Space-separated list of greentic binaries to install.
+        required: false
+        type: string
+        default: "greentic-pack greentic-provision"
+      runs-on:
+        description: Runner label to use for installing tools.
+        required: false
+        type: string
+        default: ubuntu-latest
+      toolchain:
+        description: Rust toolchain to install for cargo-binstall.
+        required: false
+        type: string
+        default: stable
+
+jobs:
+  install:
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
+    steps:
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@${{ inputs.toolchain }}
+
+      - name: Cache cargo binstall and binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/binstall
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: greentic-tools-${{ runner.os }}-${{ inputs.tools }}-${{ hashFiles('.github/workflows/greentic-tools.yml') }}
+
+      - name: Install cargo-binstall
+        run: |
+          if ! command -v cargo-binstall >/dev/null 2>&1; then
+            cargo install cargo-binstall --locked
+          fi
+
+      - name: Install greentic tools
+        env:
+          TOOLS: ${{ inputs.tools }}
+        run: |
+          if [ -n "$TOOLS" ]; then
+            cargo binstall --no-confirm $TOOLS
+          fi
