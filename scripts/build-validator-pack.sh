@@ -36,7 +36,7 @@ mkdir -p "${staging}"
 rsync -a "${src}/" "${staging}/"
 
 component_src="${ROOT_DIR}/target/validators/messaging-pack-validator.wasm"
-component_dst="${staging}/components/greentic.validators.messaging.wasm"
+component_dst="${staging}/components/greentic.validators.messaging@${VERSION}/component.wasm"
 mkdir -p "$(dirname "${component_dst}")"
 cp "${component_src}" "${component_dst}"
 
@@ -49,6 +49,30 @@ greentic-pack build \
   --in "${staging}" \
   --gtpack-out "${OUT_DIR}/validators-messaging.gtpack" \
   --no-update
+
+python3 - <<PY
+from pathlib import Path
+import zipfile
+
+pack = Path("${OUT_DIR}/validators-messaging.gtpack")
+version = "${VERSION}"
+wasm_src = Path("${component_src}")
+manifest_src = Path("${staging}/components/greentic.validators.messaging.manifest.cbor")
+
+wasm_dst = f"components/greentic.validators.messaging@{version}/component.wasm"
+manifest_dst = f"components/greentic.validators.messaging@{version}/component.manifest.cbor"
+
+with zipfile.ZipFile(pack, "a") as zf:
+    try:
+        zf.getinfo(wasm_dst)
+    except KeyError:
+        zf.write(wasm_src, wasm_dst)
+    if manifest_src.exists():
+        try:
+            zf.getinfo(manifest_dst)
+        except KeyError:
+            zf.write(manifest_src, manifest_dst)
+PY
 
 greentic-pack doctor \
   --pack "${OUT_DIR}/validators-messaging.gtpack" \
