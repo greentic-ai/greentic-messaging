@@ -141,7 +141,10 @@ fn has_subscriptions_flow(manifest: &PackManifest) -> bool {
 
 fn provider_mentions_public_url(provider: &ProviderDecl) -> bool {
     let schema_ref = provider.config_schema_ref.to_ascii_lowercase();
-    schema_ref.contains("setup") || schema_ref.contains("webhook") || schema_ref.contains("public")
+    schema_ref.contains("setup")
+        || schema_ref.contains("webhook")
+        || schema_ref.contains("public")
+        || (schema_ref.contains("schemas/messaging/") && schema_ref.ends_with("config.schema.json"))
 }
 
 fn validate_provider_decls(manifest: &PackManifest) -> Vec<Diagnostic> {

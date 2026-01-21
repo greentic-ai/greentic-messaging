@@ -66,3 +66,7 @@ jobs:
             ghcr.io/greentic-ai/validators/messaging:${{ steps.version.outputs.version }} \
             dist/validators-messaging.gtpack:application/octet-stream \
             --artifact-type application/vnd.greentic.pack
+          oras push \
+            ghcr.io/greentic-ai/validators/messaging:latest \
+            dist/validators-messaging.gtpack:application/octet-stream \
+            --artifact-type application/vnd.greentic.pack
