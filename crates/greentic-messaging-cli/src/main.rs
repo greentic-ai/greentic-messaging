@@ -1046,22 +1046,15 @@ fn handle_dev_setup(
         serde_json::Value::Null
     });
 
-    let setup_args = vec![
-        "packs".to_string(),
-        "conformance".to_string(),
-        "--setup-only".to_string(),
-        "--public-base-url".to_string(),
-        public_base_url.clone(),
-        "--pack-path".to_string(),
+    let doctor_args = vec![
+        "doctor".to_string(),
+        "--validator-pack".to_string(),
+        "oci://ghcr.io/greentic-ai/validators/messaging:latest".to_string(),
+        "--allow-oci-tags".to_string(),
+        "--pack".to_string(),
         pack_path.display().to_string(),
-        "--env".to_string(),
-        context.env.clone(),
-        "--tenant".to_string(),
-        context.tenant.clone(),
-        "--team".to_string(),
-        context.team.clone(),
     ];
-    run_messaging_test_cli_str(setup_args)?;
+    run_greentic_pack_doctor(doctor_args)?;
 
     let mut store = read_dev_installs()?;
     let mut state = state.clone();
@@ -1915,6 +1908,22 @@ fn run_messaging_test_cli_str(args: Vec<String>) -> Result<()> {
         Err(anyhow!(
             "greentic-messaging-test exited with status {status}"
         ))
+    }
+}
+
+fn run_greentic_pack_doctor(args: Vec<String>) -> Result<()> {
+    if cli_dry_run() {
+        println!("(dry-run) greentic-pack{}", dry_suffix(&args));
+        return Ok(());
+    }
+    let status = ProcessCommand::new("greentic-pack")
+        .args(args)
+        .status()
+        .context("failed to run greentic-pack")?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!("greentic-pack exited with status {status}"))
     }
 }
 
