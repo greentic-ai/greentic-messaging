@@ -283,13 +283,13 @@ impl RunContext {
                 runtime,
                 public_base_url,
                 ingress_fixture,
-                pack,
+                pack_paths,
                 setup_only,
             } => {
                 let reports = conformance::run_conformance(conformance::ConformanceOptions {
                     discovery: discovery.clone(),
                     runtime: runtime.clone(),
-                    pack_paths: pack.clone(),
+                    pack_paths: pack_paths.clone(),
                     public_base_url: public_base_url.clone(),
                     ingress_fixture: ingress_fixture.clone(),
                     setup_only: *setup_only,

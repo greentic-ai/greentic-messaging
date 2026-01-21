@@ -29,33 +29,45 @@ cargo tarpaulin --workspace --all-features --out Lcov --output-dir coverage
 The generated `coverage/` directory contains the LCOV output that mirrors the
 artifact uploaded by GitHub Actions.
 
-## Quickstart via greentic-secrets + greentic-messaging CLI
+## Quickstart (packs + greentic-messaging CLI)
 
-Bootstrap secrets first (dev-only) using the canonical CLI:
+The CLI is the supported entry point for dev and local serving. Provider packs
+(`messaging-*.gtpack`) come from the providers repo and are required for setup.
 
 ```bash
-greentic-secrets init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env dev --tenant acme --team default --non-interactive
+# inspect env + pack resolution
+greentic-messaging info
+
+# start gateway/runner/egress (and tunnel by default)
+greentic-messaging dev up
+
+# run provider setup and persist install record
+# use the provider id from the pack (see `greentic-messaging info`)
+greentic-messaging dev setup messaging.telegram.bot
+
+# tail local service logs
+greentic-messaging dev logs --follow
 ```
 
-Then run the messaging orchestration CLI:
+To run a single service directly:
 
 ```bash
-greentic-messaging info
-greentic-messaging dev up
-greentic-messaging dev logs
-greentic-messaging serve ingress slack --tenant acme
-greentic-messaging test fixtures
-greentic-messaging admin guard-rails show
+greentic-messaging serve ingress slack --tenant acme --team default
+greentic-messaging serve egress --tenant acme --team default
+greentic-messaging serve runner --tenant acme --team default
+greentic-messaging serve subscriptions --tenant acme --team default
+```
 
-# run ingress against a provider bundle (.gtpack)
+Pack overrides are supported on all commands:
+
+```bash
 greentic-messaging serve ingress webchat \
   --tenant acme \
-  --pack fixtures/packs/messaging-provider-bundle.gtpack \
+  --pack /abs/path/to/messaging-webchat.gtpack \
   --no-default-packs
 ```
 
-The CLI assumes secrets are managed through `greentic-secrets` (ctx/seed/apply).
-Refer to [docs/README.md](docs/README.md) for the current command reference.
+Refer to [docs/README.md](docs/README.md) for the full CLI reference and pack notes.
 
 ## Design Docs
 
@@ -149,98 +161,13 @@ NATS_URL=nats://127.0.0.1:4222 cargo run -p gsm-egress
 ```
 Point your test client at `http://localhost:8080/api/acme/default/webchat` with a JSON payload such as `{"chatId":"chat-1","userId":"user-42","text":"hi","metadata":{"channelData":{"env":"dev","tenant":"acme"}}}` and watch the gateway publish to NATS. The egress log will print the normalized `OutMessage` that would be sent to the downstream provider. This flow makes it easy to reason about the runtime without maintaining one binary per platform.
 
-## Tenant bootstrap CLI
+## E2E Pack Conformance
 
-`messaging-tenants` is now a convenience wrapper around the canonical `greentic-secrets` CLI. Use it to call `greentic-secrets init/scaffold/wizard/apply` for messaging packs; it no longer writes secrets directly or maintains its own tree layout. `greentic-secrets` remains the source of truth.
-
-Example (dev scaffolding):
+Run the new e2e conformance runner against provider packs:
 
 ```bash
-cargo run -p messaging-tenants -- init --pack fixtures/packs/messaging_secrets_smoke/pack.yaml --env dev --tenant acme --team support --non-interactive
+greentic-messaging-test e2e --packs dist/packs --dry-run
 ```
-
-Point `messaging-egress` at the same `GREENTIC_ENV`/`TENANT` and the credentials flow through automatically once seeded via `greentic-secrets`.
-
-## Sending Messages
-
-All egress adapters now share a common interface: pass a `TenantCtx` alongside an
-`OutboundMessage` and the sender selects the scoped credentials automatically.
-
-```rust
-use std::sync::Arc;
-
-use gsm_core::egress::{OutboundMessage, SendResult};
-use gsm_core::platforms::slack::sender::SlackSender;
-use gsm_core::prelude::{make_tenant_ctx, DefaultResolver};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // GREENTIC_ENV defaults to "dev" but can be overridden for other scopes.
-    unsafe { std::env::set_var("GREENTIC_ENV", "dev"); }
-
-    let ctx = make_tenant_ctx("acme".into(), Some("support".into()), None);
-    let resolver = Arc::new(DefaultResolver::new().await?);
-    let sender = SlackSender::new(reqwest::Client::new(), resolver, None);
-
-    let msg = OutboundMessage {
-        channel: Some("C123".into()),
-        text: Some("Hello from Greentic".into()),
-        payload: None,
-    };
-
-    let SendResult { message_id, .. } = sender.send(&ctx, msg).await?;
-    println!("posted message id: {:?}", message_id);
-    Ok(())
-}
-```
-
-For testing, each egress binary exposes a `mock-http` Cargo feature that swaps
-remote API calls for in-memory mocks (`cargo test -p gsm-egress-slack --features
-mock-http`).
-
-## Slack Integration
-
-1. Create a Slack app with a Bot User token (Scopes: `app_mentions:read`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `chat:write`, `commands`).
-2. Run the OAuth helper to install the app per tenant/team:
-   ```bash
-   export SLACK_CLIENT_ID=...
-   export SLACK_CLIENT_SECRET=...
-   export SLACK_REDIRECT_URI=https://<public-host>/slack/callback
-   export SLACK_SCOPES="app_mentions:read,channels:history,chat:write"
-   export SLACK_SIGNING_SECRET=...
-   cargo run -p gsm-slack-oauth
-   ```
-   Visit `/slack/install?tenant=acme&team=support` to initiate an install. When Slack redirects back to `/slack/callback`, the handler stores the workspace credentials at `/{env}/messaging/slack/{tenant}/{team}/workspace/<team_id>.json` (the runtime defaults to `env=dev`).
-3. Start the services:
-   ```bash
-   make stack-up             # optional: start local nats/docker stack
-   make run-ingress-slack
-   make run-egress-slack
-   FLOW=examples/flows/weather_slack.yaml PLATFORM=slack make run-runner
-   ```
-4. Point Slack Event Subscriptions to `/ingress/slack/{tenant}/{team}/events`. The ingress verifies the signing secret, emits an `InvocationEnvelope`, and publishes to NATS. Replies with a `thread_ts` keep the conversation threaded.
-
-## Microsoft Teams Integration
-
-1. Register an Azure AD app with permissions to Microsoft Graph (`Chat.ReadWrite`, `ChannelMessage.Send`, `ChatMessage.Send`) and create a client secret. Configure a subscription webhook pointing to `/teams/webhook`.
-2. Export required values:
-   ```bash
-   export MS_GRAPH_TENANT_ID=...
-   export MS_GRAPH_CLIENT_ID=...
-   export MS_GRAPH_CLIENT_SECRET=...
-   export TEAMS_WEBHOOK_URL=https://<public>/teams/webhook
-   export TENANT=acme  # ingress default; egress uses the tenant on each message
-   export NATS_URL=nats://127.0.0.1:4222
-   ```
-3. Start the services (ingress, egress, subscription manager):
-   ```bash
-   make run-ingress-teams
-   make run-egress-teams
-   make run-subscriptions-teams
-   FLOW=examples/flows/weather_telegram.yaml PLATFORM=teams make run-runner
-   ```
-4. Add the Graph subscription through the admin subject (`greentic.subs.admin`) or use the runner to trigger messages; cards are translated into Adaptive Cards for Teams.
-
 ## Admin & Security Helpers
 
 Optional guard rails apply to all ingress services (Telegram, Slack, etc.) through `apps/ingress-common/src/security.rs`. Leave them unset for local dev, or export them and supply matching headers when you need protection.
@@ -356,133 +283,6 @@ sequenceDiagram
   });
   ```
 - Rotate secrets per tenant/app and keep the TTL short so deeplinks remain ephemeral; receivers should verify the JWT before honoring the action.
-
-## Telegram Integration
-
-1. Create a Telegram bot via BotFather and obtain the bot token; configure the webhook secret if desired.
-2. Export environment variables:
-   ```bash
-   export TELEGRAM_SECRET_TOKEN=dev
-   export TENANT=acme  # ingress default; egress uses the tenant carried in the message
-   # Optional: point to a tenants.yaml file if you manage multiple tenants
-   # export TENANT_CONFIG=config/tenants.yaml
-   # TELEGRAM_PUBLIC_WEBHOOK_BASE will fall back to http://localhost:8080/telegram/webhook
-   export TELEGRAM_PUBLIC_WEBHOOK_BASE=https://gsm.greentic.ai/telegram/webhook
-   export NATS_URL=nats://127.0.0.1:4222
-   ```
-3. Start ingress, egress, and the runner:
-```bash
-make run-ingress-telegram
-make run-egress-telegram
-FLOW=examples/flows/weather_telegram.yaml PLATFORM=telegram make run-runner
-```
-4. Set the Telegram webhook to point at `/telegram/webhook`. Messages sent to the bot are normalized, routed through NATS, and responses are delivered via the Telegram egress adapter using the official Bot API.
-
-**Tenant configuration**
-
-- `TENANT` identifies the default tenant for single-tenant deployments and is used when subscribing to inbound subjects.
-- `TENANT_CONFIG` (optional) points at a YAML file describing tenants and their Telegram settings. When omitted, the service synthesizes a single-tenant configuration from the environment variables above.
-
-**Secrets & tenants**
-
-- Secrets default to environment variables named `TENANTS_<TENANT>_TELEGRAM_BOT_TOKEN` and `TENANTS_<TENANT>_TELEGRAM_SECRET_TOKEN` (uppercase, slashes replaced with `_`). Provide these or configure `TENANT_CONFIG` to source them elsewhere.
-
-**Startup reconciliation & admin endpoints**
-
-- On boot the ingress service reconciles Telegram webhooks for every enabled tenant and emits `greentic_telegram_webhook_reconciles_total{tenant,result}` metrics.
-- The admin API exposes helpers for CI/ops:
-  - `POST /admin/telegram/{tenant}/register`
-  - `POST /admin/telegram/{tenant}/deregister`
-  - `GET  /admin/telegram/{tenant}/status`
-- Bootstrap secrets before enabling a tenant: store `tenants/<tenant>/telegram/bot_token` and `tenants/<tenant>/telegram/secret_token` (or allow the service to generate the secret if your store supports writes).
-- First-time registration sets `drop_pending_updates=true`; the admin `register` endpoint keeps history by default (`drop_pending_updates=false`).
-
-## WebChat Integration
-
-1. Embed the widget script on any page and provide tenant context via data attributes:
-   ```html
-   <script src="https://<your-ingress>/widget.js" data-tenant="acme" data-team="support" data-env="dev"></script>
-   ```
-   The widget automatically includes these values in `channelData` when posting to the ingress.
-2. Export the runtime variables:
-   ```bash
-   export NATS_URL=nats://127.0.0.1:4222
-   ```
-   Egress reads tenant/team from each message context, so there is no per-tenant env override.
-3. Launch the services:
-   ```bash
-   make run-ingress-webchat
-   make run-egress-webchat
-   FLOW=examples/flows/weather_slack.yaml PLATFORM=webchat make run-runner
-   ```
-4. POST inbound messages to `/webhook` with camelCase keys:
-   ```json
-   {
-     "chatId": "chat-1",
-     "userId": "user-42",
-     "text": "Hello",
-     "channelData": {
-       "tenant": "acme",
-       "team": "support",
-       "env": "dev"
-     }
-   }
-   ```
-  Tenant is required; team is optional. Open `http://localhost:8090` to try the sample form that ships with the ingress.
-
-## WhatsApp Integration
-
-1. Create a WhatsApp Business App, obtain the phone number ID, and generate a permanent user access token. Pick a webhook verify token and note the app secret.
-2. Store the credentials in your secrets backend (example uses `greentic-secrets` and the `dev` environment):
-   ```bash
-   cat <<'JSON' | greentic-secrets put secrets://dev/acme/_/messaging/whatsapp.credentials.json
-   {
-     "phone_id": "1234567890",
-     "wa_user_token": "EAA...",
-     "app_secret": "meta-app-secret",
-     "verify_token": "verify-token"
-   }
-   JSON
-   ```
-3. Export the runtime configuration for local egress (credentials are read from the secret; templates are optional overrides):
-   ```bash
-   export WA_TEMPLATE_NAME=weather_update
-   export WA_TEMPLATE_LANG=en
-   export NATS_URL=nats://127.0.0.1:4222
-   ```
-4. Run ingress and egress (pass `--features mock-http` to the binaries if you want to stub outbound calls during testing):
-   ```bash
-   make run-ingress-whatsapp
-   make run-egress-whatsapp
-   ```
-5. Configure Meta to call `/ingress/whatsapp/{tenant}` with your verify token. Inbound messages publish to NATS and are delivered via egress; card responses automatically fall back to templates or deep links when the 24-hour session window has expired.
-
-## Webex Integration
-
-1. Create a [Webex bot](https://developer.webex.com/my-apps/new/bot) and note the Bot Access Token. Configure a webhook pointing to `/webex/messages` with a secret.
-2. Export runtime configuration:
-   ```bash
-   export WEBEX_WEBHOOK_SECRET=super-secret
-   export WEBEX_BOT_TOKEN=BearerTokenFromStep1
-   export NATS_URL=nats://127.0.0.1:4222
-   ```
-3. Start the ingress and egress services:
-   ```bash
-   make run-ingress-webex
-   make run-egress-webex
-   FLOW=examples/flows/weather_webex.yaml PLATFORM=webex make run-runner
-   ```
-4. Set the webhook target URL (`https://<public>/webex/messages`). Messages sent to the bot are normalised, deduplicated, and republished through NATS; the egress worker handles rate limits, retries, and Adaptive Card rendering for Webex spaces.
-
-### Webex Test Credentials
-
-1. Visit <https://developer.webex.com/my-apps> and create a **Bot**. Copy the **Bot Access Token** when it is shown and store it as `WEBEX_BOT_TOKEN`.
-2. Create (or pick) a Webex space for testing, then add the bot to the space so it can post messages.
-3. List rooms accessible to the bot to find the room ID:
-   `curl --request GET "https://webexapis.com/v1/rooms?type=group" --header "Authorization: Bearer $WEBEX_BOT_TOKEN" --header "Content-Type: application/json"`
-   Use the `id` that matches your space and set it as `WEBEX_ROOM_ID`.
-4. Optionally verify the bot can post with:
-   `curl --request POST "https://webexapis.com/v1/messages" --header "Authorization: Bearer $WEBEX_BOT_TOKEN" --header "Content-Type: application/json" --data '{"roomId":"<WEBEX_ROOM_ID>","text":"Webex bot connected"}'`
 
 ## Visual Regression Tooling
 

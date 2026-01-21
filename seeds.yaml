@@ -1,0 +1,7 @@
+entries:
+- uri: secrets://dev/example/default/configs/telegram_bot_token
+  format: text
+  value:
+    type: text
+    text: 8353716297:AAGpoby51cZqrGU3_ackUhUzCgwTw10EQNc
+  description: Telegram bot token used for sendMessage requests.

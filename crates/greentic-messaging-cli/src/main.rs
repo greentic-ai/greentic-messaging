@@ -1052,7 +1052,7 @@ fn handle_dev_setup(
         "--setup-only".to_string(),
         "--public-base-url".to_string(),
         public_base_url.clone(),
-        "--pack".to_string(),
+        "--pack-path".to_string(),
         pack_path.display().to_string(),
         "--env".to_string(),
         context.env.clone(),
@@ -1099,27 +1099,23 @@ fn greentic_provision_binary() -> String {
 fn run_provision_setup(
     provider: &str,
     pack_path: &Path,
-    ctx: &DevContext,
+    _ctx: &DevContext,
     public_base_url: &str,
     install_id: &str,
 ) -> Result<serde_json::Value> {
     let bin = greentic_provision_binary();
     let args = vec![
+        "dry-run".to_string(),
         "setup".to_string(),
+        "--pack".to_string(),
+        pack_path.display().to_string(),
+        "--provider-id".to_string(),
         provider.to_string(),
         "--install-id".to_string(),
         install_id.to_string(),
-        "--pack".to_string(),
-        pack_path.display().to_string(),
-        "--env".to_string(),
-        ctx.env.clone(),
-        "--tenant".to_string(),
-        ctx.tenant.clone(),
-        "--team".to_string(),
-        ctx.team.clone(),
         "--public-base-url".to_string(),
         public_base_url.to_string(),
-        "--dry-run".to_string(),
+        "--json".to_string(),
     ];
     run_cli_command_capture_json(&bin, "greentic-provision", &args)
 }

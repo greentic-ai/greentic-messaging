@@ -146,8 +146,8 @@ pub enum PacksCommand {
         #[command(flatten)]
         runtime: PackRuntimeArgs,
         /// Explicit pack paths to validate (repeatable)
-        #[arg(long, value_name = "PATH")]
-        pack: Vec<PathBuf>,
+        #[arg(long = "pack-path", value_name = "PATH")]
+        pack_paths: Vec<PathBuf>,
         /// Public base URL injected into setup flows
         #[arg(long, default_value = "https://example.invalid")]
         public_base_url: String,

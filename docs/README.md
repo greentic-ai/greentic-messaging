@@ -34,10 +34,9 @@ Use `greentic-messaging` for local workflows:
 - `info` shows env, secrets context, and resolved packs.
 - `dev up` starts gateway, runner, and egress with the local NATS stack.
 - `dev logs` tails component logs with prefixes.
-- `dev setup <provider>` runs greentic-secrets and greentic-oauth for a provider.
-- `serve ingress|egress|subscriptions|pack` launches services with pack-aware env wiring.
+- `dev setup <provider>` runs greentic-provision + greentic-secrets for a provider and writes the install record (use the provider id from the pack; `greentic-messaging info` shows it).
+- `serve ingress|runner|egress|subscriptions` launches services with pack-aware env wiring.
 - `test ...` proxies `greentic-messaging-test`.
-- `admin guard-rails` and `admin slack oauth-helper` expose admin helpers.
 
 Defaults for `dev up`:
 
@@ -53,4 +52,24 @@ Failures are recorded in the DLQ (JetStream). Use the DLQ CLI to inspect and rep
 cargo run -p gsm-cli-dlq -- list --tenant acme --stage ingress
 cargo run -p gsm-cli-dlq -- show 100
 cargo run -p gsm-cli-dlq -- replay --tenant acme --stage egress --to ingress
+```
+
+## Serving
+
+Use the CLI to run services with pack-aware configuration:
+
+```bash
+greentic-messaging serve ingress slack --tenant acme --team default
+greentic-messaging serve runner --tenant acme --team default
+greentic-messaging serve egress --tenant acme --team default
+greentic-messaging serve subscriptions --tenant acme --team default
+```
+
+Provide pack overrides as needed:
+
+```bash
+greentic-messaging serve ingress webchat \
+  --tenant acme \
+  --pack /abs/path/to/messaging-webchat.gtpack \
+  --no-default-packs
 ```

@@ -90,7 +90,14 @@ pub fn run_conformance(options: ConformanceOptions) -> Result<Vec<ConformanceRep
         .map(|pack| pack.path.clone())
         .collect::<Vec<_>>();
     let registry_root = if let Some(root) = options.discovery.roots.first() {
-        root.clone()
+        if root.exists() {
+            root.clone()
+        } else {
+            pack_paths
+                .first()
+                .and_then(|path| path.parent().map(PathBuf::from))
+                .unwrap_or_else(|| PathBuf::from("."))
+        }
     } else {
         pack_paths
             .first()

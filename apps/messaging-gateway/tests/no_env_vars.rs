@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::io::ErrorKind;
+use std::path::Path;
 use std::process::Command;
 
 #[test]
