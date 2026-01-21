@@ -10,6 +10,7 @@ jobs:
     uses: ./.github/workflows/greentic-tools.yml
     with:
       tools: "greentic-pack"
+      artifact-name: greentic-tools-validator
 
   build-and-publish:
     needs: greentic-tools
@@ -23,24 +24,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo bin tools
-        uses: actions/cache@v4
+      - name: Download greentic tools
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/binstall
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-          key: greentic-tools-${{ runner.os }}-greentic-pack-${{ hashFiles('.github/workflows/greentic-tools.yml') }}
-
-      - name: Install cargo-binstall
-        run: |
-          if ! command -v cargo-binstall >/dev/null 2>&1; then
-            cargo install cargo-binstall --locked
-          fi
-
-      - name: Install greentic-pack
-        run: cargo binstall --no-confirm greentic-pack
+          name: greentic-tools-validator
+          path: .greentic-tools/bin
+      - name: Add greentic tools to PATH
+        run: echo "${{ github.workspace }}/.greentic-tools/bin" >> "$GITHUB_PATH"
 
       - name: Build validator pack
         run: scripts/build-validator-pack.sh

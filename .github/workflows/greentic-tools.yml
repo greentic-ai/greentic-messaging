@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: "greentic-pack greentic-provision"
+      artifact-name:
+        description: Artifact name for the installed greentic tools.
+        required: false
+        type: string
+        default: greentic-tools
       runs-on:
         description: Runner label to use for installing tools.
         required: false
@@ -34,8 +39,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin
-            ~/.cargo/binstall
+            ~/.cargo/bin/cargo-binstall
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
           key: greentic-tools-${{ runner.os }}-${{ inputs.tools }}-${{ hashFiles('.github/workflows/greentic-tools.yml') }}
@@ -51,5 +55,29 @@ jobs:
           TOOLS: ${{ inputs.tools }}
         run: |
           if [ -n "$TOOLS" ]; then
-            cargo binstall --no-confirm $TOOLS
+            cargo binstall --no-confirm --force $TOOLS
           fi
+
+      - name: Collect greentic tools
+        if: ${{ inputs.tools != '' }}
+        env:
+          TOOLS: ${{ inputs.tools }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/greentic-tools/bin"
+          mkdir -p "$out"
+          for tool in $TOOLS; do
+            path="$(command -v "$tool")"
+            if [ -z "$path" ]; then
+              echo "[error] missing tool ${tool}" >&2
+              exit 1
+            fi
+            cp "$path" "$out/"
+          done
+
+      - name: Upload greentic tools
+        if: ${{ inputs.tools != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ runner.temp }}/greentic-tools/bin
