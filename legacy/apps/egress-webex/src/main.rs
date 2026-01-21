@@ -419,7 +419,7 @@ mod tests {
     }
 
     fn limiter() -> Arc<LocalBackpressureLimiter> {
-        let limits = Arc::new(RateLimits::from_env());
+        let limits = Arc::new(RateLimits::default());
         Arc::new(LocalBackpressureLimiter::new(limits))
     }
 

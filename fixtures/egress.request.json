@@ -1,0 +1,22 @@
+{
+  "ctx": {
+    "env": "dev",
+    "tenant": "dev",
+    "tenant_id": "dev",
+    "team": "default",
+    "team_id": "default",
+    "user": null,
+    "user_id": null,
+    "attempt": 0
+  },
+  "tenant": "dev",
+  "platform": "slack",
+  "chat_id": "C123",
+  "thread_id": null,
+  "kind": "text",
+  "text": "conformance egress fixture",
+  "message_card": null,
+  "meta": {
+    "source": "conformance"
+  }
+}

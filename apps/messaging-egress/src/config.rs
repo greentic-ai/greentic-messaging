@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 use greentic_config::ConfigResolver;
 use greentic_config_types::{GreenticConfig, ServiceTransportConfig};
 use greentic_types::EnvId;
+use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -14,6 +15,7 @@ pub struct EgressConfig {
     pub egress_prefix: String,
     pub runner_http_url: Option<String>,
     pub runner_http_api_key: Option<String>,
+    pub install_store_path: Option<PathBuf>,
 }
 
 impl EgressConfig {
@@ -50,6 +52,7 @@ impl EgressConfig {
             egress_prefix,
             runner_http_url: runner_http_url_from_config(config),
             runner_http_api_key: None,
+            install_store_path: install_store_path(config),
         })
     }
 }
@@ -96,4 +99,26 @@ fn runner_http_url_from_config(config: &GreenticConfig) -> Option<String> {
         Some(ServiceTransportConfig::Http { url, .. }) => Some(url.to_string()),
         _ => None,
     }
+}
+
+fn install_store_path(config: &GreenticConfig) -> Option<PathBuf> {
+    let root = &config.paths.greentic_root;
+    if let Some(path) = install_store_path_from_file(root.join(".greentic/install_store.path")) {
+        return Some(path);
+    }
+    if let Some(path) = install_store_path_from_file(root.join(".greentic/dev/install_store.path"))
+    {
+        return Some(path);
+    }
+    let path = root.join(".greentic/dev/installs.json");
+    path.exists().then_some(path)
+}
+
+fn install_store_path_from_file(path: PathBuf) -> Option<PathBuf> {
+    let raw = fs::read_to_string(&path).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(trimmed))
 }

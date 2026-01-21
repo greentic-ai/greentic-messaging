@@ -10,7 +10,7 @@ use gsm_core::{CardAction, CardBlock, MessageCard, OutKind, OutMessage};
 use security::{
     hash::state_hash_out,
     jwt::{ActionClaims, JwtSigner},
-    links::{action_base_url, action_ttl, build_action_url},
+    links::{build_action_url, default_action_ttl},
 };
 use serde_json::{Value, json};
 use time::Duration;
@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 use crate::telemetry::translate_with_span;
 use once_cell::sync::Lazy;
+use std::sync::RwLock;
 
 /// Converts a platform-agnostic [`OutMessage`](gsm_core::OutMessage) into a list of platform specific payloads.
 ///
@@ -47,6 +48,7 @@ pub fn secure_action_url(out: &OutMessage, title: &str, url: &str) -> String {
 }
 
 static CARD_ENGINE: Lazy<MessageCardEngine> = Lazy::new(MessageCardEngine::bootstrap);
+static ACTION_LINK_CONFIG: Lazy<RwLock<Option<ActionLinkConfig>>> = Lazy::new(|| RwLock::new(None));
 
 pub(crate) fn render_via_engine(out: &OutMessage, platform: &str) -> Option<Value> {
     let card = out.adaptive_card.as_ref()?;
@@ -54,20 +56,44 @@ pub(crate) fn render_via_engine(out: &OutMessage, platform: &str) -> Option<Valu
     CARD_ENGINE.render_spec_payload(platform, &spec)
 }
 
-struct ActionLinkConfig {
+#[derive(Clone)]
+pub struct ActionLinkConfig {
     base: String,
     signer: JwtSigner,
     ttl: Duration,
 }
 
+impl ActionLinkConfig {
+    pub fn new(base: impl Into<String>, signer: JwtSigner, ttl: Duration) -> Self {
+        Self {
+            base: base.into(),
+            signer,
+            ttl,
+        }
+    }
+
+    pub fn with_default_ttl(base: impl Into<String>, signer: JwtSigner) -> Self {
+        Self::new(base, signer, default_action_ttl())
+    }
+}
+
+pub fn set_action_link_config(config: ActionLinkConfig) {
+    if let Ok(mut guard) = ACTION_LINK_CONFIG.write() {
+        *guard = Some(config);
+    }
+}
+
+pub fn clear_action_link_config() {
+    if let Ok(mut guard) = ACTION_LINK_CONFIG.write() {
+        *guard = None;
+    }
+}
+
 fn load_action_config() -> Option<ActionLinkConfig> {
-    let base = action_base_url()?;
-    let signer = JwtSigner::from_env().ok()?;
-    Some(ActionLinkConfig {
-        base,
-        signer,
-        ttl: action_ttl(),
-    })
+    ACTION_LINK_CONFIG
+        .read()
+        .ok()
+        .and_then(|guard| guard.clone())
 }
 
 fn slugify(input: &str) -> String {
@@ -332,13 +358,11 @@ mod tests {
     use gsm_core::{
         CardAction, CardBlock, MessageCard, OutKind, OutMessage, Platform, make_tenant_ctx,
     };
-    use security::jwt::JwtSigner;
-    use std::sync::{Mutex, OnceLock};
+    use once_cell::sync::Lazy;
+    use security::jwt::{JwtConfig, JwtSigner};
+    use std::sync::Mutex;
 
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
+    static ACTION_LINK_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     fn sample_out_message(kind: OutKind) -> OutMessage {
         OutMessage {
@@ -377,16 +401,8 @@ mod tests {
     #[test]
     fn telegram_card_payloads() {
         let mut out = sample_out_message(OutKind::Card);
-        let _guard = env_lock().lock().unwrap();
-        unsafe {
-            std::env::remove_var("ACTION_BASE_URL");
-        }
-        unsafe {
-            std::env::remove_var("JWT_SECRET");
-        }
-        unsafe {
-            std::env::remove_var("JWT_ALG");
-        }
+        let _guard = ACTION_LINK_TEST_LOCK.lock().expect("action link lock");
+        clear_action_link_config();
         out.message_card = Some(MessageCard {
             title: Some("Weather".into()),
             body: vec![
@@ -442,16 +458,12 @@ mod tests {
 
     #[test]
     fn telegram_card_actions_are_signed_when_configured() {
-        let _guard = env_lock().lock().unwrap();
-        unsafe {
-            std::env::set_var("ACTION_BASE_URL", "https://actions.test/a");
-        }
-        unsafe {
-            std::env::set_var("JWT_ALG", "HS256");
-        }
-        unsafe {
-            std::env::set_var("JWT_SECRET", "signing-secret");
-        }
+        let _guard = ACTION_LINK_TEST_LOCK.lock().expect("action link lock");
+        let signer = JwtSigner::from_config(JwtConfig::hs256("signing-secret")).expect("signer");
+        set_action_link_config(ActionLinkConfig::with_default_ttl(
+            "https://actions.test/a",
+            signer.clone(),
+        ));
         let mut out = sample_out_message(OutKind::Card);
         out.message_card = Some(MessageCard {
             title: None,
@@ -473,20 +485,10 @@ mod tests {
 
         let token = signed_url.split("action=").nth(1).expect("token missing");
         let decoded_token = urlencoding::decode(token).expect("decode token");
-        let signer = JwtSigner::from_env().expect("verify signer");
         let claims = signer.verify(&decoded_token).expect("claims");
         assert_eq!(claims.redirect.as_deref(), Some("https://example.com/path"));
         assert_eq!(claims.tenant, out.tenant);
-
-        unsafe {
-            std::env::remove_var("ACTION_BASE_URL");
-        }
-        unsafe {
-            std::env::remove_var("JWT_SECRET");
-        }
-        unsafe {
-            std::env::remove_var("JWT_ALG");
-        }
+        clear_action_link_config();
     }
 
     #[test]
@@ -536,16 +538,11 @@ mod tests {
 
     #[test]
     fn teams_card_payload() {
-        let _guard = env_lock().lock().unwrap();
-        unsafe {
-            std::env::set_var("ACTION_BASE_URL", "https://actions.test/a");
-        }
-        unsafe {
-            std::env::set_var("JWT_ALG", "HS256");
-        }
-        unsafe {
-            std::env::set_var("JWT_SECRET", "signing-secret");
-        }
+        let signer = JwtSigner::from_config(JwtConfig::hs256("signing-secret")).expect("signer");
+        set_action_link_config(ActionLinkConfig::with_default_ttl(
+            "https://actions.test/a",
+            signer,
+        ));
         let card = MessageCard {
             title: Some("Weather".into()),
             body: vec![
@@ -573,15 +570,6 @@ mod tests {
         assert_eq!(adaptive["actions"][0]["type"], "Action.OpenUrl");
         let action_url = adaptive["actions"][0]["url"].as_str().unwrap();
         assert!(action_url.starts_with("https://actions.test/a?action="));
-
-        unsafe {
-            std::env::remove_var("ACTION_BASE_URL");
-        }
-        unsafe {
-            std::env::remove_var("JWT_SECRET");
-        }
-        unsafe {
-            std::env::remove_var("JWT_ALG");
-        }
+        clear_action_link_config();
     }
 }

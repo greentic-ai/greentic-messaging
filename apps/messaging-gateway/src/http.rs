@@ -16,8 +16,8 @@ use crate::config::GatewayConfig;
 use gsm_bus::{BusClient, BusError, to_value};
 use gsm_core::{
     AdapterDescriptor, AdapterRegistry, ChannelMessage, Platform, ProviderExtensionsRegistry,
-    WorkerClient, WorkerRoutingConfig, forward_to_worker, infer_platform_from_adapter_name,
-    make_tenant_ctx,
+    ProviderInstallError, ProviderInstallStore, WorkerClient, WorkerRoutingConfig,
+    apply_install_refs, forward_to_worker, infer_platform_from_adapter_name, make_tenant_ctx,
 };
 use gsm_telemetry::set_current_tenant_ctx;
 
@@ -27,6 +27,7 @@ pub struct GatewayState {
     pub config: GatewayConfig,
     pub adapters: AdapterRegistry,
     pub provider_extensions: ProviderExtensionsRegistry,
+    pub install_store: Arc<dyn ProviderInstallStore>,
     pub workers: BTreeMap<String, Arc<dyn WorkerClient>>,
     pub worker_default: Option<WorkerRoutingConfig>,
 }
@@ -43,9 +44,12 @@ impl GatewayState {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedRequest {
+    pub provider_id: Option<String>,
+    pub install_id: Option<String>,
+    pub provider_channel_id: Option<String>,
     pub chat_id: Option<String>,
     pub user_id: Option<String>,
     pub text: Option<String>,
@@ -64,6 +68,14 @@ pub struct ApiResponse {
 #[derive(Serialize, Debug)]
 pub struct ApiError {
     error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
+}
+
+impl ApiError {
+    pub fn code(&self) -> Option<&str> {
+        self.code.as_deref()
+    }
 }
 
 fn outbound_to_out_message(
@@ -119,6 +131,7 @@ pub async fn build_router_with_bus(
     adapters: AdapterRegistry,
     provider_extensions: ProviderExtensionsRegistry,
     bus: Arc<dyn BusClient>,
+    install_store: Arc<dyn ProviderInstallStore>,
     workers: BTreeMap<String, Arc<dyn WorkerClient>>,
 ) -> anyhow::Result<Router> {
     let state = Arc::new(GatewayState {
@@ -127,6 +140,7 @@ pub async fn build_router_with_bus(
         config,
         adapters,
         provider_extensions,
+        install_store,
         workers,
     });
 
@@ -177,8 +191,22 @@ pub async fn handle_ingress(
         channel = %channel
     );
     async move {
-        let (platform, adapter) = resolve_ingress_target(&channel, &state.adapters)
-            .map_err(|(code, message)| (code, Json(ApiError { error: message })))?;
+        let (platform, adapter) =
+            resolve_ingress_target(&channel, &state.adapters).map_err(|(code, message)| {
+                (
+                    code,
+                    Json(ApiError {
+                        error: message,
+                        code: None,
+                    }),
+                )
+            })?;
+
+        let tenant_ctx =
+            make_tenant_ctx(tenant.clone(), team_path.clone(), payload.user_id.clone());
+        let install_state =
+            resolve_install_for_ingress(state.as_ref(), &tenant_ctx, &payload, &channel, &headers)
+                .map_err(map_install_error)?;
 
         publish(
             &tenant,
@@ -187,6 +215,7 @@ pub async fn handle_ingress(
             adapter.as_ref(),
             state.as_ref(),
             payload,
+            &install_state,
             &headers,
         )
         .await
@@ -196,12 +225,21 @@ pub async fn handle_ingress(
                 subject,
             })
         })
-        .map_err(|(code, message)| (code, Json(ApiError { error: message })))
+        .map_err(|(code, message)| {
+            (
+                code,
+                Json(ApiError {
+                    error: message,
+                    code: None,
+                }),
+            )
+        })
     }
     .instrument(span)
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn publish(
     tenant: &str,
     team_path: Option<&str>,
@@ -209,6 +247,7 @@ async fn publish(
     adapter: Option<&AdapterDescriptor>,
     state: &GatewayState,
     payload: NormalizedRequest,
+    install_state: &gsm_core::ProviderInstallState,
     headers: &HeaderMap,
 ) -> Result<String, (StatusCode, String)> {
     let chat_id = payload
@@ -242,6 +281,7 @@ async fn publish(
     if let Some(user) = user_id.as_deref() {
         context.insert("user".into(), Value::String(user.into()));
     }
+    apply_install_refs(&mut context, &install_state.record);
 
     let tenant_ctx = make_tenant_ctx(tenant.into(), Some(team.clone()), user_id.clone());
     let session_id = payload.thread_id.clone().unwrap_or_else(|| chat_id.clone());
@@ -370,6 +410,147 @@ async fn publish(
     .in_scope(|| tracing::trace!("ingress request dispatched"));
 
     Ok(subject)
+}
+
+fn resolve_install_for_ingress(
+    state: &GatewayState,
+    tenant: &gsm_core::TenantCtx,
+    payload: &NormalizedRequest,
+    channel: &str,
+    headers: &HeaderMap,
+) -> Result<gsm_core::ProviderInstallState, ProviderInstallError> {
+    let provider_id = payload
+        .provider_id
+        .as_ref()
+        .filter(|v| !v.trim().is_empty())
+        .cloned()
+        .ok_or(ProviderInstallError::MissingRoute)?;
+    let install_state = if let Some(install_id) = payload.install_id.as_ref() {
+        let install_id = install_id
+            .parse()
+            .map_err(|_| ProviderInstallError::MissingRoute)?;
+        state.install_store.get(tenant, &provider_id, &install_id)
+    } else if let Some(channel_id) = payload.provider_channel_id.as_ref() {
+        state
+            .install_store
+            .find_by_routing(tenant, &provider_id, channel, channel_id.as_str())
+    } else {
+        None
+    }
+    .ok_or_else(|| ProviderInstallError::MissingInstall {
+        provider_id: provider_id.clone(),
+        install_id: payload
+            .install_id
+            .clone()
+            .unwrap_or_else(|| "<auto>".to_string()),
+    })?;
+
+    enforce_install_secrets(&install_state)?;
+    verify_webhook_signature(state, &provider_id, &install_state, payload, headers)?;
+
+    Ok(install_state)
+}
+
+fn enforce_install_secrets(
+    install_state: &gsm_core::ProviderInstallState,
+) -> Result<(), ProviderInstallError> {
+    for key in install_state.record.secret_refs.keys() {
+        if !install_state.secrets.contains_key(key) {
+            return Err(ProviderInstallError::MissingSecret { key: key.clone() });
+        }
+    }
+    for key in install_state.record.config_refs.keys() {
+        if !install_state.config.contains_key(key) {
+            return Err(ProviderInstallError::MissingConfig { key: key.clone() });
+        }
+    }
+    Ok(())
+}
+
+fn verify_webhook_signature(
+    state: &GatewayState,
+    provider_id: &str,
+    install_state: &gsm_core::ProviderInstallState,
+    payload: &NormalizedRequest,
+    headers: &HeaderMap,
+) -> Result<(), ProviderInstallError> {
+    let Some(decl) = state.provider_extensions.ingress.get(provider_id) else {
+        return Ok(());
+    };
+    if !decl.capabilities.supports_webhook_validation {
+        return Ok(());
+    }
+
+    let header_name = install_state
+        .record
+        .webhook_state
+        .get("signature_header")
+        .and_then(|v| v.as_str())
+        .unwrap_or("x-signature");
+    let secret_key = install_state
+        .record
+        .webhook_state
+        .get("secret_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("webhook_secret");
+    let secret = install_state.secrets.get(secret_key).ok_or_else(|| {
+        ProviderInstallError::MissingSecret {
+            key: secret_key.to_string(),
+        }
+    })?;
+    let provided = headers
+        .get(header_name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if provided.is_empty() {
+        return Err(ProviderInstallError::InvalidSignature {
+            header: header_name.to_string(),
+        });
+    }
+    let body = serde_json::to_vec(payload).unwrap_or_else(|_| b"{}".to_vec());
+    if !verify_hmac_sha256(secret.as_str(), &body, provided) {
+        return Err(ProviderInstallError::InvalidSignature {
+            header: header_name.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn verify_hmac_sha256(secret: &str, body: &[u8], sig_hdr: &str) -> bool {
+    use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
+        Ok(mac) => mac,
+        Err(_) => return false,
+    };
+    mac.update(body);
+    let provided = match B64.decode(sig_hdr) {
+        Ok(sig) => sig,
+        Err(_) => return false,
+    };
+    mac.verify_slice(&provided).is_ok()
+}
+
+fn map_install_error(err: ProviderInstallError) -> (StatusCode, Json<ApiError>) {
+    let (status, code) = match err {
+        ProviderInstallError::MissingInstall { .. } => (StatusCode::NOT_FOUND, "install_not_found"),
+        ProviderInstallError::InvalidSignature { .. } => {
+            (StatusCode::UNAUTHORIZED, "invalid_signature")
+        }
+        ProviderInstallError::MissingSecret { .. } => (StatusCode::BAD_REQUEST, "missing_secret"),
+        ProviderInstallError::MissingConfig { .. } => (StatusCode::BAD_REQUEST, "missing_config"),
+        ProviderInstallError::MissingRoute => (StatusCode::BAD_REQUEST, "missing_route"),
+    };
+    (
+        status,
+        Json(ApiError {
+            error: err.to_string(),
+            code: Some(code.to_string()),
+        }),
+    )
 }
 
 fn resolve_ingress_target(

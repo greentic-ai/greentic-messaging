@@ -32,7 +32,13 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+base64 = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
 
 [features]
 default = []
 adaptive-cards = ["gsm-core/adaptive-cards"]
+
+[dev-dependencies]
+semver = { workspace = true }

@@ -5,10 +5,11 @@ use crate::{
 use anyhow::{Result, anyhow};
 use axum::serve;
 use gsm_core::{
-    HttpWorkerClient, NatsWorkerClient, WorkerClient, WorkerRoutingConfig, WorkerTransport,
+    HttpWorkerClient, InMemoryProviderInstallStore, NatsWorkerClient, WorkerClient,
+    WorkerRoutingConfig, WorkerTransport, load_install_store_from_path,
 };
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Starts the gateway HTTP server using the provided configuration.
 pub async fn run(config: GatewayConfig) -> Result<()> {
@@ -60,11 +61,24 @@ pub async fn run(config: GatewayConfig) -> Result<()> {
         worker_clients.insert(routing.worker_id.clone(), client);
     }
 
+    let install_store = if let Some(path) = config.install_store_path.as_ref() {
+        match load_install_store_from_path(path) {
+            Ok(store) => std::sync::Arc::new(store),
+            Err(err) => {
+                warn!(error = %err, path = %path.display(), "failed to load install records");
+                std::sync::Arc::new(InMemoryProviderInstallStore::default())
+            }
+        }
+    } else {
+        std::sync::Arc::new(InMemoryProviderInstallStore::default())
+    };
+
     let router = build_router_with_bus(
         config.clone(),
         adapter_registry,
         provider_extensions,
         std::sync::Arc::new(bus),
+        install_store,
         worker_clients,
     )
     .await?;

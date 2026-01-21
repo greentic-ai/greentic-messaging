@@ -90,7 +90,16 @@ pub async fn build_router_with_bus<B: BusClient + 'static>(
     adapters: AdapterRegistry,
     provider_extensions: ProviderExtensionsRegistry,
     bus: Arc<B>,
+    install_store: Arc<dyn gsm_core::ProviderInstallStore>,
     workers: std::collections::BTreeMap<String, Arc<dyn WorkerClient>>,
 ) -> Result<axum::Router> {
-    http::build_router_with_bus(config, adapters, provider_extensions, bus, workers).await
+    http::build_router_with_bus(
+        config,
+        adapters,
+        provider_extensions,
+        bus,
+        install_store,
+        workers,
+    )
+    .await
 }

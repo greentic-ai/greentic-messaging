@@ -10,10 +10,22 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::str::FromStr;
 
+#[derive(Clone, Default)]
+pub struct IngressSecurityConfig {
+    pub hmac_secret: Option<String>,
+    pub hmac_header: Option<String>,
+    pub bearer: Option<String>,
+}
+
 /// Shared secret HMAC check (header name + body signature verification)
 pub async fn verify_hmac(req: Request<Body>, next: Next) -> Response {
-    let secret = std::env::var("INGRESS_HMAC_SECRET").ok();
-    let header_name = std::env::var("INGRESS_HMAC_HEADER").unwrap_or_else(|_| "x-signature".into());
+    let cfg = req
+        .extensions()
+        .get::<IngressSecurityConfig>()
+        .cloned()
+        .unwrap_or_default();
+    let secret = cfg.hmac_secret;
+    let header_name = cfg.hmac_header.unwrap_or_else(|| "x-signature".into());
 
     if let Some(secret) = secret {
         let header_name =
@@ -52,7 +64,12 @@ fn hmac_verify(secret: &str, body: &[u8], sig_hdr: &str) -> Result<()> {
 
 /// Simple bearer token check on `Authorization: Bearer <TOKEN>`
 pub async fn verify_bearer(req: Request<Body>, next: Next) -> Response {
-    if let Ok(token) = std::env::var("INGRESS_BEARER") {
+    let cfg = req
+        .extensions()
+        .get::<IngressSecurityConfig>()
+        .cloned()
+        .unwrap_or_default();
+    if let Some(token) = cfg.bearer {
         let ok = req
             .headers()
             .get("authorization")
@@ -69,7 +86,7 @@ pub async fn verify_bearer(req: Request<Body>, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{Router, body::Body, middleware, routing::get};
+    use axum::{Extension, Router, body::Body, middleware, routing::get};
     use base64::Engine;
     use hmac::Mac;
     use rand::RngCore;
@@ -94,12 +111,13 @@ mod tests {
 
     #[tokio::test]
     async fn verify_bearer_blocks_invalid_token() {
-        unsafe {
-            std::env::set_var("INGRESS_BEARER", "expected");
-        }
         let app = Router::new()
             .route("/", get(|| async { axum::http::StatusCode::OK }))
-            .layer(middleware::from_fn(verify_bearer));
+            .layer(middleware::from_fn(verify_bearer))
+            .layer(Extension(IngressSecurityConfig {
+                bearer: Some("expected".into()),
+                ..Default::default()
+            }));
 
         let req = axum::http::Request::builder()
             .uri("/")
@@ -115,21 +133,47 @@ mod tests {
             .unwrap();
         let ok_resp: axum::response::Response = app.oneshot(ok_req).await.unwrap();
         assert_eq!(ok_resp.status(), axum::http::StatusCode::OK);
-        unsafe {
-            std::env::remove_var("INGRESS_BEARER");
-        }
+    }
+
+    #[tokio::test]
+    async fn verify_bearer_allows_missing_config() {
+        let app = Router::new()
+            .route("/", get(|| async { axum::http::StatusCode::OK }))
+            .layer(middleware::from_fn(verify_bearer));
+
+        let req = axum::http::Request::builder()
+            .uri("/")
+            .body(Body::empty())
+            .unwrap();
+        let resp: axum::response::Response = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn verify_hmac_allows_missing_config() {
+        let app = Router::new()
+            .route("/", get(|| async { axum::http::StatusCode::OK }))
+            .layer(middleware::from_fn(verify_hmac));
+
+        let req = axum::http::Request::builder()
+            .uri("/")
+            .body(Body::from("payload"))
+            .unwrap();
+        let resp: axum::response::Response = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
     }
 
     #[tokio::test]
     async fn verify_hmac_rejects_bad_signature() {
         let secret = random_secret();
-        unsafe { std::env::set_var("INGRESS_HMAC_SECRET", &secret) };
-        unsafe {
-            std::env::set_var("INGRESS_HMAC_HEADER", "x-signature");
-        }
         let app = Router::new()
             .route("/", get(|| async { axum::http::StatusCode::OK }))
-            .layer(middleware::from_fn(verify_hmac));
+            .layer(middleware::from_fn(verify_hmac))
+            .layer(Extension(IngressSecurityConfig {
+                hmac_secret: Some(secret.clone()),
+                hmac_header: Some("x-signature".into()),
+                ..Default::default()
+            }));
 
         let req = axum::http::Request::builder()
             .uri("/")
@@ -148,11 +192,5 @@ mod tests {
             .unwrap();
         let ok_resp: axum::response::Response = app.oneshot(ok_req).await.unwrap();
         assert_eq!(ok_resp.status(), axum::http::StatusCode::OK);
-        unsafe {
-            std::env::remove_var("INGRESS_HMAC_SECRET");
-        }
-        unsafe {
-            std::env::remove_var("INGRESS_HMAC_HEADER");
-        }
     }
 }

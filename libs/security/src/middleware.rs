@@ -13,7 +13,7 @@ use tracing::{debug, warn};
 
 use crate::{
     jwt::{ActionClaims, JwtSigner},
-    nonce::{SharedNonceStore, default_nonce_store},
+    nonce::SharedNonceStore,
 };
 
 const FAILURE_HTML: &str = r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Link expired</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}main{max-width:420px;text-align:center;background:rgba(15,23,42,0.8);padding:2.5rem 2rem;border-radius:1rem;box-shadow:0 25px 50px -12px rgba(15,23,42,0.5);}h1{font-size:1.5rem;margin-bottom:0.75rem;}p{color:#cbd5f5;font-size:0.95rem;line-height:1.6;}</style></head><body><main><h1>This link is invalid or expired</h1><p>Please go back to your conversation and request a new link. This safeguard keeps actions secure even if a link is forwarded.</p></main></body></html>"#;
@@ -31,12 +31,6 @@ impl ActionContext {
             signer: Arc::new(signer),
             store,
         }
-    }
-
-    pub async fn from_env(client: &async_nats::Client) -> Result<Self> {
-        let signer = JwtSigner::from_env()?;
-        let store: SharedNonceStore = Arc::new(default_nonce_store(client).await?);
-        Ok(Self::new(signer, store))
     }
 
     pub fn signer(&self) -> &JwtSigner {
@@ -165,15 +159,17 @@ mod tests {
     use axum::{Extension, body::Body, http::Request};
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD_NO_PAD;
-    use once_cell::sync::Lazy;
-    use std::{collections::HashSet, sync::Mutex, time::Duration as StdDuration};
+    use std::{collections::HashSet, time::Duration as StdDuration};
     use time::Duration;
     use tokio::sync::Mutex as AsyncMutex;
     use tower::util::ServiceExt;
 
-    use crate::{hash::state_hash_parts, jwt::ActionClaims, links::action_ttl, nonce::NonceStore};
-
-    static ENV_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+    use crate::{
+        hash::state_hash_parts,
+        jwt::{ActionClaims, JwtConfig},
+        links::default_action_ttl,
+        nonce::NonceStore,
+    };
 
     #[derive(Clone, Default)]
     struct MemoryStore {
@@ -202,20 +198,7 @@ mod tests {
     }
 
     fn setup_signer() -> JwtSigner {
-        unsafe {
-            std::env::set_var("JWT_ALG", "HS256");
-            std::env::set_var("JWT_SECRET", "integration-secret");
-        }
-        JwtSigner::from_env().expect("signer")
-    }
-
-    fn teardown_env() {
-        unsafe {
-            std::env::remove_var("JWT_SECRET");
-        }
-        unsafe {
-            std::env::remove_var("JWT_ALG");
-        }
+        JwtSigner::from_config(JwtConfig::hs256("integration-secret")).expect("signer")
     }
 
     fn build_router(ctx: SharedActionContext) -> Router {
@@ -223,7 +206,7 @@ mod tests {
     }
 
     fn action_claims(signer: &JwtSigner, redirect: Option<String>) -> (ActionClaims, String) {
-        let ttl = action_ttl();
+        let ttl = default_action_ttl();
         let claims = ActionClaims::new(
             "chat-1",
             "tenant-1",
@@ -239,7 +222,6 @@ mod tests {
     #[tokio::test]
     async fn action_success_and_single_use() {
         let (router, token) = {
-            let _guard = ENV_GUARD.lock().unwrap();
             let signer = setup_signer();
             let store: SharedNonceStore = Arc::new(MemoryStore::default());
             let ctx = Arc::new(ActionContext::new(signer.clone(), store));
@@ -262,14 +244,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
-        let _guard = ENV_GUARD.lock().unwrap();
-        teardown_env();
     }
 
     #[tokio::test]
     async fn action_expired_is_rejected() {
         let (router, token) = {
-            let _guard = ENV_GUARD.lock().unwrap();
             let signer = setup_signer();
             let store: SharedNonceStore = Arc::new(MemoryStore::default());
             let ctx = Arc::new(ActionContext::new(signer.clone(), store));
@@ -293,14 +272,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
-        let _guard = ENV_GUARD.lock().unwrap();
-        teardown_env();
     }
 
     #[tokio::test]
     async fn action_tamper_is_detected() {
         let (router, token) = {
-            let _guard = ENV_GUARD.lock().unwrap();
             let signer = setup_signer();
             let store: SharedNonceStore = Arc::new(MemoryStore::default());
             let ctx = Arc::new(ActionContext::new(signer.clone(), store));
@@ -324,7 +300,5 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::GONE);
-        let _guard = ENV_GUARD.lock().unwrap();
-        teardown_env();
     }
 }

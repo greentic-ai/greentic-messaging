@@ -18,29 +18,41 @@ targets = [
 
 [dependencies]
 anyhow = "1"
+axum = { workspace = true }
+base64 = { workspace = true }
+blake3 = "1"
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true }
 handlebars = { workspace = true }
+hmac = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
+sha2 = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 greentic-types = { workspace = true }
 greentic-flow = { workspace = true }
 greentic-pack-lib = { workspace = true }
 greentic-messaging-validate = { path = "../greentic-messaging-validate" }
 greentic-distributor-client = { version = "0.4", features = ["dist-client"] }
-blake3 = "1"
 gsm-core = { workspace = true }
+gsm-bus = { workspace = true }
+gsm-gateway = { workspace = true }
+gsm-runner = { path = "../../apps/runner" }
+gsm-egress = { path = "../../apps/messaging-egress" }
 gsm-telemetry = { workspace = true }
+gsm-session = { workspace = true }
 secrets-core = { workspace = true }
 gsm-translator = { workspace=true }
 tempfile = { workspace = true }
 zip = { workspace = true }
+async-trait = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 indexmap = "2"
-semver = "1"
 tempfile = { workspace = true }

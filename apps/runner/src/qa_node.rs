@@ -10,6 +10,20 @@ pub async fn run_qa(
     state: &mut Value,
     _hbs: &handlebars::Handlebars<'static>,
 ) -> Result<()> {
+    run_qa_inner(cfg, env, state, true).await
+}
+
+#[allow(dead_code)]
+pub async fn run_qa_offline(cfg: &QaNode, env: &MessageEnvelope, state: &mut Value) -> Result<()> {
+    run_qa_inner(cfg, env, state, false).await
+}
+
+async fn run_qa_inner(
+    cfg: &QaNode,
+    env: &MessageEnvelope,
+    state: &mut Value,
+    allow_agent: bool,
+) -> Result<()> {
     if !state.is_object() {
         *state = json!({});
     }
@@ -17,8 +31,8 @@ pub async fn run_qa(
 
     // Defaults
     for q in &cfg.questions {
-        if !obj.contains_key(&q.id)
-            && let Some(def) = &q.default
+        if let Some(def) = &q.default
+            && !obj.contains_key(&q.id)
         {
             obj.insert(q.id.clone(), def.clone());
         }
@@ -69,6 +83,9 @@ pub async fn run_qa(
     if !missing.is_empty()
         && let Some(agent) = &cfg.fallback_agent
     {
+        if !allow_agent {
+            bail!("qa fallback agent requires network; offline execution not permitted");
+        }
         let extracted = call_agent(agent, env).await?;
         for (k, v) in extracted.as_object().unwrap_or(&serde_json::Map::new()) {
             obj.insert(k.clone(), v.clone());

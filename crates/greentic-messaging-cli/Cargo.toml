@@ -33,6 +33,9 @@ greentic-flow = { workspace = true }
 greentic-pack-lib = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml_bw = { workspace = true }
+semver = { workspace = true }
+time = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]

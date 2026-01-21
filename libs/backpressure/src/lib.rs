@@ -22,9 +22,6 @@ use time::{Duration, OffsetDateTime, serde::rfc3339};
 use tokio::sync::Mutex;
 use tracing::{Level, event, instrument, warn};
 
-static RATE_LIMIT_ENV: &str = "TENANT_RATE_LIMITS";
-static BACKPRESSURE_NAMESPACE_ENV: &str = "JS_KV_NAMESPACE_BACKPRESSURE";
-
 /// How many seconds one token represents.
 const TOKEN: f64 = 1.0;
 const TICK_MS: i64 = 100;
@@ -59,44 +56,33 @@ impl Default for RateLimit {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct RateLimits {
     default: RateLimit,
     tenants: HashMap<String, RateLimit>,
 }
 
 impl RateLimits {
-    pub fn from_env() -> Self {
-        let default = RateLimit::default();
-        let tenants = std::env::var(RATE_LIMIT_ENV)
-            .ok()
-            .and_then(|raw| serde_json::from_str::<HashMap<String, TenantRateLimit>>(&raw).ok())
-            .map(|map| {
-                map.into_iter()
-                    .map(|(tenant, cfg)| {
-                        (
-                            tenant,
-                            RateLimit {
-                                rps: cfg.rps.max(0.1),
-                                burst: cfg.burst.max(1.0),
-                            },
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+    pub fn new(default: RateLimit, tenants: HashMap<String, RateLimit>) -> Self {
+        let normalize = |limit: RateLimit| RateLimit {
+            rps: limit.rps.max(0.1),
+            burst: limit.burst.max(1.0),
+        };
+        let default = normalize(default);
+        let tenants = tenants
+            .into_iter()
+            .map(|(tenant, limit)| (tenant, normalize(limit)))
+            .collect();
         Self { default, tenants }
+    }
+
+    pub fn with_tenants(tenants: HashMap<String, RateLimit>) -> Self {
+        Self::new(RateLimit::default(), tenants)
     }
 
     pub fn get(&self, tenant: &str) -> RateLimit {
         self.tenants.get(tenant).copied().unwrap_or(self.default)
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct TenantRateLimit {
-    rps: f64,
-    burst: f64,
 }
 
 #[async_trait]
@@ -370,12 +356,15 @@ pub struct HybridLimiter {
 
 impl HybridLimiter {
     pub async fn new(js: Option<&JsContext>) -> Result<Arc<Self>> {
-        let limits = Arc::new(RateLimits::from_env());
-        let namespace = std::env::var(BACKPRESSURE_NAMESPACE_ENV)
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .unwrap_or_else(|| "rate-limits".to_string());
+        Self::new_with_config(js, BackpressureConfig::default()).await
+    }
 
+    pub async fn new_with_config(
+        js: Option<&JsContext>,
+        config: BackpressureConfig,
+    ) -> Result<Arc<Self>> {
+        let limits = Arc::clone(&config.limits);
+        let namespace = config.namespace;
         let remote = match js {
             Some(ctx) => {
                 match JetStreamBackpressureLimiter::new(ctx, &namespace, limits.clone()).await {
@@ -395,6 +384,30 @@ impl HybridLimiter {
             local,
             remote_failed: AtomicBool::new(false),
         }))
+    }
+}
+
+#[derive(Clone)]
+pub struct BackpressureConfig {
+    pub namespace: String,
+    pub limits: Arc<RateLimits>,
+}
+
+impl BackpressureConfig {
+    pub fn new(namespace: impl Into<String>, limits: Arc<RateLimits>) -> Self {
+        Self {
+            namespace: namespace.into(),
+            limits,
+        }
+    }
+}
+
+impl Default for BackpressureConfig {
+    fn default() -> Self {
+        Self {
+            namespace: "rate-limits".to_string(),
+            limits: Arc::new(RateLimits::default()),
+        }
     }
 }
 
@@ -421,12 +434,6 @@ impl BackpressureLimiter for HybridLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     #[tokio::test]
     async fn local_refills() {
@@ -440,23 +447,6 @@ mod tests {
         let limiter = LocalBackpressureLimiter::new(limits);
         let _ = limiter.acquire("t").await.unwrap();
         let _ = limiter.acquire("t").await.unwrap();
-    }
-
-    #[test]
-    fn parse_rate_limits_env() {
-        let _guard = env_lock().lock().unwrap();
-        unsafe {
-            std::env::set_var(RATE_LIMIT_ENV, r#"{ "t1": {"rps": 10, "burst": 20} }"#);
-        }
-        let limits = RateLimits::from_env();
-        let cfg = limits.get("t1");
-        assert_eq!(cfg.rps, 10.0);
-        assert_eq!(cfg.burst, 20.0);
-        let default = limits.get("unknown");
-        assert_eq!(default.rps, 5.0);
-        unsafe {
-            std::env::remove_var(RATE_LIMIT_ENV);
-        }
     }
 
     #[test]
@@ -493,19 +483,25 @@ mod tests {
 
     #[test]
     fn rate_limits_enforce_minimums() {
-        let _guard = env_lock().lock().unwrap();
-        unsafe {
-            std::env::set_var(
-                RATE_LIMIT_ENV,
-                r#"{ "tenant": {"rps": 0.0, "burst": 0.0} }"#,
-            );
-        }
-        let limits = RateLimits::from_env();
+        let mut tenants = HashMap::new();
+        tenants.insert(
+            "tenant".to_string(),
+            RateLimit {
+                rps: 0.0,
+                burst: 0.0,
+            },
+        );
+        let limits = RateLimits::with_tenants(tenants);
         let cfg = limits.get("tenant");
         assert_eq!(cfg.rps, 0.1);
         assert_eq!(cfg.burst, 1.0);
-        unsafe {
-            std::env::remove_var(RATE_LIMIT_ENV);
-        }
+    }
+
+    #[test]
+    fn rate_limits_use_defaults_when_missing() {
+        let limits = RateLimits::default();
+        let cfg = limits.get("unknown");
+        assert_eq!(cfg.rps, 5.0);
+        assert_eq!(cfg.burst, 10.0);
     }
 }

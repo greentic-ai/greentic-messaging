@@ -3,18 +3,10 @@ use time::Duration;
 
 use crate::jwt::{ActionClaims, JwtSigner};
 
-pub fn action_base_url() -> Option<String> {
-    std::env::var("ACTION_BASE_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-}
+pub const DEFAULT_ACTION_TTL_SECONDS: i64 = 900;
 
-pub fn action_ttl() -> Duration {
-    let seconds = std::env::var("ACTION_TTL_SECONDS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(900);
-    Duration::seconds(seconds as i64)
+pub fn default_action_ttl() -> Duration {
+    Duration::seconds(DEFAULT_ACTION_TTL_SECONDS)
 }
 
 pub fn build_action_url(base: &str, claims: ActionClaims, signer: &JwtSigner) -> Result<String> {

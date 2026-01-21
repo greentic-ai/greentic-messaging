@@ -132,7 +132,7 @@ impl ChaosHarness {
     fn new(max_retries: usize) -> Self {
         let store: SharedIdemStore = Arc::new(InMemoryIdemStore::new());
         let guard = IdempotencyGuard::new(store, 24);
-        let limits = Arc::new(RateLimits::from_env());
+        let limits = Arc::new(RateLimits::default());
         let limiter = LocalBackpressureLimiter::new(limits);
         Self {
             guard,

@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -15,25 +14,7 @@ pub struct DefaultAdapterPacksConfig {
 }
 
 impl DefaultAdapterPacksConfig {
-    pub fn from_env() -> Self {
-        let install_all = env::var("MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS")
-            .map(|v| v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        let selected = env::var("MESSAGING_DEFAULT_ADAPTER_PACKS")
-            .ok()
-            .map(|raw| {
-                raw.split(',')
-                    .filter_map(|s| {
-                        let trimmed = s.trim();
-                        if trimmed.is_empty() {
-                            None
-                        } else {
-                            Some(trimmed.to_string())
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+    pub fn from_settings(install_all: bool, selected: Vec<String>) -> Self {
         Self {
             install_all,
             selected,
@@ -98,23 +79,19 @@ pub fn default_adapter_pack_paths(
         .collect()
 }
 
-/// Additional adapter pack paths from env (`MESSAGING_ADAPTER_PACK_PATHS`, comma-separated).
-pub fn adapter_pack_paths_from_env() -> Vec<PathBuf> {
-    env::var("MESSAGING_ADAPTER_PACK_PATHS")
-        .ok()
-        .map(|raw| {
-            raw.split(',')
-                .filter_map(|s| {
-                    let trimmed = s.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(PathBuf::from(trimmed))
-                    }
-                })
-                .collect()
+/// Additional adapter pack paths from an explicit list.
+pub fn adapter_pack_paths_from_list(paths: &[String]) -> Vec<PathBuf> {
+    paths
+        .iter()
+        .filter_map(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(trimmed))
+            }
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 /// Load and parse default adapter packs into an adapter registry.
@@ -173,39 +150,15 @@ pub fn load_default_adapter_packs_from(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use once_cell::sync::Lazy;
     use std::path::PathBuf;
-    use std::sync::Mutex;
-
-    static ENV_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
-    struct GuardEnv;
-    impl GuardEnv {
-        fn new() -> Self {
-            Self
-        }
-    }
-    impl Drop for GuardEnv {
-        fn drop(&mut self) {
-            unsafe {
-                env::remove_var("MESSAGING_ADAPTER_PACK_PATHS");
-                env::remove_var("MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS");
-                env::remove_var("MESSAGING_DEFAULT_ADAPTER_PACKS");
-            }
-        }
-    }
 
     #[test]
-    fn adapter_pack_paths_env_parses_list() {
-        let _lock = ENV_GUARD.lock().unwrap();
-        let _guard = GuardEnv::new();
-        unsafe {
-            env::set_var(
-                "MESSAGING_ADAPTER_PACK_PATHS",
-                "/tmp/one.yaml, /tmp/two.yaml ,",
-            );
-        }
-        let paths = adapter_pack_paths_from_env();
+    fn adapter_pack_paths_list_filters_empty() {
+        let paths = adapter_pack_paths_from_list(&[
+            "/tmp/one.yaml".into(),
+            " /tmp/two.yaml ".into(),
+            "".into(),
+        ]);
         assert_eq!(
             paths,
             vec![
@@ -213,19 +166,6 @@ mod tests {
                 PathBuf::from("/tmp/two.yaml")
             ]
         );
-    }
-
-    #[test]
-    fn config_parses_env() {
-        let _lock = ENV_GUARD.lock().unwrap();
-        let _guard = GuardEnv::new();
-        unsafe {
-            env::set_var("MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS", "true");
-            env::set_var("MESSAGING_DEFAULT_ADAPTER_PACKS", "teams, slack");
-        }
-        let cfg = DefaultAdapterPacksConfig::from_env();
-        assert!(cfg.install_all);
-        assert_eq!(cfg.selected, vec!["teams".to_string(), "slack".to_string()]);
     }
 
     #[test]

@@ -1,0 +1,12 @@
+{
+  "providerId": "messaging.example",
+  "providerChannelId": "channel-1",
+  "chatId": "C123",
+  "userId": "U456",
+  "text": "conformance ingress fixture",
+  "threadId": null,
+  "msgId": "msg-1",
+  "metadata": {
+    "source": "conformance"
+  }
+}

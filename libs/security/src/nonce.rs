@@ -63,9 +63,9 @@ struct NonceRecord<'a> {
 
 pub type SharedNonceStore = Arc<dyn NonceStore>;
 
+const DEFAULT_NONCE_NAMESPACE: &str = "security";
+
 pub async fn default_nonce_store(client: &async_nats::Client) -> Result<JetstreamNonceStore> {
-    let namespace =
-        std::env::var("JS_KV_NAMESPACE_SECURITY").unwrap_or_else(|_| "security".to_string());
     let js = jetstream::new(client.clone());
-    JetstreamNonceStore::new(&js, &namespace).await
+    JetstreamNonceStore::new(&js, DEFAULT_NONCE_NAMESPACE).await
 }

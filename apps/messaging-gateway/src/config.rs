@@ -1,3 +1,4 @@
+use std::fs;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -20,6 +21,7 @@ pub struct GatewayConfig {
     pub packs_root: PathBuf,
     pub default_packs: DefaultAdapterPacksConfig,
     pub extra_pack_paths: Vec<PathBuf>,
+    pub install_store_path: Option<PathBuf>,
 }
 
 impl GatewayConfig {
@@ -53,6 +55,7 @@ impl GatewayConfig {
             packs_root,
             default_packs: DefaultAdapterPacksConfig::default(),
             extra_pack_paths: Vec::new(),
+            install_store_path: install_store_path(config),
         })
     }
 }
@@ -88,4 +91,27 @@ fn nats_settings(config: &GreenticConfig) -> Result<Option<(String, Option<Strin
         Some(ServiceTransportConfig::Noop) => Ok(None),
         None => Ok(None),
     }
+}
+
+fn install_store_path(config: &GreenticConfig) -> Option<PathBuf> {
+    let root = &config.paths.greentic_root;
+    if let Some(path) = install_store_path_from_file(root.join(".greentic/install_store.path")) {
+        return Some(path);
+    }
+    if let Some(path) = install_store_path_from_file(root.join(".greentic/dev/install_store.path"))
+    {
+        return Some(path);
+    }
+    let path = root.join(".greentic/dev/installs.json");
+    path.exists().then_some(path)
+}
+
+fn install_store_path_from_file(path: PathBuf) -> Option<PathBuf> {
+    let raw = fs::read_to_string(&path).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let candidate = PathBuf::from(trimmed);
+    Some(candidate)
 }

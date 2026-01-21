@@ -26,6 +26,7 @@ pub mod path_safety;
 pub mod platforms;
 pub mod prelude;
 pub mod provider_capabilities;
+pub mod provider_install_store;
 pub mod provider_ops;
 pub mod provider_registry;
 pub mod render_mode;
@@ -79,6 +80,12 @@ pub use pack_extensions::*;
 pub use platforms::*;
 pub use prelude::*;
 pub use provider_capabilities::*;
+pub use provider_install_store::{
+    INSTALL_ID_KEY, InMemoryProviderInstallStore, PROVIDER_CONFIG_REFS_KEY, PROVIDER_ID_KEY,
+    PROVIDER_SECRET_REFS_KEY, ProviderInstallError, ProviderInstallRouting, ProviderInstallState,
+    ProviderInstallStore, ProviderInstallStoreSnapshot, apply_install_refs, extract_provider_route,
+    load_install_store_from_path,
+};
 pub use provider_ops::{
     AttachmentInput, IngestInput, IngestOutput, MessageEnvelope as ProviderMessageEnvelope,
     ReplyInput, ReplyMetadata, ReplyOutput, SendInput, SendMetadata, SendOutput, SendStatus,

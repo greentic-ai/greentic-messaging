@@ -159,6 +159,11 @@ impl FlowRegistry {
             .ok_or_else(|| anyhow!("flow index out of bounds"))
     }
 
+    #[allow(dead_code)]
+    pub fn get_flow(&self, flow_id: &str) -> Option<&FlowDefinition> {
+        self.flows.iter().find(|flow| flow.flow_id == flow_id)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.flows.is_empty()
     }

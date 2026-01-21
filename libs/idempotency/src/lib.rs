@@ -142,14 +142,12 @@ impl Default for IdempotencyConfig {
 }
 
 impl IdempotencyConfig {
-    pub fn from_env() -> Self {
+    pub fn from_settings(ttl_hours: Option<u64>, namespace: Option<String>) -> Self {
         let mut cfg = Self::default();
-        if let Ok(ttl) = std::env::var("IDEMPOTENCY_TTL_HOURS")
-            && let Ok(parsed) = ttl.parse::<u64>()
-        {
+        if let Some(parsed) = ttl_hours {
             cfg.ttl_hours = parsed.max(1);
         }
-        if let Ok(ns) = std::env::var("JS_KV_NAMESPACE_IDEMPOTENCY")
+        if let Some(ns) = namespace
             && !ns.trim().is_empty()
         {
             cfg.namespace = ns;

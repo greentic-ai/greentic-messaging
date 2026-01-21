@@ -12,9 +12,25 @@ pub async fn run_tool(
     state: &Value,
     endpoint: &str,
 ) -> Result<Value> {
+    let input = render_tool_input(cfg, env, state)?;
+    run_tool_with_input(cfg, input, endpoint).await
+}
+
+pub fn render_tool_input(
+    cfg: &crate::model::ToolNode,
+    env: &MessageEnvelope,
+    state: &Value,
+) -> Result<Value> {
     let mut input = cfg.input.clone();
     render_json_strings(&mut input, &json!({"state":state, "envelope":env}))?;
+    Ok(input)
+}
 
+pub async fn run_tool_with_input(
+    cfg: &crate::model::ToolNode,
+    input: Value,
+    endpoint: &str,
+) -> Result<Value> {
     let url = format!(
         "{}/{}/{}",
         endpoint.trim_end_matches('/'),
@@ -48,6 +64,12 @@ pub async fn run_tool(
         }
     }
     Err(anyhow!("unreachable"))
+}
+
+#[allow(dead_code)]
+pub fn run_tool_stub_with_input(input: Value) -> Result<Value> {
+    let _ = input;
+    Ok(json!({"ok": true}))
 }
 
 fn render_json_strings(value: &mut Value, ctx: &Value) -> Result<()> {

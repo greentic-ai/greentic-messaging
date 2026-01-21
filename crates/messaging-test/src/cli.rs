@@ -84,6 +84,33 @@ pub enum CliCommand {
         #[command(subcommand)]
         command: Box<PacksCommand>,
     },
+    /// Run messaging provider end-to-end conformance checks
+    E2e {
+        /// Directory containing messaging-*.gtpack bundles
+        #[arg(long, value_name = "DIR", required = true)]
+        packs: PathBuf,
+        /// Optional provider filter (pack id or filename substring)
+        #[arg(long)]
+        provider: Option<String>,
+        /// Optional JSON report output path
+        #[arg(long)]
+        report: Option<PathBuf>,
+        /// Dry-run mode (default true)
+        #[arg(
+            long,
+            default_value_t = true,
+            action = ArgAction::Set,
+            num_args = 0..=1,
+            default_missing_value = "true"
+        )]
+        dry_run: bool,
+        /// Enable live network calls (requires RUN_LIVE_TESTS=true and RUN_LIVE_HTTP=true)
+        #[arg(long)]
+        live: bool,
+        /// Enable trace logging
+        #[arg(long)]
+        trace: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

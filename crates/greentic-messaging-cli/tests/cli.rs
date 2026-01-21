@@ -37,6 +37,22 @@ fn run_and_capture(args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+fn run_and_capture_with_dir(args: &[&str], dir: &std::path::Path) -> String {
+    let mut cmd = cli_cmd();
+    cmd.current_dir(dir).args(args);
+    let output = cmd.output().expect("run greentic-messaging CLI");
+    if !output.status.success() {
+        panic!(
+            "CLI command {:?} failed: status={:?}\nstdout={}\nstderr={}",
+            args,
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
 #[test]
 fn serve_ingress_slack_dry_run() {
     let stdout = run_and_capture(&["serve", "ingress", "slack", "--tenant", "acme"]);
@@ -193,6 +209,58 @@ fn write_provider_pack(path: &std::path::Path) {
         .expect("start manifest");
     zip.write_all(&manifest_bytes).expect("write manifest");
     zip.finish().expect("finish zip");
+}
+
+#[test]
+fn dev_setup_writes_install_record_in_dry_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let pack_path = dir.path().join("provider.gtpack");
+    write_provider_pack(&pack_path);
+
+    let _ = run_and_capture_with_dir(
+        &[
+            "dev",
+            "up",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--no-default-packs",
+            "--tunnel",
+            "none",
+        ],
+        dir.path(),
+    );
+
+    let _ = run_and_capture_with_dir(
+        &[
+            "dev",
+            "setup",
+            "messaging.slack.bot",
+            "--pack",
+            pack_path.to_str().unwrap(),
+            "--no-default-packs",
+        ],
+        dir.path(),
+    );
+
+    let installs_path = dir.path().join(".greentic/dev/installs.json");
+    let payload = std::fs::read_to_string(&installs_path).expect("install record written");
+    let store: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
+    let records = store
+        .get("states")
+        .and_then(|v| v.as_array())
+        .or_else(|| store.get("records").and_then(|v| v.as_array()))
+        .expect("records array");
+    assert!(
+        records.iter().any(|r| {
+            let provider_id = r
+                .get("record")
+                .and_then(|rec| rec.get("provider_id"))
+                .or_else(|| r.get("provider_id"))
+                .and_then(|v| v.as_str());
+            provider_id == Some("messaging.slack.bot")
+        }),
+        "install record missing: {payload}"
+    );
 }
 
 #[test]

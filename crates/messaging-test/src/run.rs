@@ -10,6 +10,7 @@ use tokio::runtime::Runtime;
 use crate::adapters::{AdapterConfig, AdapterMode, AdapterTarget, registry_from_env};
 use crate::cli::{Cli, CliCommand, PacksCommand};
 use crate::conformance::{self, ConformanceReport, ConformanceStatus};
+use crate::e2e;
 use crate::fixtures::{Fixture, discover};
 use crate::packs::{self, PackRunReport};
 use greentic_types::{EnvId, TeamId, TenantCtx, TenantId};
@@ -60,6 +61,21 @@ impl RunContext {
             CliCommand::All { dry_run } => self.run_all(dry_run),
             CliCommand::GenGolden => self.gen_golden(),
             CliCommand::Packs { ref command } => self.packs(command.as_ref()),
+            CliCommand::E2e {
+                packs,
+                provider,
+                report,
+                dry_run,
+                live,
+                trace,
+            } => e2e::run_e2e(e2e::E2eOptions {
+                packs_dir: packs,
+                provider,
+                report,
+                dry_run,
+                live,
+                trace,
+            }),
         }
     }
 

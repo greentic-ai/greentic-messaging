@@ -14,8 +14,15 @@ TOTAL_STEPS=0
 PASSED_STEPS=0
 SKIPPED_STEPS=0
 STACK_STARTED=0
+CARGO_OFFLINE_READY=""
 
 export CARGO_TERM_COLOR=always
+if [ "$ONLINE" != "1" ]; then
+  export CARGO_NET_OFFLINE=true
+  CARGO_OFFLINE_ARGS=(--offline)
+else
+  CARGO_OFFLINE_ARGS=()
+fi
 
 if [ "$VERBOSE" = "1" ]; then
   set -x
@@ -121,6 +128,26 @@ print_tool_versions() {
   fi
 }
 
+ensure_cargo_cache() {
+  if [ "$ONLINE" = "1" ]; then
+    return 0
+  fi
+  if [ "$CARGO_OFFLINE_READY" = "1" ]; then
+    return 0
+  fi
+  if [ "$CARGO_OFFLINE_READY" = "0" ]; then
+    printf '[offline] cargo registry cache missing; skipping build/test steps\n'
+    return "$SKIP_CODE"
+  fi
+  if cargo fetch --offline >/dev/null 2>&1; then
+    CARGO_OFFLINE_READY="1"
+    return 0
+  fi
+  CARGO_OFFLINE_READY="0"
+  printf '[offline] cargo registry cache missing; skipping build/test steps\n'
+  return "$SKIP_CODE"
+}
+
 rustfmt_step() {
   ensure_tool cargo
   local status=$?
@@ -136,7 +163,13 @@ clippy_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
   local args=(clippy --workspace --all-targets --locked)
+  args+=("${CARGO_OFFLINE_ARGS[@]}")
   if [ "$STRICT" = "1" ]; then
     args+=(--all-features)
   fi
@@ -150,7 +183,13 @@ build_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
   local args=(build --workspace --all-targets --locked)
+  args+=("${CARGO_OFFLINE_ARGS[@]}")
   if [ "$STRICT" = "1" ]; then
     args+=(--all-features)
   fi
@@ -163,7 +202,12 @@ build_all_features_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  cargo build --workspace --all-features --locked
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  cargo build --workspace --all-features --locked "${CARGO_OFFLINE_ARGS[@]}"
 }
 
 test_step() {
@@ -172,7 +216,13 @@ test_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
   local args=(test --workspace --all-targets --locked)
+  args+=("${CARGO_OFFLINE_ARGS[@]}")
   if [ "$STRICT" = "1" ]; then
     args+=(--all-features)
     cargo "${args[@]}" -- --nocapture
@@ -187,7 +237,12 @@ test_all_features_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  cargo test --workspace --all-features --locked -- --nocapture
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  cargo test --workspace --all-features --locked "${CARGO_OFFLINE_ARGS[@]}" -- --nocapture
 }
 
 run_messaging_test_step() {
@@ -196,7 +251,12 @@ run_messaging_test_step() {
   if [ "$status" -ne 0 ]; then
     return "$status"
   fi
-  cargo run -p greentic-messaging-test --locked -- all --dry-run
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  cargo run -p greentic-messaging-test --locked "${CARGO_OFFLINE_ARGS[@]}" -- all --dry-run
 }
 
 coverage_step() {
@@ -211,7 +271,7 @@ coverage_step() {
   fi
   if ! have cargo-tarpaulin; then
     printf '[warn] cargo-tarpaulin is not installed (cargo install cargo-tarpaulin)\n'
-  if [ "$STRICT" = "1" ]; then
+    if [ "$STRICT" = "1" ]; then
       return 1
     fi
     return "$SKIP_CODE"
@@ -356,14 +416,14 @@ main() {
   step "cargo fmt --check"
   run_or_skip "cargo fmt" rustfmt_step
 
-step "cargo clippy"
-run_or_skip "cargo clippy" clippy_step
+  step "cargo clippy"
+  run_or_skip "cargo clippy" clippy_step
 
   step "greentic-messaging-test"
   run_or_skip "greentic-messaging-test all --dry-run" run_messaging_test_step
 
-step "cargo build"
-run_or_skip "cargo build" build_step
+  step "cargo build"
+  run_or_skip "cargo build" build_step
 
   step "cargo build (all features)"
   run_or_skip "cargo build --all-features" build_all_features_step

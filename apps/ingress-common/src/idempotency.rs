@@ -8,7 +8,7 @@ use gsm_idempotency::{
 use tracing::warn;
 
 pub async fn init_guard(nats: &Client) -> Result<IdempotencyGuard> {
-    let cfg = IdempotencyConfig::from_env();
+    let cfg = IdempotencyConfig::default();
     let js = jetstream::new(nats.clone());
     let store: SharedIdemStore = match NatsKvIdemStore::new(&js, &cfg.namespace).await {
         Ok(store) => Arc::new(store),

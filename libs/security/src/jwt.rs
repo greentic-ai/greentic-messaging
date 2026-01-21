@@ -1,5 +1,3 @@
-use std::env;
-
 use anyhow::{Context, Result, anyhow};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
@@ -24,18 +22,14 @@ impl ActionClaims {
     /// Build a signed action request claim with a configurable expiry.
     ///
     /// ```no_run
-    /// use security::jwt::{ActionClaims, JwtSigner};
+    /// use security::jwt::{ActionClaims, JwtConfig, JwtSigner};
     /// use time::Duration;
     ///
     /// # fn main() -> anyhow::Result<()> {
-    /// unsafe { std::env::set_var("JWT_ALG", "HS256"); }
-    /// unsafe { std::env::set_var("JWT_SECRET", "top-secret"); }
-    /// let signer = JwtSigner::from_env()?;
+    /// let signer = JwtSigner::from_config(JwtConfig::hs256("top-secret"))?;
     /// let claims = ActionClaims::new("room-1", "acme", "qa.submit", "hash", None, Duration::seconds(300));
     /// let token = signer.sign(&claims)?;
     /// assert!(!token.is_empty());
-    /// unsafe { std::env::remove_var("JWT_SECRET"); }
-    /// unsafe { std::env::remove_var("JWT_ALG"); }
     /// anyhow::Ok(())
     /// # }
     /// ```
@@ -78,46 +72,79 @@ pub struct JwtSigner {
     public_key: Option<Vec<u8>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct JwtConfig {
+    alg: Algorithm,
+    secret: Option<Vec<u8>>,
+    private_key: Option<Vec<u8>>,
+    public_key: Option<Vec<u8>>,
+}
+
+impl JwtConfig {
+    pub fn hs256(secret: impl Into<Vec<u8>>) -> Self {
+        Self {
+            alg: Algorithm::HS256,
+            secret: Some(secret.into()),
+            private_key: None,
+            public_key: None,
+        }
+    }
+
+    pub fn rs256(private_key: impl Into<Vec<u8>>, public_key: impl Into<Vec<u8>>) -> Self {
+        Self {
+            alg: Algorithm::RS256,
+            secret: None,
+            private_key: Some(private_key.into()),
+            public_key: Some(public_key.into()),
+        }
+    }
+
+    pub fn es256(private_key: impl Into<Vec<u8>>, public_key: impl Into<Vec<u8>>) -> Self {
+        Self {
+            alg: Algorithm::ES256,
+            secret: None,
+            private_key: Some(private_key.into()),
+            public_key: Some(public_key.into()),
+        }
+    }
+}
+
 impl JwtSigner {
-    pub fn from_env() -> Result<Self> {
-        let alg = env::var("JWT_ALG")
-            .unwrap_or_else(|_| "HS256".to_string())
-            .to_uppercase();
-        match alg.as_str() {
-            "HS256" => {
-                let secret = env::var("JWT_SECRET").context("JWT_SECRET required for HS256")?;
+    pub fn from_config(config: JwtConfig) -> Result<Self> {
+        match config.alg {
+            Algorithm::HS256 => {
+                let secret = config.secret.context("HS256 secret missing")?;
+                if secret.is_empty() {
+                    return Err(anyhow!("HS256 secret missing"));
+                }
                 Ok(Self {
                     alg: Algorithm::HS256,
-                    secret: Some(secret.into_bytes()),
+                    secret: Some(secret),
                     private_key: None,
                     public_key: None,
                 })
             }
-            "RS256" => {
-                let private_key =
-                    env::var("JWT_PRIVATE_KEY").context("JWT_PRIVATE_KEY required for RS256")?;
-                let public_key =
-                    env::var("JWT_PUBLIC_KEY").context("JWT_PUBLIC_KEY required for RS256")?;
+            Algorithm::RS256 => {
+                let private_key = config.private_key.context("RS256 private key missing")?;
+                let public_key = config.public_key.context("RS256 public key missing")?;
                 Ok(Self {
                     alg: Algorithm::RS256,
                     secret: None,
-                    private_key: Some(private_key.into_bytes()),
-                    public_key: Some(public_key.into_bytes()),
+                    private_key: Some(private_key),
+                    public_key: Some(public_key),
                 })
             }
-            "ES256" => {
-                let private_key =
-                    env::var("JWT_PRIVATE_KEY").context("JWT_PRIVATE_KEY required for ES256")?;
-                let public_key =
-                    env::var("JWT_PUBLIC_KEY").context("JWT_PUBLIC_KEY required for ES256")?;
+            Algorithm::ES256 => {
+                let private_key = config.private_key.context("ES256 private key missing")?;
+                let public_key = config.public_key.context("ES256 public key missing")?;
                 Ok(Self {
                     alg: Algorithm::ES256,
                     secret: None,
-                    private_key: Some(private_key.into_bytes()),
-                    public_key: Some(public_key.into_bytes()),
+                    private_key: Some(private_key),
+                    public_key: Some(public_key),
                 })
             }
-            other => Err(anyhow!("unsupported JWT algorithm {other}")),
+            other => Err(anyhow!("unsupported JWT algorithm {:?}", other)),
         }
     }
 
@@ -187,21 +214,10 @@ impl JwtSigner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use once_cell::sync::Lazy;
-    use std::sync::Mutex;
-
-    static ENV_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[test]
     fn hs256_roundtrip() {
-        let _guard = ENV_GUARD.lock().unwrap();
-        unsafe {
-            std::env::set_var("JWT_ALG", "HS256");
-        }
-        unsafe {
-            std::env::set_var("JWT_SECRET", "top-secret");
-        }
-        let signer = JwtSigner::from_env().expect("signer");
+        let signer = JwtSigner::from_config(JwtConfig::hs256("top-secret")).expect("signer");
         let claims = ActionClaims::new(
             "chat-1",
             "acme",
@@ -214,17 +230,10 @@ mod tests {
         let verified = signer.verify(&token).expect("verified");
         assert_eq!(verified.scope, claims.scope);
         assert_eq!(verified.tenant, claims.tenant);
-        unsafe {
-            std::env::remove_var("JWT_SECRET");
-        }
-        unsafe {
-            std::env::remove_var("JWT_ALG");
-        }
     }
 
     #[test]
     fn rs256_roundtrip() {
-        let _guard = ENV_GUARD.lock().unwrap();
         use rand::thread_rng;
         use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
         use rsa::{RsaPrivateKey, RsaPublicKey};
@@ -240,17 +249,8 @@ mod tests {
             .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
             .expect("encode public")
             .to_string();
-
-        unsafe {
-            std::env::set_var("JWT_ALG", "RS256");
-        }
-        unsafe {
-            std::env::set_var("JWT_PRIVATE_KEY", private_pem);
-        }
-        unsafe {
-            std::env::set_var("JWT_PUBLIC_KEY", public_pem);
-        }
-        let signer = JwtSigner::from_env().expect("signer");
+        let signer =
+            JwtSigner::from_config(JwtConfig::rs256(private_pem, public_pem)).expect("signer");
         let claims = ActionClaims::new(
             "chat-9",
             "bravo",
@@ -262,14 +262,5 @@ mod tests {
         let token = signer.sign(&claims).expect("token");
         let verified = signer.verify(&token).expect("verified");
         assert_eq!(verified.scope, claims.scope);
-        unsafe {
-            std::env::remove_var("JWT_PRIVATE_KEY");
-        }
-        unsafe {
-            std::env::remove_var("JWT_PUBLIC_KEY");
-        }
-        unsafe {
-            std::env::remove_var("JWT_ALG");
-        }
     }
 }

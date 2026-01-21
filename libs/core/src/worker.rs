@@ -2,6 +2,7 @@ use crate::{ChannelMessage, OutboundEnvelope, TenantCtx};
 use async_trait::async_trait;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
+use std::str::FromStr;
 use std::time::Duration;
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -25,15 +26,22 @@ pub enum WorkerTransport {
 }
 
 impl WorkerTransport {
-    pub fn from_env(value: Option<String>) -> Self {
-        match value
-            .unwrap_or_else(|| "nats".to_string())
-            .to_ascii_lowercase()
-            .as_str()
-        {
+    pub fn from_optional(value: Option<&str>) -> Self {
+        match value.unwrap_or("nats").to_ascii_lowercase().as_str() {
             "http" => WorkerTransport::Http,
             _ => WorkerTransport::Nats,
         }
+    }
+}
+
+impl FromStr for WorkerTransport {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_ascii_lowercase().as_str() {
+            "http" => WorkerTransport::Http,
+            _ => WorkerTransport::Nats,
+        })
     }
 }
 
@@ -61,22 +69,13 @@ impl Default for WorkerRoutingConfig {
 }
 
 impl WorkerRoutingConfig {
-    pub fn from_env() -> Self {
-        let transport = WorkerTransport::from_env(std::env::var("REPO_WORKER_TRANSPORT").ok());
-        let worker_id = std::env::var("REPO_WORKER_ID")
-            .ok()
-            .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| DEFAULT_WORKER_ID.to_string());
-        let nats_subject = std::env::var("REPO_WORKER_NATS_SUBJECT")
-            .ok()
-            .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| DEFAULT_WORKER_NATS_SUBJECT.to_string());
-        let http_url = std::env::var("REPO_WORKER_HTTP_URL").ok();
-        let max_retries = std::env::var("REPO_WORKER_RETRIES")
-            .ok()
-            .and_then(|v| v.parse::<u8>().ok())
-            .unwrap_or(2);
-
+    pub fn from_settings(
+        transport: WorkerTransport,
+        worker_id: String,
+        nats_subject: String,
+        http_url: Option<String>,
+        max_retries: u8,
+    ) -> Self {
         Self {
             transport,
             worker_id,
@@ -110,17 +109,13 @@ impl WorkerRoutingConfig {
 ///
 /// Format: `worker_id=transport:target,worker_id2=http:https://example`
 /// transport: `nats` uses `target` as subject; `http` uses `target` as URL.
-pub fn worker_routes_from_env() -> BTreeMap<String, WorkerRoutingConfig> {
-    let raw = match std::env::var("WORKER_ROUTES") {
-        Ok(v) => v,
-        Err(_) => return BTreeMap::new(),
-    };
+pub fn worker_routes_from_specs(raw: &str) -> BTreeMap<String, WorkerRoutingConfig> {
     let mut map = BTreeMap::new();
     for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         if let Some((id, spec)) = entry.split_once('=')
             && let Some((transport_raw, target)) = spec.split_once(':')
         {
-            let transport = WorkerTransport::from_env(Some(transport_raw.to_string()));
+            let transport = WorkerTransport::from_optional(Some(transport_raw));
             let cfg = WorkerRoutingConfig::from_route_spec(id.trim(), transport, target.trim());
             map.insert(id.trim().to_string(), cfg);
         }

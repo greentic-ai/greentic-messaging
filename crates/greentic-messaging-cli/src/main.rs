@@ -15,15 +15,19 @@ use greentic_config::ConfigResolver;
 use greentic_config_types::{DevConfig, EnvId};
 use greentic_pack::reader::{SigningPolicy, open_pack};
 use greentic_types::{
+    PackId, ProviderInstallId, TeamId, TenantCtx, TenantId,
     pack_manifest::{ExtensionInline, ExtensionRef, PackManifest},
     provider::{PROVIDER_EXTENSION_ID, ProviderExtensionInline},
 };
 use gsm_core::{
     AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, MessagingAdapterKind, Platform,
-    adapter_pack_paths_from_env, default_adapter_pack_paths,
+    ProviderInstallState, default_adapter_pack_paths,
 };
+use semver::Version;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::str::FromStr;
+use time::OffsetDateTime;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -151,7 +155,18 @@ enum DevCommand {
         subscriptions: bool,
     },
     /// Tail logs from local dev services
-    Logs,
+    Logs {
+        /// Follow logs (default: true)
+        #[arg(
+            long,
+            default_value_t = true,
+            action = ArgAction::Set,
+            num_args = 0..=1,
+            default_missing_value = "true"
+        )]
+        #[arg(long = "no-follow", action = ArgAction::SetFalse)]
+        follow: bool,
+    },
     /// Configure a provider using greentic-config, greentic-secrets, and greentic-oauth
     Setup {
         provider: String,
@@ -173,6 +188,15 @@ enum DevCommand {
         /// Disable loading default packs shipped in packs/messaging.
         #[arg(long)]
         no_default_packs: bool,
+        /// Update the existing install record if it exists.
+        #[arg(long)]
+        update: bool,
+        /// Delete the install record instead of creating it.
+        #[arg(long)]
+        delete: bool,
+        /// Optional install id override.
+        #[arg(long)]
+        install_id: Option<String>,
     },
     /// Stop and clean the local docker stack (stack-down)
     #[command(hide = true)]
@@ -398,7 +422,7 @@ fn handle_dev(command: DevCommand) -> Result<()> {
             tunnel,
             subscriptions,
         } => handle_dev_up(pack, packs_root, no_default_packs, tunnel, subscriptions),
-        DevCommand::Logs => handle_dev_logs(),
+        DevCommand::Logs { follow } => handle_dev_logs(follow),
         DevCommand::Setup {
             provider,
             env,
@@ -407,6 +431,9 @@ fn handle_dev(command: DevCommand) -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
+            update,
+            delete,
+            install_id,
         } => handle_dev_setup(
             provider,
             env,
@@ -415,6 +442,9 @@ fn handle_dev(command: DevCommand) -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
+            update,
+            delete,
+            install_id,
         ),
         DevCommand::Down => handle_dev_down(),
     }
@@ -612,6 +642,7 @@ fn build_serve_envs(config: &ServeEnvConfig) -> Vec<(String, String)> {
 
 const DEV_DIR: &str = ".greentic/dev";
 const DEV_RUNTIME_FILE: &str = ".greentic/dev/runtime.json";
+const DEV_INSTALLS_FILE: &str = ".greentic/dev/installs.json";
 const DEFAULT_GATEWAY_PORT: u16 = 8080;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -620,6 +651,14 @@ struct DevRuntime {
     public_base_url: Option<String>,
     logs: BTreeMap<String, String>,
     pids: BTreeMap<String, u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct DevInstallStore {
+    #[serde(default)]
+    records: Vec<greentic_types::ProviderInstallRecord>,
+    #[serde(default)]
+    states: Vec<ProviderInstallState>,
 }
 
 #[derive(Debug)]
@@ -669,6 +708,81 @@ fn ensure_dev_dir() -> Result<PathBuf> {
 
 fn dev_runtime_path() -> PathBuf {
     PathBuf::from(DEV_RUNTIME_FILE)
+}
+
+fn dev_installs_path() -> PathBuf {
+    PathBuf::from(DEV_INSTALLS_FILE)
+}
+
+fn write_dev_installs(store: &DevInstallStore) -> Result<()> {
+    let payload = serde_json::to_string_pretty(store).context("serialize install records")?;
+    fs::write(dev_installs_path(), payload)
+        .with_context(|| format!("failed to write {}", dev_installs_path().display()))
+}
+
+fn read_dev_installs() -> Result<DevInstallStore> {
+    let path = dev_installs_path();
+    let payload = match fs::read_to_string(&path) {
+        Ok(payload) => payload,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            return Ok(DevInstallStore::default());
+        }
+        Err(err) => return Err(anyhow!("failed to read {}: {err}", path.display())),
+    };
+    let mut store: DevInstallStore =
+        serde_json::from_str(&payload).context("invalid install records payload")?;
+    if store.states.is_empty() {
+        store.states = store
+            .records
+            .drain(..)
+            .map(ProviderInstallState::new)
+            .collect();
+    }
+    Ok(store)
+}
+
+fn upsert_install_record(
+    store: &mut DevInstallStore,
+    state: ProviderInstallState,
+    allow_update: bool,
+) -> Result<()> {
+    if let Some(pos) = store
+        .states
+        .iter()
+        .position(|existing| install_key_eq(&existing.record, &state.record))
+    {
+        if !allow_update {
+            return Err(anyhow!(
+                "install record already exists (use --update to overwrite)"
+            ));
+        }
+        store.states[pos] = state;
+    } else {
+        store.states.push(state);
+    }
+    Ok(())
+}
+
+fn delete_install_record(
+    store: &mut DevInstallStore,
+    record: &greentic_types::ProviderInstallRecord,
+) -> bool {
+    let before = store.states.len();
+    store
+        .states
+        .retain(|existing| !install_key_eq(&existing.record, record));
+    before != store.states.len()
+}
+
+fn install_key_eq(
+    left: &greentic_types::ProviderInstallRecord,
+    right: &greentic_types::ProviderInstallRecord,
+) -> bool {
+    left.tenant.env == right.tenant.env
+        && left.tenant.tenant == right.tenant.tenant
+        && left.tenant.team == right.tenant.team
+        && left.provider_id == right.provider_id
+        && left.install_id == right.install_id
 }
 
 fn write_dev_runtime(runtime: &DevRuntime) -> Result<()> {
@@ -793,7 +907,19 @@ fn handle_dev_up(
         if extensions.subscriptions.is_empty() {
             println!("Subscriptions: no providers declared; skipping.");
         } else {
-            println!("Subscriptions: pack declared, but no runtime available; skipping.");
+            let package = subscription_package_for("subscriptions")?;
+            if cli_dry_run() {
+                print_dry_run_cargo(&envs, &package, &[]);
+            } else {
+                let subscriptions_log = dev_dir.join("subscriptions.log");
+                runtime.logs.insert(
+                    "subscriptions".into(),
+                    subscriptions_log.to_string_lossy().into(),
+                );
+                let child =
+                    spawn_cargo_package_with_env_logs(&package, &envs, &[], &subscriptions_log)?;
+                runtime.pids.insert("subscriptions".into(), child.id());
+            }
         }
     }
 
@@ -802,7 +928,7 @@ fn handle_dev_up(
     Ok(())
 }
 
-fn handle_dev_logs() -> Result<()> {
+fn handle_dev_logs(follow: bool) -> Result<()> {
     if cli_dry_run() {
         println!("(dry-run) tail logs under {DEV_DIR}");
         return Ok(());
@@ -819,9 +945,10 @@ fn handle_dev_logs() -> Result<()> {
             dev_runtime_path().display()
         ));
     }
-    tail_logs(entries)
+    tail_logs(entries, follow)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_dev_setup(
     provider: String,
     env: Option<String>,
@@ -830,8 +957,15 @@ fn handle_dev_setup(
     pack: Vec<PathBuf>,
     packs_root: Option<PathBuf>,
     no_default_packs: bool,
+    update: bool,
+    delete: bool,
+    install_id: Option<String>,
 ) -> Result<()> {
     let context = resolve_dev_context(DevContextOverrides { env, tenant, team })?;
+    ensure_dev_dir()?;
+    if delete && update {
+        return Err(anyhow!("--delete cannot be combined with --update"));
+    }
     let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
     let (_, pack_paths) =
         load_adapter_registry_for_cli(Some(packs_root.clone()), &pack, no_default_packs)?;
@@ -843,6 +977,30 @@ fn handle_dev_setup(
 
     let (pack_path, extensions) =
         find_pack_with_provider(packs_root.as_path(), &pack_paths, &provider)?;
+
+    let (pack_id, pack_version) = load_pack_identity(&pack_path)?;
+    let install_id = install_id.unwrap_or_else(|| default_install_id(&provider));
+    let public_base_url = resolve_public_base_url();
+    let state = build_install_state(
+        &context,
+        &provider,
+        &install_id,
+        pack_id,
+        pack_version,
+        &public_base_url,
+    )?;
+
+    if delete {
+        let mut store = read_dev_installs()?;
+        let removed = delete_install_record(&mut store, &state.record);
+        write_dev_installs(&store)?;
+        if removed {
+            println!("Deleted install record for {provider} ({install_id})");
+        } else {
+            println!("No install record found for {provider} ({install_id})");
+        }
+        return Ok(());
+    }
 
     let secrets_cli = greentic_secrets_binary();
     run_cli_command(
@@ -876,7 +1034,18 @@ fn handle_dev_setup(
         )?;
     }
 
-    let public_base_url = resolve_public_base_url();
+    let plan = run_provision_setup(
+        &provider,
+        &pack_path,
+        &context,
+        &public_base_url,
+        &install_id,
+    )
+    .unwrap_or_else(|err| {
+        eprintln!("warning: setup plan unavailable: {err}");
+        serde_json::Value::Null
+    });
+
     let setup_args = vec![
         "packs".to_string(),
         "conformance".to_string(),
@@ -894,8 +1063,14 @@ fn handle_dev_setup(
     ];
     run_messaging_test_cli_str(setup_args)?;
 
+    let mut store = read_dev_installs()?;
+    let mut state = state.clone();
+    apply_provision_plan(&plan, &mut state);
+    upsert_install_record(&mut store, state.clone(), update)?;
+    write_dev_installs(&store)?;
+
     println!(
-        "Setup complete for {provider} (env={}, tenant={}, team={})",
+        "Setup complete for {provider} (install_id={install_id}, env={}, tenant={}, team={})",
         context.env, context.tenant, context.team
     );
     Ok(())
@@ -917,6 +1092,180 @@ fn resolve_public_base_url() -> String {
     format!("http://localhost:{gateway_port}")
 }
 
+fn greentic_provision_binary() -> String {
+    env::var("GREENTIC_PROVISION_CLI").unwrap_or_else(|_| "greentic-provision".into())
+}
+
+fn run_provision_setup(
+    provider: &str,
+    pack_path: &Path,
+    ctx: &DevContext,
+    public_base_url: &str,
+    install_id: &str,
+) -> Result<serde_json::Value> {
+    let bin = greentic_provision_binary();
+    let args = vec![
+        "setup".to_string(),
+        provider.to_string(),
+        "--install-id".to_string(),
+        install_id.to_string(),
+        "--pack".to_string(),
+        pack_path.display().to_string(),
+        "--env".to_string(),
+        ctx.env.clone(),
+        "--tenant".to_string(),
+        ctx.tenant.clone(),
+        "--team".to_string(),
+        ctx.team.clone(),
+        "--public-base-url".to_string(),
+        public_base_url.to_string(),
+        "--dry-run".to_string(),
+    ];
+    run_cli_command_capture_json(&bin, "greentic-provision", &args)
+}
+
+fn load_pack_identity(path: &Path) -> Result<(PackId, Version)> {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    if ext.as_deref() == Some("gtpack") {
+        let manifest = decode_pack_manifest(&PathBuf::from(path))
+            .ok_or_else(|| anyhow!("failed to decode pack manifest {}", path.display()))?;
+        return Ok((manifest.pack_id, manifest.version));
+    }
+    #[derive(Deserialize)]
+    struct PackSpec {
+        id: String,
+        version: String,
+    }
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read pack file {}", path.display()))?;
+    let spec: PackSpec = serde_yaml_bw::from_str(&raw)
+        .with_context(|| format!("{} is not a valid pack spec", path.display()))?;
+    let pack_id = PackId::new(&spec.id).context("invalid pack id")?;
+    let version = Version::parse(&spec.version).context("invalid pack version")?;
+    Ok((pack_id, version))
+}
+
+fn default_install_id(provider: &str) -> String {
+    let mut out = String::from("dev-");
+    for ch in provider.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push('-');
+        }
+    }
+    out
+}
+
+fn build_install_state(
+    ctx: &DevContext,
+    provider: &str,
+    install_id: &str,
+    pack_id: PackId,
+    pack_version: Version,
+    public_base_url: &str,
+) -> Result<ProviderInstallState> {
+    let tenant = TenantCtx::new(
+        ctx.env.parse::<EnvId>().context("invalid env id")?,
+        ctx.tenant
+            .parse::<TenantId>()
+            .context("invalid tenant id")?,
+    )
+    .with_team(Some(ctx.team.parse::<TeamId>().context("invalid team id")?));
+    let now = OffsetDateTime::now_utc();
+    let record = greentic_types::ProviderInstallRecord {
+        tenant,
+        provider_id: provider.to_string(),
+        install_id: install_id
+            .parse::<ProviderInstallId>()
+            .context("invalid install id")?,
+        pack_id,
+        pack_version,
+        created_at: now,
+        updated_at: now,
+        config_refs: BTreeMap::new(),
+        secret_refs: BTreeMap::new(),
+        webhook_state: Value::Object(Default::default()),
+        subscriptions_state: Value::Object(Default::default()),
+        metadata: serde_json::json!({
+            "public_base_url": public_base_url,
+        }),
+    };
+    Ok(ProviderInstallState::new(record))
+}
+
+fn apply_provision_plan(plan: &serde_json::Value, state: &mut ProviderInstallState) {
+    let Some(obj) = plan.as_object() else {
+        return;
+    };
+    if let Some(Value::Object(config)) = obj.get("config") {
+        for (key, value) in config {
+            state.config.insert(key.clone(), value.clone());
+            state
+                .record
+                .config_refs
+                .entry(key.clone())
+                .or_insert_with(|| format!("state:{key}"));
+        }
+    }
+    if let Some(Value::Object(secrets)) = obj.get("secrets") {
+        for (key, value) in secrets {
+            let secret = value
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| value.to_string());
+            state.secrets.insert(key.clone(), secret);
+            state
+                .record
+                .secret_refs
+                .entry(key.clone())
+                .or_insert_with(|| format!("secrets:{key}"));
+        }
+    }
+    if let Some(Value::Object(config_refs)) = obj.get("config_refs") {
+        for (key, value) in config_refs {
+            if let Some(val) = value.as_str() {
+                state
+                    .record
+                    .config_refs
+                    .insert(key.clone(), val.to_string());
+            }
+        }
+    }
+    if let Some(Value::Object(secret_refs)) = obj.get("secret_refs") {
+        for (key, value) in secret_refs {
+            if let Some(val) = value.as_str() {
+                state
+                    .record
+                    .secret_refs
+                    .insert(key.clone(), val.to_string());
+            }
+        }
+    }
+    if let Some(Value::Object(webhook)) = obj.get("webhook_state").or_else(|| obj.get("webhook")) {
+        state.record.webhook_state = Value::Object(webhook.clone());
+    }
+    if let Some(Value::Object(subs)) = obj
+        .get("subscriptions_state")
+        .or_else(|| obj.get("subscriptions"))
+    {
+        state.record.subscriptions_state = Value::Object(subs.clone());
+    }
+    if let Some(Value::Object(meta)) = obj.get("metadata") {
+        if !state.record.metadata.is_object() {
+            state.record.metadata = Value::Object(Default::default());
+        }
+        if let Some(target) = state.record.metadata.as_object_mut() {
+            for (key, value) in meta {
+                target.insert(key.clone(), value.clone());
+            }
+        }
+    }
+}
+
 fn handle_dev_down() -> Result<()> {
     if cli_dry_run() {
         println!("(dry-run) stop dev processes and docker stack");
@@ -935,6 +1284,64 @@ fn handle_dev_down() -> Result<()> {
     }
 
     ensure_stack_down()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_provision_plan_populates_state() {
+        let record = greentic_types::ProviderInstallRecord {
+            tenant: TenantCtx::new("dev".parse().unwrap(), "acme".parse().unwrap()),
+            provider_id: "messaging.test".into(),
+            install_id: "install-a".parse().unwrap(),
+            pack_id: "pack".parse().unwrap(),
+            pack_version: Version::new(0, 1, 0),
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+            config_refs: BTreeMap::new(),
+            secret_refs: BTreeMap::new(),
+            webhook_state: Value::Object(Default::default()),
+            subscriptions_state: Value::Object(Default::default()),
+            metadata: Value::Object(Default::default()),
+        };
+        let mut state = ProviderInstallState::new(record);
+        let plan = serde_json::json!({
+            "config": { "base_url": "https://example.invalid" },
+            "secrets": { "token": "secret" },
+            "config_refs": { "base_url": "state:base_url" },
+            "secret_refs": { "token": "secrets:token" },
+            "webhook_state": { "signature_header": "x-signature" },
+            "subscriptions_state": { "last_sync": "now" },
+            "metadata": { "routing": { "platform": "slack" } }
+        });
+
+        apply_provision_plan(&plan, &mut state);
+
+        assert_eq!(
+            state.config.get("base_url"),
+            Some(&serde_json::json!("https://example.invalid"))
+        );
+        assert_eq!(state.secrets.get("token"), Some(&"secret".into()));
+        assert_eq!(
+            state.record.config_refs.get("base_url").map(String::as_str),
+            Some("state:base_url")
+        );
+        assert_eq!(
+            state.record.secret_refs.get("token").map(String::as_str),
+            Some("secrets:token")
+        );
+        assert_eq!(
+            state.record.webhook_state.get("signature_header"),
+            Some(&serde_json::json!("x-signature"))
+        );
+        assert_eq!(
+            state.record.subscriptions_state.get("last_sync"),
+            Some(&serde_json::json!("now"))
+        );
+        assert!(state.record.metadata.get("routing").is_some());
+    }
 }
 
 fn print_dry_run_cargo(envs: &[(String, String)], package: &str, args: &[&str]) {
@@ -1054,11 +1461,15 @@ fn extract_public_url(line: &str) -> Option<String> {
     None
 }
 
-fn tail_logs(entries: Vec<(String, PathBuf)>) -> Result<()> {
+fn tail_logs(entries: Vec<(String, PathBuf)>, follow: bool) -> Result<()> {
     let mut handles = Vec::new();
     for (name, path) in entries {
         let handle = thread::spawn(move || {
-            if let Err(err) = tail_log_file(&name, &path) {
+            if follow {
+                if let Err(err) = tail_log_file(&name, &path) {
+                    eprintln!("log tail failed for {name}: {err:?}");
+                }
+            } else if let Err(err) = print_log_file(&name, &path) {
                 eprintln!("log tail failed for {name}: {err:?}");
             }
         });
@@ -1095,6 +1506,18 @@ fn tail_log_file(name: &str, path: &Path) -> Result<()> {
     }
 }
 
+fn print_log_file(name: &str, path: &Path) -> Result<()> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .with_context(|| format!("cannot open log file {}", path.display()))?;
+    let reader = BufReader::new(file);
+    for line in reader.lines().map_while(Result::ok) {
+        println!("[{name}] {line}");
+    }
+    Ok(())
+}
+
 fn find_pack_with_provider(
     packs_root: &Path,
     pack_paths: &[PathBuf],
@@ -1107,10 +1530,20 @@ fn find_pack_with_provider(
             std::slice::from_ref(path),
         )
         .unwrap_or_else(|_| gsm_core::ProviderExtensionsRegistry::default());
-        if extensions.ingress.contains_key(provider)
+        let mut matched = extensions.ingress.contains_key(provider)
             || extensions.oauth.contains_key(provider)
-            || extensions.subscriptions.contains_key(provider)
-        {
+            || extensions.subscriptions.contains_key(provider);
+        if !matched {
+            matched = decode_pack_manifest(path)
+                .and_then(|manifest| provider_inline(&manifest))
+                .is_some_and(|inline| {
+                    inline
+                        .providers
+                        .iter()
+                        .any(|decl| decl.provider_type == provider)
+                });
+        }
+        if matched {
             matches.push((path.clone(), extensions));
         }
     }
@@ -1120,14 +1553,20 @@ fn find_pack_with_provider(
             let registry =
                 gsm_core::load_provider_extensions_from_pack_files(packs_root, pack_paths)
                     .unwrap_or_else(|_| gsm_core::ProviderExtensionsRegistry::default());
-            let mut providers: Vec<String> = registry
-                .ingress
-                .keys()
-                .chain(registry.oauth.keys())
-                .chain(registry.subscriptions.keys())
-                .cloned()
-                .collect();
-            providers.sort();
+            let mut providers = BTreeSet::new();
+            providers.extend(registry.ingress.keys().cloned());
+            providers.extend(registry.oauth.keys().cloned());
+            providers.extend(registry.subscriptions.keys().cloned());
+            for path in pack_paths {
+                if let Some(manifest) = decode_pack_manifest(path)
+                    && let Some(inline) = provider_inline(&manifest)
+                {
+                    for provider in inline.providers {
+                        providers.insert(provider.provider_type);
+                    }
+                }
+            }
+            let providers = providers.into_iter().collect::<Vec<_>>();
             Err(anyhow!(
                 "provider {provider} not found in packs (available: {})",
                 providers.join(", ")
@@ -1161,6 +1600,30 @@ fn run_cli_command(binary: &str, display: &str, args: &[String]) -> Result<()> {
     } else {
         Err(anyhow!("{binary} exited with status {status}"))
     }
+}
+
+fn run_cli_command_capture_json(
+    binary: &str,
+    display: &str,
+    args: &[String],
+) -> Result<serde_json::Value> {
+    if cli_dry_run() {
+        println!("(dry-run) {display} [args redacted: {}]", args.len());
+        return Ok(serde_json::Value::Null);
+    }
+    let output = ProcessCommand::new(binary)
+        .args(args)
+        .output()
+        .with_context(|| format!("failed to run {binary}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "{binary} exited with status {}: {stderr}",
+            output.status
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    serde_json::from_str(&stdout).with_context(|| format!("invalid JSON output: {}", stdout.trim()))
 }
 
 fn handle_flows(command: FlowCommand) -> Result<()> {
@@ -1420,11 +1883,8 @@ fn write_embedded_stack() -> Result<PathBuf> {
 }
 
 fn subscription_package_for(platform: &str) -> Result<String> {
-    let normalized = platform.to_ascii_lowercase();
-    match normalized.as_str() {
-        "teams" => Ok("gsm-subscriptions-teams".into()),
-        _ => Err(anyhow!("subscriptions are only supported for: {}", "teams")),
-    }
+    let _ = platform;
+    Ok("gsm-subscriptions-teams".into())
 }
 
 fn run_messaging_test_cli(args: &[&str]) -> Result<()> {
@@ -1713,7 +2173,7 @@ fn load_adapter_registry_for_cli(
             selected: Vec::new(),
         }
     } else {
-        DefaultAdapterPacksConfig::from_env()
+        default_packs_from_env()
     };
     let mut pack_paths = if no_default_packs {
         Vec::new()
@@ -1744,6 +2204,46 @@ fn load_adapter_registry_for_cli(
         }
     };
     Ok((registry, pack_paths))
+}
+
+fn default_packs_from_env() -> DefaultAdapterPacksConfig {
+    let install_all = env::var("MESSAGING_INSTALL_ALL_DEFAULT_ADAPTER_PACKS")
+        .map(|v| v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let selected = env::var("MESSAGING_DEFAULT_ADAPTER_PACKS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    DefaultAdapterPacksConfig::from_settings(install_all, selected)
+}
+
+fn adapter_pack_paths_from_env() -> Vec<PathBuf> {
+    env::var("MESSAGING_ADAPTER_PACK_PATHS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(PathBuf::from(trimmed))
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn canonicalize_pack_path(path: PathBuf) -> Option<PathBuf> {
