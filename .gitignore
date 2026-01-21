@@ -11,3 +11,4 @@ node_modules/
 tmpfile
 .greentic/
 _evidence/
+seeds.yaml

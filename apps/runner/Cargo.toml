@@ -7,7 +7,6 @@ description = "Greentic messaging package: runner."
 readme = "../../README.md"
 repository = "https://github.com/greentic-ai/greentic-messaging"
 homepage = "https://github.com/greentic-ai/greentic-messaging"
-publish = false
 
 [[bin]]
 name = "gsm-runner"
