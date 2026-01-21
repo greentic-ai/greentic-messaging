@@ -1292,11 +1292,12 @@ fn render_json_strings(value: &mut Value, ctx: &Value) -> Result<()> {
 fn load_override_packs(paths: &[PathBuf]) -> Vec<DiscoveredPack> {
     let mut packs = Vec::new();
     for path in paths {
-        let manifest = match load_pack_manifest(path) {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let manifest = match load_pack_manifest(&canonical) {
             Ok(manifest) => manifest,
             Err(err) => {
                 packs.push(DiscoveredPack {
-                    path: path.clone(),
+                    path: canonical,
                     manifest: None,
                     error: Some(err.to_string()),
                 });
@@ -1304,7 +1305,7 @@ fn load_override_packs(paths: &[PathBuf]) -> Vec<DiscoveredPack> {
             }
         };
         packs.push(DiscoveredPack {
-            path: path.clone(),
+            path: canonical,
             manifest,
             error: None,
         });

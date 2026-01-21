@@ -297,8 +297,9 @@ pub fn discover_packs(args: &PackDiscoveryArgs) -> Result<Vec<DiscoveredPack>> {
             continue;
         }
         for path in walk(root, &args.glob).with_context(|| format!("reading {}", root.display()))? {
-            if seen.insert(path.clone()) {
-                results.push(load_pack(&path));
+            let canonical = path.canonicalize().unwrap_or(path);
+            if seen.insert(canonical.clone()) {
+                results.push(load_pack(&canonical));
             }
         }
     }
