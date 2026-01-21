@@ -1,0 +1,14 @@
+[package]
+name = "greentic-messaging-pack-validator"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+description = "WASM pack validator enforcing messaging-domain rules."
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+greentic-types = { workspace = true, features = ["serde"] }
+wit-bindgen = { workspace = true }

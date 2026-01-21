@@ -1,0 +1,25 @@
+pack_id: messaging-fixture-minimal
+version: 0.1.0
+kind: provider
+publisher: Greentic
+components: []
+dependencies: []
+flows: []
+assets:
+  - path: schemas/messaging/fixture-minimal/config.schema.json
+extensions:
+  greentic.provider-extension.v1:
+    kind: greentic.provider-extension.v1
+    version: 1.0.0
+    inline:
+      providers:
+        - provider_type: messaging.fixture-minimal
+          capabilities:
+            - messaging
+          ops:
+            - send_message
+          config_schema_ref: assets/schemas/messaging/fixture-minimal/config.schema.json
+          runtime:
+            world: greentic:provider/schema-core@1.0.0
+            component_ref: ghcr.io/greentic-ai/components/messaging.fixture-minimal:0.1.0
+            export: schema-core-api

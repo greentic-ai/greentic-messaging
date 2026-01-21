@@ -27,6 +27,10 @@ Defaults live under `packs/messaging`. Override or add more packs with:
 
 Pack generation now lives in the providers repo; this repo no longer builds provider components.
 
+## Pack validation
+
+Provider packs must declare the messaging validator extension. See `docs/pack-validation.md`.
+
 ## Dev CLI
 
 Use `greentic-messaging` for local workflows:
