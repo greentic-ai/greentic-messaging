@@ -3,9 +3,11 @@ use std::env;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{Context, Result, anyhow, bail};
 use blake3::Hasher;
+use futures::StreamExt;
 use greentic_distributor_client::dist::{DistClient, DistOptions};
 use greentic_flow::lint::lint_builtin_rules;
 use greentic_pack::{SigningPolicy, open_pack};
@@ -13,10 +15,24 @@ use greentic_types::flow::{Node, Routing};
 use greentic_types::pack::extensions::component_sources::ArtifactLocationV1;
 use greentic_types::pack_manifest::{ExtensionInline, ExtensionRef, PackFlowEntry, PackManifest};
 use greentic_types::provider::{PROVIDER_EXTENSION_ID, ProviderExtensionInline};
-use greentic_types::{Flow, FlowId, NodeId};
-use secrets_core::seed::{DevContext, resolve_uri};
+use greentic_types::{Flow, FlowId, NodeId, ProviderInstallId, ProviderInstallRecord, TenantCtx};
+use secrets_core::DefaultResolver;
+use secrets_core::embedded::SecretsError;
+use secrets_core::resolver::ResolverConfig;
+use secrets_core::seed::{DevContext, DevStore, SecretsStore, resolve_uri};
+use time::OffsetDateTime;
 
-use crate::cli::{PackDiscoveryArgs, PackRuntimeArgs};
+use gsm_bus::InMemoryBusClient;
+use gsm_core::{
+    AdapterRegistry, EnvId, HttpRunnerClient, OutKind, OutMessage, Platform, ProviderInstallState,
+    RunnerClient, apply_install_refs, infer_platform_from_adapter_name, make_tenant_ctx,
+    set_current_env,
+};
+use gsm_egress::adapter_registry::AdapterLookup;
+use gsm_egress::config::EgressConfig;
+use gsm_egress::process_message_internal;
+
+use crate::cli::{PackDiscoveryArgs, PackRuntimeArgs, RunnerTransport};
 
 #[derive(Debug, Clone)]
 pub struct DiscoveredPack {
@@ -38,6 +54,9 @@ pub struct PackRunReport {
     pub steps: Vec<PackStepReport>,
     pub errors: Vec<String>,
     pub secret_uris: Vec<String>,
+    pub required_config: BTreeMap<String, Vec<String>>,
+    pub missing_config: BTreeMap<String, Vec<String>>,
+    pub missing_secret_keys: Vec<String>,
 }
 
 impl PackRunReport {
@@ -317,6 +336,158 @@ pub fn run_pack_from_path(
     run_pack(&manifest, runtime, &materialized)
 }
 
+pub fn run_pack_live_egress(
+    path: &Path,
+    runtime: &PackRuntimeArgs,
+    runner_url: Option<&str>,
+) -> Result<()> {
+    if runtime.dry_run {
+        bail!("--live requires --dry-run=false");
+    }
+
+    let provided_config = parse_runtime_config(runtime)?;
+    let pack_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let manifest = load_manifest(&pack_path)?;
+    let pack_root = pack_path.parent().unwrap_or_else(|| Path::new("."));
+    let adapters = AdapterRegistry::load_from_paths(pack_root, std::slice::from_ref(&pack_path))
+        .context("load pack adapters")?;
+    let adapter = adapters
+        .all()
+        .into_iter()
+        .find(|adapter| adapter.allows_egress())
+        .ok_or_else(|| anyhow!("pack has no egress adapter"))?;
+    let provider_ids = provider_ids_from_extensions(manifest.extensions.as_ref());
+    let platform = infer_platform_for_live(&adapter.name, &manifest, &provider_ids);
+
+    let chat_id = config_value(
+        &provided_config,
+        &["chat-id", "chat_id", "channel-id", "channel_id"],
+    )
+    .ok_or_else(|| anyhow!("missing required config: chat-id"))?;
+    let text = config_value(&provided_config, &["text", "message"])
+        .unwrap_or_else(|| "live pack test".into());
+    let thread_id = config_value(&provided_config, &["thread-id", "thread_id"]);
+
+    set_current_env(EnvId(runtime.env.clone()));
+    let tenant_ctx = make_tenant_ctx(runtime.tenant.clone(), Some(runtime.team.clone()), None);
+    let out = OutMessage {
+        ctx: tenant_ctx.clone(),
+        tenant: runtime.tenant.clone(),
+        platform,
+        chat_id,
+        thread_id,
+        kind: OutKind::Text,
+        text: Some(text),
+        message_card: None,
+        adaptive_card: None,
+        meta: Default::default(),
+    };
+
+    let provider_id = provider_ids
+        .first()
+        .ok_or_else(|| anyhow!("pack has no provider id"))?
+        .clone();
+
+    let required_config = required_provider_config(&pack_path, manifest.extensions.as_ref())?;
+    let secret_uris = collect_secret_uris(&manifest, runtime, &provider_ids);
+    let missing_config = missing_required_config(&required_config, &provided_config);
+    let resolved_secrets = resolve_secret_values(&secret_uris, &provided_config, runtime, true)?;
+    let missing_secret_keys = missing_secret_keys(&secret_uris, &resolved_secrets);
+    if !missing_config.is_empty() || !missing_secret_keys.is_empty() {
+        bail!("missing config/secret values for live run");
+    }
+
+    let install_state = build_install_state_for_live(LiveInstallInputs {
+        tenant_ctx: &tenant_ctx,
+        provider_id: &provider_id,
+        manifest: &manifest,
+        channel_id: &out.chat_id,
+        config_values: &provided_config,
+        secret_values: &resolved_secrets,
+        required_config: &required_config,
+        secret_uris: &secret_uris,
+    })?;
+
+    let config = EgressConfig {
+        env: tenant_ctx.env.clone(),
+        nats_url: nats_url_from_env(runtime),
+        subject_filter: format!("{}.{}.>", gsm_core::EGRESS_SUBJECT_PREFIX, tenant_ctx.env.0),
+        adapter: None,
+        packs_root: ".".into(),
+        egress_prefix: gsm_core::EGRESS_SUBJECT_PREFIX.to_string(),
+        runner_http_url: runner_url
+            .map(|value| value.to_string())
+            .or_else(|| Some(runner_url_from_env())),
+        runner_http_api_key: None,
+        install_store_path: None,
+    };
+
+    match runtime.runner_transport {
+        RunnerTransport::Http => {
+            let runner: Box<dyn RunnerClient> = Box::new(HttpRunnerClient::new(
+                runner_url
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(runner_url_from_env),
+                None,
+            )?);
+            let lookup = AdapterLookup::new(&adapters);
+            let resolved = lookup.egress(&adapter.name)?;
+            let bus = InMemoryBusClient::default();
+            let tokio_runtime = tokio::runtime::Runtime::new().context("build runtime")?;
+
+            tokio_runtime
+                .block_on(async {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(10),
+                        process_message_internal(
+                            &out,
+                            &resolved,
+                            &bus,
+                            runner.as_ref(),
+                            &config,
+                            &install_state,
+                        ),
+                    )
+                    .await
+                })
+                .context("egress timeout")?
+                .context("egress failed")?;
+        }
+        RunnerTransport::Nats => {
+            let mut routed = out.clone();
+            apply_install_refs(&mut routed.meta, &install_state.record);
+            let subject = gsm_core::egress_subject_with_prefix(
+                gsm_core::EGRESS_SUBJECT_PREFIX,
+                tenant_ctx.env.as_str(),
+                tenant_ctx.tenant.as_str(),
+                tenant_ctx
+                    .team
+                    .as_ref()
+                    .map(|t| t.as_str())
+                    .unwrap_or("default"),
+                routed.platform.as_str(),
+            );
+            let nats_url = nats_url_from_env(runtime);
+            println!(
+                "  live: publishing egress message to {} via {}",
+                subject, nats_url
+            );
+            let payload = serde_json::to_vec(&routed)?;
+            let tokio_runtime = tokio::runtime::Runtime::new().context("build runtime")?;
+            tokio_runtime
+                .block_on(async {
+                    let client = async_nats::connect(nats_url).await?;
+                    client.publish(subject, payload.into()).await?;
+                    client.flush().await?;
+                    Ok::<(), anyhow::Error>(())
+                })
+                .context("nats publish failed")?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn run_all_packs(
     packs: &[DiscoveredPack],
     runtime: &PackRuntimeArgs,
@@ -346,6 +517,28 @@ pub fn run_all_packs(
         reports.push(report);
     }
     Ok(reports)
+}
+
+pub fn listen_egress(runtime: &PackRuntimeArgs) -> Result<()> {
+    let subject = egress_wildcard_subject(runtime);
+    let nats_url = nats_url_from_env(runtime);
+    println!("Listening for egress messages on {subject} via {nats_url}");
+
+    let tokio_runtime = tokio::runtime::Runtime::new().context("build runtime")?;
+    tokio_runtime.block_on(async {
+        let client = async_nats::connect(nats_url).await?;
+        let mut subscription = client.subscribe(subject.clone()).await?;
+        while let Some(message) = subscription.next().await {
+            let timestamp = OffsetDateTime::now_utc().unix_timestamp();
+            let payload = match std::str::from_utf8(&message.payload) {
+                Ok(text) => text.to_string(),
+                Err(_) => format!("<{} bytes>", message.payload.len()),
+            };
+            println!("[{timestamp}] {} {}", message.subject, payload);
+        }
+        Ok::<(), anyhow::Error>(())
+    })?;
+    Ok(())
 }
 
 fn materialize_pack(
@@ -433,6 +626,17 @@ fn run_pack(
     let provider_ids = provider_ids_from_extensions(manifest.extensions.as_ref());
     let secret_uris = collect_secret_uris(manifest, runtime, &provider_ids);
     let mut walk = walk_flow(&flow.flow, &component_ids, runtime.dry_run);
+    let provided_config = parse_runtime_config(runtime)?;
+    let required_config = required_provider_config(
+        materialized.pack_path.as_path(),
+        manifest.extensions.as_ref(),
+    )?;
+    let missing_config = missing_required_config(&required_config, &provided_config);
+    let resolved_secrets =
+        resolve_secret_values(&secret_uris, &provided_config, runtime, runtime.live)?;
+    let missing_secret_keys = missing_secret_keys(&secret_uris, &resolved_secrets)
+        .into_iter()
+        .collect();
 
     Ok(PackRunReport {
         pack_id: manifest.pack_id.to_string(),
@@ -449,6 +653,9 @@ fn run_pack(
             component_errors
         },
         secret_uris,
+        required_config,
+        missing_config,
+        missing_secret_keys,
     })
 }
 
@@ -533,6 +740,392 @@ fn collect_secret_uris(
         }
     }
     uris.into_iter().collect()
+}
+
+fn parse_runtime_config(runtime: &PackRuntimeArgs) -> Result<BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    for entry in &runtime.config {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let (key, value) = trimmed
+            .split_once('=')
+            .ok_or_else(|| anyhow!("invalid --config entry '{trimmed}' (expected key=value)"))?;
+        let key = key.trim();
+        if key.is_empty() {
+            bail!("invalid --config entry '{trimmed}' (empty key)");
+        }
+        out.insert(key.to_string(), value.trim().to_string());
+    }
+    Ok(out)
+}
+
+fn config_value(map: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(value) = map.get(*key) {
+            return Some(value.clone());
+        }
+    }
+    None
+}
+
+fn required_provider_config(
+    pack_path: &Path,
+    exts: Option<&BTreeMap<String, ExtensionRef>>,
+) -> Result<BTreeMap<String, Vec<String>>> {
+    let mut out = BTreeMap::new();
+    let Some(exts) = exts else {
+        return Ok(out);
+    };
+    let Some(provider_ext) = exts.get(PROVIDER_EXTENSION_ID) else {
+        return Ok(out);
+    };
+    let Some(ExtensionInline::Provider(ProviderExtensionInline { providers, .. })) =
+        provider_ext.inline.as_ref()
+    else {
+        return Ok(out);
+    };
+
+    for provider in providers {
+        let schema_ref = provider.config_schema_ref.trim();
+        if schema_ref.is_empty() {
+            out.insert(provider.provider_type.clone(), Vec::new());
+            continue;
+        }
+        let required = match load_pack_json_schema(pack_path, schema_ref) {
+            Ok(schema) => extract_required_keys(&schema),
+            Err(_) => Vec::new(),
+        };
+        out.insert(provider.provider_type.clone(), required);
+    }
+    Ok(out)
+}
+
+fn missing_required_config(
+    required: &BTreeMap<String, Vec<String>>,
+    provided: &BTreeMap<String, String>,
+) -> BTreeMap<String, Vec<String>> {
+    let mut missing = BTreeMap::new();
+    for (provider, keys) in required {
+        let mut needed = Vec::new();
+        for key in keys {
+            if !provided.contains_key(key) {
+                needed.push(key.clone());
+            }
+        }
+        if !needed.is_empty() {
+            missing.insert(provider.clone(), needed);
+        }
+    }
+    missing
+}
+
+fn resolve_secret_values(
+    secret_uris: &[String],
+    provided: &BTreeMap<String, String>,
+    runtime: &PackRuntimeArgs,
+    use_store: bool,
+) -> Result<BTreeMap<String, String>> {
+    let mut resolved = provided.clone();
+    if !use_store || secret_uris.is_empty() {
+        return Ok(resolved);
+    }
+
+    let runtime_rt = tokio::runtime::Runtime::new().context("build secrets runtime")?;
+
+    set_dev_store_envs();
+    if let Ok(store) = DevStore::open_default() {
+        for uri in secret_uris {
+            let Some(key) = secret_key_from_uri(uri) else {
+                continue;
+            };
+            if resolved.contains_key(&key) {
+                continue;
+            }
+            let fetched = runtime_rt.block_on(async { store.get(uri).await });
+            match fetched {
+                Ok(bytes) => match String::from_utf8(bytes) {
+                    Ok(value) => {
+                        resolved.insert(key, value);
+                    }
+                    Err(err) => {
+                        eprintln!("warning: secret {} is not valid UTF-8: {}", uri, err);
+                    }
+                },
+                Err(err) => {
+                    eprintln!("warning: failed to read secret {uri}: {err}");
+                }
+            }
+        }
+        return Ok(resolved);
+    }
+
+    let resolver = runtime_rt.block_on(async {
+        let config = ResolverConfig::from_env()
+            .tenant(runtime.tenant.clone())
+            .team(runtime.team.clone());
+        DefaultResolver::from_config(config).await
+    });
+    let resolver = match resolver {
+        Ok(resolver) => resolver,
+        Err(err) => {
+            eprintln!("warning: secrets resolver unavailable: {err}");
+            return Ok(resolved);
+        }
+    };
+
+    for uri in secret_uris {
+        let Some(key) = secret_key_from_uri(uri) else {
+            continue;
+        };
+        if resolved.contains_key(&key) {
+            continue;
+        }
+        let fetched = runtime_rt.block_on(async { resolver.get_text(uri).await });
+        match fetched {
+            Ok(value) => {
+                resolved.insert(key, value);
+            }
+            Err(SecretsError::Core(core)) if format!("{core}").contains("NotFound") => {}
+            Err(err) => {
+                eprintln!("warning: failed to read secret {uri}: {err}");
+            }
+        }
+    }
+
+    Ok(resolved)
+}
+
+fn set_dev_store_envs() {
+    if std::env::var("GREENTIC_DEV_SECRETS_PATH").is_ok() {
+        return;
+    }
+    let mut candidates = Vec::new();
+    if let Ok(home) = std::env::var("GREENTIC_HOME") {
+        let base = PathBuf::from(home);
+        candidates.push(base.join("dev/.dev.secrets.env"));
+        candidates.push(base.join(".dev.secrets.env"));
+    }
+    candidates.push(PathBuf::from(".greentic/dev/.dev.secrets.env"));
+    candidates.push(PathBuf::from(".dev.secrets.env"));
+
+    for path in candidates {
+        if path.exists() {
+            unsafe {
+                std::env::set_var("GREENTIC_DEV_SECRETS_PATH", &path);
+            }
+            break;
+        }
+    }
+}
+
+fn load_pack_json_schema(pack_path: &Path, schema_ref: &str) -> Result<serde_json::Value> {
+    let bytes = read_pack_file_ref(pack_path, schema_ref)?;
+    let schema =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse schema {}", schema_ref))?;
+    Ok(schema)
+}
+
+fn read_pack_file_ref(pack_path: &Path, file_ref: &str) -> Result<Vec<u8>> {
+    let ext = pack_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    if ext.as_deref() == Some("gtpack") {
+        let file = File::open(pack_path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+        let mut buf = Vec::new();
+        archive
+            .by_name(file_ref)
+            .with_context(|| format!("missing {}", file_ref))?
+            .read_to_end(&mut buf)
+            .with_context(|| format!("read {}", file_ref))?;
+        Ok(buf)
+    } else {
+        let base = pack_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(file_ref);
+        let mut buf = Vec::new();
+        File::open(&base)
+            .with_context(|| format!("open {}", base.display()))?
+            .read_to_end(&mut buf)
+            .with_context(|| format!("read {}", base.display()))?;
+        Ok(buf)
+    }
+}
+
+fn extract_required_keys(schema: &serde_json::Value) -> Vec<String> {
+    schema
+        .get("required")
+        .and_then(|value| value.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn missing_secret_keys(
+    secret_uris: &[String],
+    provided: &BTreeMap<String, String>,
+) -> BTreeSet<String> {
+    let mut missing = BTreeSet::new();
+    for uri in secret_uris {
+        if let Some(key) = secret_key_from_uri(uri)
+            && !provided.contains_key(&key)
+        {
+            missing.insert(key);
+        }
+    }
+    missing
+}
+
+fn secret_key_from_uri(uri: &str) -> Option<String> {
+    let key = uri.split('/').next_back()?.trim();
+    if key.is_empty() {
+        None
+    } else {
+        Some(key.to_string())
+    }
+}
+
+struct LiveInstallInputs<'a> {
+    tenant_ctx: &'a TenantCtx,
+    provider_id: &'a str,
+    manifest: &'a PackManifest,
+    channel_id: &'a str,
+    config_values: &'a BTreeMap<String, String>,
+    secret_values: &'a BTreeMap<String, String>,
+    required_config: &'a BTreeMap<String, Vec<String>>,
+    secret_uris: &'a [String],
+}
+
+fn build_install_state_for_live(inputs: LiveInstallInputs<'_>) -> Result<ProviderInstallState> {
+    let install_id = ProviderInstallId::new("live-test").expect("static install id");
+    let now = OffsetDateTime::now_utc();
+    let mut config_refs = BTreeMap::new();
+    if let Some(required) = inputs.required_config.get(inputs.provider_id) {
+        for key in required {
+            config_refs.insert(key.to_string(), format!("config:{key}"));
+        }
+    }
+    let mut secret_refs = BTreeMap::new();
+    for uri in inputs.secret_uris {
+        if let Some(key) = secret_key_from_uri(uri) {
+            secret_refs.insert(key, uri.to_string());
+        }
+    }
+
+    let record = ProviderInstallRecord {
+        tenant: inputs.tenant_ctx.clone(),
+        provider_id: inputs.provider_id.to_string(),
+        install_id: install_id.clone(),
+        pack_id: inputs.manifest.pack_id.clone(),
+        pack_version: inputs.manifest.version.clone(),
+        created_at: now,
+        updated_at: now,
+        config_refs,
+        secret_refs,
+        webhook_state: serde_json::json!({}),
+        subscriptions_state: serde_json::json!({}),
+        metadata: serde_json::json!({
+            "routing": {
+                "platform": infer_platform_from_provider(inputs.provider_id)
+                    .unwrap_or("unknown".into()),
+                "channel_id": inputs.channel_id,
+            }
+        }),
+    };
+
+    let mut config = BTreeMap::new();
+    for (key, value) in inputs.config_values {
+        config.insert(
+            key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
+    }
+    let mut secrets = BTreeMap::new();
+    for key in record.secret_refs.keys() {
+        if let Some(value) = inputs.secret_values.get(key) {
+            secrets.insert(key.to_string(), value.to_string());
+        }
+    }
+
+    Ok(ProviderInstallState::new(record)
+        .with_config(config)
+        .with_secrets(secrets))
+}
+
+fn infer_platform_from_provider(provider_id: &str) -> Option<String> {
+    let provider = provider_id.to_ascii_lowercase();
+    if provider.contains("slack") {
+        Some("slack".into())
+    } else if provider.contains("teams") {
+        Some("teams".into())
+    } else if provider.contains("webex") {
+        Some("webex".into())
+    } else if provider.contains("webchat") {
+        Some("webchat".into())
+    } else if provider.contains("whatsapp") {
+        Some("whatsapp".into())
+    } else if provider.contains("telegram") {
+        Some("telegram".into())
+    } else {
+        None
+    }
+}
+
+fn infer_platform_for_live(
+    adapter_name: &str,
+    manifest: &PackManifest,
+    provider_ids: &[String],
+) -> Platform {
+    infer_platform_from_adapter_name(adapter_name)
+        .or_else(|| {
+            infer_platform_from_provider(manifest.pack_id.as_str())
+                .and_then(|value| Platform::from_str(&value).ok())
+        })
+        .or_else(|| {
+            provider_ids
+                .first()
+                .and_then(|id| infer_platform_from_provider(id))
+                .and_then(|value| Platform::from_str(&value).ok())
+        })
+        .unwrap_or(Platform::Slack)
+}
+
+fn runner_url_from_env() -> String {
+    env::var("RUNNER_URL").unwrap_or_else(|_| "http://localhost:8081/invoke".into())
+}
+
+fn nats_url_from_env(runtime: &PackRuntimeArgs) -> String {
+    runtime
+        .nats_url
+        .clone()
+        .unwrap_or_else(|| env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into()))
+}
+
+fn egress_wildcard_subject(runtime: &PackRuntimeArgs) -> String {
+    format!(
+        "{}.{}.{}.{}.>",
+        gsm_core::EGRESS_SUBJECT_PREFIX,
+        subject_token(&runtime.env),
+        subject_token(&runtime.tenant),
+        subject_token(&runtime.team)
+    )
+}
+
+fn subject_token(value: &str) -> String {
+    let mut sanitized = value
+        .trim()
+        .replace([' ', '\t', '\n', '\r', '*', '>', '/'], "-");
+    if sanitized.is_empty() {
+        sanitized = "unknown".into();
+    }
+    sanitized
 }
 
 struct FlowWalk {
@@ -814,6 +1407,10 @@ mod tests {
             allow_tags: false,
             offline: false,
             dry_run: true,
+            live: false,
+            config: Vec::new(),
+            runner_transport: RunnerTransport::Http,
+            nats_url: None,
             resolve_components: true,
         }
     }

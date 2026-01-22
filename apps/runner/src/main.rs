@@ -5,8 +5,9 @@ mod qa_node;
 mod template_node;
 mod tool_node;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_nats::Client as Nats;
+use clap::Parser;
 use futures::StreamExt;
 use greentic_config::ConfigResolver;
 use greentic_config_types::{GreenticConfig, ServiceTransportConfig};
@@ -25,6 +26,17 @@ use std::sync::Arc;
 
 use crate::flow_registry::FlowRegistry;
 
+#[derive(Debug, Parser)]
+#[command(name = "gsm-runner", about = "Greentic messaging runner")]
+struct RunnerArgs {
+    /// Override packs root (defaults to greentic-config greentic_root/packs).
+    #[arg(long, value_name = "PATH")]
+    packs_root: Option<PathBuf>,
+    /// Additional pack paths to load (repeatable).
+    #[arg(long, value_name = "PATH")]
+    pack: Vec<PathBuf>,
+}
+
 struct RunnerConfig {
     env: EnvId,
     nats_url: String,
@@ -36,16 +48,20 @@ struct RunnerConfig {
 }
 
 impl RunnerConfig {
-    fn load() -> Result<Self> {
+    fn load(args: &RunnerArgs) -> Result<Self> {
         let resolved = ConfigResolver::new().load()?;
-        Self::from_config(&resolved.config)
+        Self::from_config(&resolved.config, args)
     }
 
-    fn from_config(config: &GreenticConfig) -> Result<Self> {
+    fn from_config(config: &GreenticConfig, args: &RunnerArgs) -> Result<Self> {
         let env = config.environment.env_id.clone();
         let nats_url =
             nats_url_from_config(config)?.unwrap_or_else(|| "nats://127.0.0.1:4222".to_string());
-        let packs_root = config.paths.greentic_root.join("packs");
+        let packs_root = args
+            .packs_root
+            .clone()
+            .unwrap_or_else(|| config.paths.greentic_root.join("packs"));
+        let extra_pack_paths = canonicalize_pack_paths(&args.pack)?;
         let tool_endpoint =
             tool_endpoint_from_config(config).unwrap_or_else(|| "http://localhost:18081".into());
         Ok(Self {
@@ -53,7 +69,7 @@ impl RunnerConfig {
             nats_url,
             packs_root,
             default_packs: DefaultAdapterPacksConfig::default(),
-            extra_pack_paths: Vec::new(),
+            extra_pack_paths,
             tool_endpoint,
             dlq: DlqConfig::default(),
         })
@@ -63,7 +79,8 @@ impl RunnerConfig {
 #[tokio::main]
 async fn main() -> Result<()> {
     init_telemetry("greentic-messaging")?;
-    let config = RunnerConfig::load()?;
+    let args = RunnerArgs::parse();
+    let config = RunnerConfig::load(&args)?;
     set_current_env(config.env.clone());
     if !config.packs_root.exists() {
         let _ = std::fs::create_dir_all(&config.packs_root);
@@ -159,6 +176,17 @@ fn tool_endpoint_from_config(config: &GreenticConfig) -> Option<String> {
         Some(ServiceTransportConfig::Http { url, .. }) => Some(url.to_string()),
         _ => None,
     }
+}
+
+fn canonicalize_pack_paths(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for path in paths {
+        let canonical = path
+            .canonicalize()
+            .with_context(|| format!("failed to canonicalize pack path {}", path.display()))?;
+        out.push(canonical);
+    }
+    Ok(out)
 }
 
 struct RunOneContext {

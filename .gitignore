@@ -12,3 +12,4 @@ tmpfile
 .greentic/
 _evidence/
 seeds.yaml
+demo-bundle/state/cargo-target/

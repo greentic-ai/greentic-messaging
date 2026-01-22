@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 
 use crate::adapters::AdapterConfig;
 
 #[derive(Parser, Debug)]
 #[command(name = "gsm-test", about = "MessageCard adapter validation utility")]
 pub struct Cli {
-    /// Path to the fixtures directory (defaults to libs/core/tests/fixtures/cards)
-    #[arg(long, default_value = "libs/core/tests/fixtures/cards")]
+    /// Path to the fixtures directory (defaults to assets/fixtures/cards)
+    #[arg(long, default_value = "assets/fixtures/cards")]
     pub fixtures: PathBuf,
 
     /// Force dry-run even if adapters have tokens
@@ -161,6 +161,11 @@ pub enum PacksCommand {
         #[arg(long)]
         setup_only: bool,
     },
+    /// Listen for egress messages on NATS and print to stdout
+    Log {
+        #[command(flatten)]
+        runtime: PackRuntimeArgs,
+    },
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -202,6 +207,18 @@ pub struct PackRuntimeArgs {
         default_missing_value = "true"
     )]
     pub dry_run: bool,
+    /// Enable live mode (requires --dry-run=false; pack runs still validate only)
+    #[arg(long)]
+    pub live: bool,
+    /// Provider config values (key=value, comma-separated)
+    #[arg(long, value_delimiter = ',')]
+    pub config: Vec<String>,
+    /// Runner transport for live pack runs
+    #[arg(long, value_enum, default_value_t = RunnerTransport::Http)]
+    pub runner_transport: RunnerTransport,
+    /// NATS URL for runner transport (default: NATS_URL or nats://127.0.0.1:4222)
+    #[arg(long)]
+    pub nats_url: Option<String>,
     /// Resolve and materialize components via distributor-client (default: on)
     #[arg(
         long = "resolve-components",
@@ -216,6 +233,12 @@ impl Cli {
     pub fn adapter_config(&self) -> AdapterConfig {
         AdapterConfig::load(self.dry_run)
     }
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum RunnerTransport {
+    Http,
+    Nats,
 }
 
 #[cfg(test)]

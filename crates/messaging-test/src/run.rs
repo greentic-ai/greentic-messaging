@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
 use crate::adapters::{AdapterConfig, AdapterMode, AdapterTarget, registry_from_env};
-use crate::cli::{Cli, CliCommand, PacksCommand};
+use crate::cli::{Cli, CliCommand, PacksCommand, RunnerTransport};
 use crate::conformance::{self, ConformanceReport, ConformanceStatus};
 use crate::e2e;
 use crate::fixtures::{Fixture, discover};
@@ -36,7 +36,7 @@ impl RunContext {
         let fixtures_dir = if cli.fixtures.exists() {
             cli.fixtures.clone()
         } else {
-            PathBuf::from("crates/gsm-dev-viewer/fixtures")
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fixtures/cards")
         };
         let fixtures = discover(&fixtures_dir)?;
         let config = cli.adapter_config();
@@ -247,6 +247,18 @@ impl RunContext {
             } => {
                 let report = packs::run_pack_from_path(pack, runtime, &materializer)?;
                 self.print_pack_report(&report, runtime);
+                if runtime.live {
+                    if runtime.dry_run {
+                        eprintln!("warning: --live has no effect when --dry-run=true");
+                    } else if !report.missing_config.is_empty()
+                        || !report.missing_secret_keys.is_empty()
+                    {
+                        return Err(anyhow!("missing config/secret values for live run"));
+                    } else {
+                        packs::run_pack_live_egress(pack, runtime, self.cli.runner_url.as_deref())?;
+                        println!("  live: egress message submitted");
+                    }
+                }
                 if report.is_success() {
                     Ok(())
                 } else {
@@ -258,6 +270,9 @@ impl RunContext {
                 runtime,
                 fail_fast,
             } => {
+                if runtime.live && runtime.dry_run {
+                    eprintln!("warning: --live has no effect when --dry-run=true");
+                }
                 let discovered = packs::discover_packs(discovery)?;
                 let reports =
                     packs::run_all_packs(&discovered, runtime, *fail_fast, &materializer)?;
@@ -311,6 +326,7 @@ impl RunContext {
                     Ok(())
                 }
             }
+            PacksCommand::Log { runtime } => packs::listen_egress(runtime),
         }
     }
 
@@ -322,6 +338,56 @@ impl RunContext {
             report.flow_kind,
             if report.dry_run { " [dry-run]" } else { "" }
         );
+        if runtime.live {
+            match runtime.runner_transport {
+                RunnerTransport::Http => {
+                    println!(
+                        "  note: live run will attempt an egress send via RUNNER_URL after validation"
+                    );
+                }
+                RunnerTransport::Nats => {
+                    println!(
+                        "  note: live run will publish an egress message via NATS_URL after validation"
+                    );
+                }
+            }
+        } else {
+            println!("  note: pack run validates flow wiring; it does not execute provider calls.");
+        }
+        if report.flow_id.to_ascii_lowercase().contains("diagnostic") {
+            println!("  note: diagnostics flows usually do not send messages");
+        }
+        if !runtime.config.is_empty() {
+            let keys = runtime
+                .config
+                .iter()
+                .filter_map(|entry| entry.split_once('=').map(|(k, _)| k.trim()))
+                .filter(|key| !key.is_empty())
+                .collect::<Vec<_>>();
+            if !keys.is_empty() {
+                println!("  provided config keys: {}", keys.join(", "));
+            }
+        }
+        if !report.required_config.is_empty() {
+            println!("  provider config requirements:");
+            for (provider, required) in &report.required_config {
+                if required.is_empty() {
+                    println!("    - {}: (no required fields)", provider);
+                } else {
+                    println!("    - {}: {}", provider, required.join(", "));
+                }
+            }
+        }
+        if !report.missing_config.is_empty() {
+            println!("  missing config values:");
+            for (provider, missing) in &report.missing_config {
+                println!("    - {}: {}", provider, missing.join(", "));
+            }
+        }
+        if !report.missing_secret_keys.is_empty() {
+            println!("  missing secret values:");
+            println!("    - {}", report.missing_secret_keys.join(", "));
+        }
         if !report.provider_ids.is_empty() {
             println!("  provider secrets:");
             for provider in &report.provider_ids {

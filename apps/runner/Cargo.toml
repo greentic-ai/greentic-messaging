@@ -19,6 +19,7 @@ chaos = []
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 async-nats = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["time", "macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }
 greentic-types = { workspace = true }
