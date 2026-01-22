@@ -1,0 +1,15 @@
+services:
+  nats:
+    image: docker.io/nats:2.10-alpine
+    command: ["-js", "-DV"]
+    ports: ["4222:4222", "8222:8222"]
+  mock-webhook:
+    image: docker.io/mendhak/http-https-echo:35
+    environment:
+      - HTTP_PORT=8081
+    ports: ["8081:8081"]
+  mock-egress:
+    image: docker.io/mendhak/http-https-echo:35
+    environment:
+      - HTTP_PORT=8082
+    ports: ["8082:8082"]

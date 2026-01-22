@@ -1837,7 +1837,7 @@ fn run_make(target: &str, envs: &[(&str, &str)]) -> Result<()> {
 const STACK_PROJECT: &str = "greentic-messaging-dev";
 const EMBEDDED_STACK_YAML: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../docker/stack.yml"
+    "/assets/stack.yml"
 ));
 
 #[derive(Copy, Clone, Debug)]
