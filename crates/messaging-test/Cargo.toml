@@ -37,13 +37,13 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "ti
 greentic-types = { workspace = true }
 greentic-flow = { workspace = true }
 greentic-pack-lib = { workspace = true }
-greentic-messaging-validate = { path = "../greentic-messaging-validate" }
+greentic-messaging-validate = { workspace = true }
 greentic-distributor-client = { version = "0.4", features = ["dist-client"] }
 gsm-core = { workspace = true }
 gsm-bus = { workspace = true }
 gsm-gateway = { workspace = true }
-gsm-runner = { path = "../../apps/runner" }
-gsm-egress = { path = "../../apps/messaging-egress" }
+gsm-runner = { workspace = true }
+gsm-egress = { workspace = true }
 gsm-telemetry = { workspace = true }
 gsm-session = { workspace = true }
 secrets-core = { workspace = true }

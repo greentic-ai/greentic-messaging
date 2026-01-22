@@ -59,6 +59,9 @@ greentic-session = { version = "0.4", default-features = false, features = ["inm
 greentic-telemetry = { version = "0.4", features = ["fmt"] }
 greentic-flow = "0.4"
 greentic-pack-lib = "0.4"
+greentic-messaging-validate = { path = "crates/greentic-messaging-validate", version = "0.4.43" }
+gsm-runner = { path = "apps/runner", version = "0.4.43" }
+gsm-egress = { path = "apps/messaging-egress", version = "0.4.43" }
 handlebars = "6"
 hex = "0.4"
 hmac = "0.12"
