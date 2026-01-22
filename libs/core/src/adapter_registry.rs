@@ -62,6 +62,12 @@ pub struct AdapterRegistry {
     adapters: HashMap<String, AdapterDescriptor>,
 }
 
+#[derive(Clone, Debug)]
+pub struct AdapterPackFailure {
+    pub path: PathBuf,
+    pub error: String,
+}
+
 impl AdapterRegistry {
     pub fn load_from_paths(root: &Path, paths: &[PathBuf]) -> Result<Self> {
         load_adapters_from_pack_files(root, paths)
@@ -101,20 +107,72 @@ impl AdapterRegistry {
 }
 
 pub fn load_adapters_from_pack_files(root: &Path, paths: &[PathBuf]) -> Result<AdapterRegistry> {
+    let (registry, failures) = load_adapters_from_pack_files_with_failures(root, paths)?;
+    for failure in failures {
+        tracing::warn!(
+            pack = %failure.path.display(),
+            error = %failure.error,
+            "failed to load adapter pack"
+        );
+    }
+    Ok(registry)
+}
+
+pub fn load_adapters_from_pack_files_with_failures(
+    root: &Path,
+    paths: &[PathBuf],
+) -> Result<(AdapterRegistry, Vec<AdapterPackFailure>)> {
     let root = root
         .canonicalize()
         .with_context(|| format!("failed to canonicalize packs root {}", root.display()))?;
     let mut registry = AdapterRegistry::default();
+    let mut failures = Vec::new();
     for path in paths {
-        let adapters = adapters_from_pack_file(&root, path)
-            .with_context(|| format!("failed to load pack {}", path.display()))?;
+        let adapters = match adapters_from_pack_file(&root, path) {
+            Ok(adapters) => adapters,
+            Err(err) => {
+                failures.push(AdapterPackFailure {
+                    path: path.to_path_buf(),
+                    error: format!("{err:#}"),
+                });
+                continue;
+            }
+        };
+
+        let mut seen = HashSet::new();
+        let mut duplicate = None;
+        for adapter in &adapters {
+            if !seen.insert(adapter.name.clone()) {
+                duplicate = Some(format!("duplicate adapter name in pack: {}", adapter.name));
+                break;
+            }
+            if registry.adapters.contains_key(&adapter.name) {
+                duplicate = Some(format!(
+                    "duplicate adapter registration for {}",
+                    adapter.name
+                ));
+                break;
+            }
+        }
+        if let Some(message) = duplicate {
+            failures.push(AdapterPackFailure {
+                path: path.to_path_buf(),
+                error: message,
+            });
+            continue;
+        }
+
         for adapter in adapters {
-            registry
-                .register(adapter)
-                .with_context(|| format!("failed to register adapters from {}", path.display()))?;
+            if let Err(err) = registry.register(adapter) {
+                failures.push(AdapterPackFailure {
+                    path: path.to_path_buf(),
+                    error: format!("{err:#}"),
+                });
+                break;
+            }
         }
     }
-    Ok(registry)
+    Ok((registry, failures))
 }
 
 pub fn adapters_from_pack_file(root: &Path, path: &Path) -> Result<Vec<AdapterDescriptor>> {
@@ -663,5 +721,37 @@ messaging:
     fn empty_when_no_sources() {
         let adapters = extract_from_sources("pack.id", "1.0.0", None, None, None).unwrap();
         assert!(adapters.is_empty());
+    }
+
+    #[test]
+    fn continues_loading_when_pack_fails() {
+        let temp = TempDir::new().expect("temp dir");
+        let good_path = temp.path().join("good.yaml");
+        let bad_path = temp.path().join("bad.yaml");
+
+        std::fs::write(
+            &good_path,
+            r#"
+id: good-pack
+version: 0.0.1
+messaging:
+  adapters:
+    - name: good-ingress
+      kind: ingress
+      component: good@0.1.0
+"#,
+        )
+        .expect("write good pack");
+        std::fs::write(&bad_path, "not: [valid").expect("write bad pack");
+
+        let (registry, failures) = load_adapters_from_pack_files_with_failures(
+            temp.path(),
+            &[bad_path.clone(), good_path],
+        )
+        .expect("load adapters");
+
+        assert!(registry.get("good-ingress").is_some());
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].path, bad_path);
     }
 }

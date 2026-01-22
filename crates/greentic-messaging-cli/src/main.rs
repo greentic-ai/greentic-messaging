@@ -20,8 +20,9 @@ use greentic_types::{
     provider::{PROVIDER_EXTENSION_ID, ProviderExtensionInline},
 };
 use gsm_core::{
-    AdapterDescriptor, AdapterRegistry, DefaultAdapterPacksConfig, MessagingAdapterKind, Platform,
-    ProviderInstallState, default_adapter_pack_paths,
+    AdapterDescriptor, AdapterPackFailure, AdapterRegistry, DefaultAdapterPacksConfig,
+    MessagingAdapterKind, Platform, ProviderInstallState, default_adapter_pack_paths,
+    load_adapters_from_pack_files_with_failures,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -36,7 +37,8 @@ fn main() -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
-        } => handle_info(pack, packs_root, no_default_packs),
+            strict_adapters,
+        } => handle_info(pack, packs_root, no_default_packs, strict_adapters),
         CliCommand::Dev { command } => handle_dev(command),
         CliCommand::Serve {
             kind,
@@ -46,6 +48,7 @@ fn main() -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
+            strict_adapters,
             adapter,
         } => handle_serve(
             kind,
@@ -55,6 +58,7 @@ fn main() -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
+            strict_adapters,
             adapter,
         ),
         CliCommand::Flows { command } => handle_flows(command),
@@ -87,6 +91,9 @@ enum CliCommand {
         /// Disable loading default packs shipped in packs/messaging.
         #[arg(long)]
         no_default_packs: bool,
+        /// Fail if any adapter pack fails to load.
+        #[arg(long)]
+        strict_adapters: bool,
     },
     /// Developer utilities (local stack helpers)
     Dev {
@@ -112,6 +119,9 @@ enum CliCommand {
         /// Disable loading default packs shipped in packs/messaging.
         #[arg(long)]
         no_default_packs: bool,
+        /// Fail if any adapter pack fails to load.
+        #[arg(long)]
+        strict_adapters: bool,
         /// Override the egress adapter name (egress only).
         #[arg(long)]
         adapter: Option<String>,
@@ -147,6 +157,9 @@ enum DevCommand {
         /// Disable loading default packs shipped in packs/messaging.
         #[arg(long)]
         no_default_packs: bool,
+        /// Fail if any adapter pack fails to load.
+        #[arg(long)]
+        strict_adapters: bool,
         /// Tunnel provider for inbound webhooks.
         #[arg(long, value_enum, default_value_t = DevTunnel::Cloudflared)]
         tunnel: DevTunnel,
@@ -188,6 +201,9 @@ enum DevCommand {
         /// Disable loading default packs shipped in packs/messaging.
         #[arg(long)]
         no_default_packs: bool,
+        /// Fail if any adapter pack fails to load.
+        #[arg(long)]
+        strict_adapters: bool,
         /// Update the existing install record if it exists.
         #[arg(long)]
         update: bool,
@@ -324,6 +340,7 @@ fn handle_info(
     pack: Vec<PathBuf>,
     packs_root: Option<PathBuf>,
     no_default_packs: bool,
+    strict_adapters: bool,
 ) -> Result<()> {
     let env = current_env();
     println!("Environment : {env}");
@@ -338,15 +355,18 @@ fn handle_info(
         "Seed/apply : greentic-secrets init --pack messaging-<name>.gtpack --env {env} --tenant <tenant> --team <team> --non-interactive"
     );
 
-    let (registry, pack_paths) =
-        load_adapter_registry_for_cli(packs_root.clone(), &pack, no_default_packs)?;
+    let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
+    let load = load_adapter_registry_for_cli(
+        Some(packs_root.clone()),
+        &pack,
+        no_default_packs,
+        strict_adapters,
+    )?;
+    let registry = load.registry;
+    let pack_paths = load.pack_paths;
+    let failures = load.failures;
     println!("\nAdapter packs:");
-    println!(
-        "  packs_root     : {}",
-        packs_root
-            .unwrap_or_else(|| PathBuf::from("packs"))
-            .to_string_lossy()
-    );
+    println!("  packs_root     : {}", packs_root.to_string_lossy());
     if pack.is_empty() {
         println!("  extra packs    : (none)");
     } else {
@@ -386,6 +406,39 @@ fn handle_info(
         );
     }
 
+    let ingress_count = registry
+        .all()
+        .iter()
+        .filter(|adapter| adapter.allows_ingress())
+        .count();
+    let egress_count = registry
+        .all()
+        .iter()
+        .filter(|adapter| adapter.allows_egress())
+        .count();
+    let subscriptions_count =
+        match gsm_core::load_provider_extensions_from_pack_files(packs_root.as_path(), &pack_paths)
+        {
+            Ok(extensions) => extensions.subscriptions.len(),
+            Err(err) => {
+                eprintln!("warning: failed to load provider extensions from packs: {err}");
+                0
+            }
+        };
+
+    println!("\nAdapter load summary:");
+    println!(
+        "  loaded adapters : ingress={ingress_count}, egress={egress_count}, subscriptions={subscriptions_count}"
+    );
+    if failures.is_empty() {
+        println!("  failed packs    : (none)");
+    } else {
+        println!("  failed packs    :");
+        for failure in failures {
+            println!("    - {}: {}", failure.path.display(), failure.error);
+        }
+    }
+
     println!("\nFlows in loaded packs:");
     if flows.is_empty() {
         println!("  (none)");
@@ -419,9 +472,17 @@ fn handle_dev(command: DevCommand) -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
+            strict_adapters,
             tunnel,
             subscriptions,
-        } => handle_dev_up(pack, packs_root, no_default_packs, tunnel, subscriptions),
+        } => handle_dev_up(
+            pack,
+            packs_root,
+            no_default_packs,
+            strict_adapters,
+            tunnel,
+            subscriptions,
+        ),
         DevCommand::Logs { follow } => handle_dev_logs(follow),
         DevCommand::Setup {
             provider,
@@ -431,6 +492,7 @@ fn handle_dev(command: DevCommand) -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
+            strict_adapters,
             update,
             delete,
             install_id,
@@ -442,6 +504,7 @@ fn handle_dev(command: DevCommand) -> Result<()> {
             pack,
             packs_root,
             no_default_packs,
+            strict_adapters,
             update,
             delete,
             install_id,
@@ -459,6 +522,7 @@ fn handle_serve(
     pack: Vec<PathBuf>,
     packs_root: Option<PathBuf>,
     no_default_packs: bool,
+    strict_adapters: bool,
     adapter_override: Option<String>,
 ) -> Result<()> {
     let platform = match kind {
@@ -478,6 +542,7 @@ fn handle_serve(
         packs_root,
         pack,
         no_default_packs,
+        strict_adapters,
         adapter_override,
     };
     let envs = build_serve_envs(&config);
@@ -536,15 +601,19 @@ struct ServeEnvConfig {
     packs_root: PathBuf,
     pack: Vec<PathBuf>,
     no_default_packs: bool,
+    strict_adapters: bool,
     adapter_override: Option<String>,
 }
 
 fn handle_serve_pack(config: &ServeEnvConfig, envs: Vec<(String, String)>) -> Result<()> {
-    let (registry, pack_paths) = load_adapter_registry_for_cli(
+    let load = load_adapter_registry_for_cli(
         Some(config.packs_root.clone()),
         &config.pack,
         config.no_default_packs,
+        config.strict_adapters,
     )?;
+    let registry = load.registry;
+    let pack_paths = load.pack_paths;
     if registry.is_empty() {
         return Err(anyhow!(
             "no adapters loaded; add --pack or configure env for adapter packs"
@@ -801,6 +870,7 @@ fn handle_dev_up(
     pack: Vec<PathBuf>,
     packs_root: Option<PathBuf>,
     no_default_packs: bool,
+    strict_adapters: bool,
     tunnel: DevTunnel,
     subscriptions: bool,
 ) -> Result<()> {
@@ -808,8 +878,13 @@ fn handle_dev_up(
     let nats_url = env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
 
-    let (_, pack_paths) =
-        load_adapter_registry_for_cli(Some(packs_root.clone()), &pack, no_default_packs)?;
+    let load = load_adapter_registry_for_cli(
+        Some(packs_root.clone()),
+        &pack,
+        no_default_packs,
+        strict_adapters,
+    )?;
+    let pack_paths = load.pack_paths;
 
     ensure_stack_up()?;
 
@@ -860,6 +935,7 @@ fn handle_dev_up(
         packs_root: packs_root.clone(),
         pack: pack.clone(),
         no_default_packs,
+        strict_adapters,
         adapter_override: None,
     };
     let mut envs = build_serve_envs(&config);
@@ -957,6 +1033,7 @@ fn handle_dev_setup(
     pack: Vec<PathBuf>,
     packs_root: Option<PathBuf>,
     no_default_packs: bool,
+    strict_adapters: bool,
     update: bool,
     delete: bool,
     install_id: Option<String>,
@@ -967,8 +1044,13 @@ fn handle_dev_setup(
         return Err(anyhow!("--delete cannot be combined with --update"));
     }
     let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
-    let (_, pack_paths) =
-        load_adapter_registry_for_cli(Some(packs_root.clone()), &pack, no_default_packs)?;
+    let load = load_adapter_registry_for_cli(
+        Some(packs_root.clone()),
+        &pack,
+        no_default_packs,
+        strict_adapters,
+    )?;
+    let pack_paths = load.pack_paths;
     if pack_paths.is_empty() {
         return Err(anyhow!(
             "no packs available; add --pack or configure default packs"
@@ -2162,11 +2244,18 @@ fn dry_suffix(args: &[String]) -> String {
     }
 }
 
+struct AdapterRegistryLoad {
+    registry: AdapterRegistry,
+    pack_paths: Vec<PathBuf>,
+    failures: Vec<AdapterPackFailure>,
+}
+
 fn load_adapter_registry_for_cli(
     packs_root: Option<PathBuf>,
     extra_packs: &[PathBuf],
     no_default_packs: bool,
-) -> Result<(AdapterRegistry, Vec<PathBuf>)> {
+    strict_adapters: bool,
+) -> Result<AdapterRegistryLoad> {
     let packs_root = packs_root.unwrap_or_else(|| PathBuf::from("packs"));
     if !packs_root.exists() {
         // Create the directory so canonicalization in the registry loader succeeds.
@@ -2197,18 +2286,28 @@ fn load_adapter_registry_for_cli(
     );
     pack_paths = dedupe_pack_paths(pack_paths);
 
-    let registry = match AdapterRegistry::load_from_paths(packs_root.as_path(), &pack_paths) {
-        Ok(r) => r,
-        Err(err) => {
+    let (registry, failures) =
+        load_adapters_from_pack_files_with_failures(packs_root.as_path(), &pack_paths)?;
+    if !failures.is_empty() {
+        for failure in &failures {
             eprintln!(
-                "warning: failed to load adapter packs (root={}, packs={:?}): {err}",
-                packs_root.display(),
-                pack_paths
+                "warning: failed to load adapter pack {}: {}",
+                failure.path.display(),
+                failure.error
             );
-            AdapterRegistry::default()
         }
-    };
-    Ok((registry, pack_paths))
+        if strict_adapters {
+            return Err(anyhow!(
+                "strict adapter loading failed ({} pack(s) failed)",
+                failures.len()
+            ));
+        }
+    }
+    Ok(AdapterRegistryLoad {
+        registry,
+        pack_paths,
+        failures,
+    })
 }
 
 fn default_packs_from_env() -> DefaultAdapterPacksConfig {
