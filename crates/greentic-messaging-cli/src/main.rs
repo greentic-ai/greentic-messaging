@@ -14,6 +14,7 @@ use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use greentic_config::ConfigResolver;
 use greentic_config_types::{DevConfig, EnvId};
 use greentic_pack::reader::{SigningPolicy, open_pack};
+use greentic_types::validate::Severity;
 use greentic_types::{
     PackId, ProviderInstallId, TeamId, TenantCtx, TenantId,
     pack_manifest::{ExtensionInline, ExtensionRef, PackManifest},
@@ -1130,6 +1131,8 @@ fn handle_dev_setup(
 
     let doctor_args = vec![
         "doctor".to_string(),
+        "--format".to_string(),
+        "json".to_string(),
         "--validator-pack".to_string(),
         "oci://ghcr.io/greentic-ai/validators/messaging:latest".to_string(),
         "--allow-oci-tags".to_string(),
@@ -1996,14 +1999,96 @@ fn run_greentic_pack_doctor(args: Vec<String>) -> Result<()> {
         println!("(dry-run) greentic-pack{}", dry_suffix(&args));
         return Ok(());
     }
-    let status = ProcessCommand::new("greentic-pack")
-        .args(args)
-        .status()
+
+    let output = ProcessCommand::new("greentic-pack")
+        .args(&args)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .output()
         .context("failed to run greentic-pack")?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(anyhow!("greentic-pack exited with status {status}"))
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+    let validation = parse_doctor_output(&stdout)?;
+    if !validation.diagnostics.is_empty() {
+        println!("greentic-pack doctor validation diagnostics:");
+        for diag in &validation.diagnostics {
+            let sev_label = severity_label(diag.severity);
+            if let Some(path) = diag.path.as_deref() {
+                println!(
+                    "  - [{sev_label}] {} {} - {}",
+                    diag.code, path, diag.message
+                );
+            } else {
+                println!("  - [{sev_label}] {} - {}", diag.code, diag.message);
+            }
+            if let Some(hint) = diag.hint.as_deref() {
+                println!("    hint: {hint}");
+            }
+        }
+    }
+
+    let error_count = validation
+        .diagnostics
+        .iter()
+        .filter(|diag| matches!(diag.severity, Severity::Error))
+        .count();
+    let has_errors = validation.has_errors || error_count > 0;
+    if has_errors {
+        return Err(anyhow!(
+            "greentic-pack doctor reported {error_count} validation error(s); pack will not be accepted"
+        ));
+    }
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "greentic-pack doctor exited with status {} and no validation errors; stdout:\n{stdout}",
+            output.status
+        ));
+    }
+
+    Ok(())
+}
+
+fn parse_doctor_output(stdout: &str) -> Result<DoctorValidation> {
+    #[derive(Deserialize)]
+    struct DoctorOutput {
+        #[serde(default)]
+        validation: Option<DoctorValidation>,
+    }
+
+    let parsed: DoctorOutput = serde_json::from_str(stdout).with_context(|| {
+        format!(
+            "greentic-pack doctor output is not valid JSON:\n{}",
+            stdout.trim()
+        )
+    })?;
+    Ok(parsed.validation.unwrap_or_default())
+}
+
+#[derive(Debug, Deserialize)]
+struct DoctorDiagnostic {
+    severity: Severity,
+    code: String,
+    message: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    hint: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct DoctorValidation {
+    #[serde(default)]
+    diagnostics: Vec<DoctorDiagnostic>,
+    #[serde(default)]
+    has_errors: bool,
+}
+
+fn severity_label(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Info => "INFO",
+        Severity::Warn => "WARN",
+        Severity::Error => "ERROR",
     }
 }
 

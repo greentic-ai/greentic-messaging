@@ -1,0 +1,20 @@
+name: legacy
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 5 * * *'
+permissions:
+  contents: read
+jobs:
+  legacy-check:
+    name: legacy workspace checks
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_BUILD_JOBS: 1
+      LEGACY_RUN_MESSAGING_TEST: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run legacy checks
+        run: ./ci/legacy_check.sh

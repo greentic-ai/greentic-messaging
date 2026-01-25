@@ -232,34 +232,6 @@ test_step() {
   cargo "${args[@]}"
 }
 
-test_all_features_step() {
-  ensure_tool cargo
-  local status=$?
-  if [ "$status" -ne 0 ]; then
-    return "$status"
-  fi
-  ensure_cargo_cache
-  status=$?
-  if [ "$status" -ne 0 ]; then
-    return "$status"
-  fi
-  cargo test --workspace --all-features --locked "${CARGO_OFFLINE_ARGS[@]}" -- --nocapture
-}
-
-run_messaging_test_step() {
-  ensure_tool cargo
-  local status=$?
-  if [ "$status" -ne 0 ]; then
-    return "$status"
-  fi
-  ensure_cargo_cache
-  status=$?
-  if [ "$status" -ne 0 ]; then
-    return "$status"
-  fi
-  cargo run -p greentic-messaging-test --locked "${CARGO_OFFLINE_ARGS[@]}" -- all --dry-run
-}
-
 validator_pack_step() {
   ensure_tools cargo python3 jq rsync greentic-pack
   local status=$?
@@ -272,6 +244,32 @@ validator_pack_step() {
     return "$status"
   fi
   scripts/build-validator-pack.sh
+}
+
+dev_viewer_step() {
+  ensure_tool cargo
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  ensure_cargo_cache
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return "$status"
+  fi
+  cargo build -p dev-viewer --locked "${CARGO_OFFLINE_ARGS[@]}"
+}
+
+legacy_check_step() {
+  if [ "${LOCAL_CHECK_LEGACY:-0}" != "1" ]; then
+    printf '[info] Set LOCAL_CHECK_LEGACY=1 to exercise legacy crates.\n'
+    return "$SKIP_CODE"
+  fi
+  if [ ! -x ci/legacy_check.sh ]; then
+    printf '[fail] ci/legacy_check.sh is missing or not executable.\n'
+    return 1
+  fi
+  ci/legacy_check.sh
 }
 
 coverage_step() {
@@ -434,26 +432,17 @@ main() {
   step "cargo clippy"
   run_or_skip "cargo clippy" clippy_step
 
-  step "greentic-messaging-test"
-  run_or_skip "greentic-messaging-test all --dry-run" run_messaging_test_step
-
-  step "cargo build"
-  run_or_skip "cargo build" build_step
+  step "cargo test"
+  run_or_skip "cargo test" test_step
 
   step "validator pack"
   run_or_skip "validator pack" validator_pack_step
 
-  step "cargo build (all features)"
-  run_or_skip "cargo build --all-features" build_all_features_step
+  step "dev-viewer"
+  run_or_skip "dev-viewer" dev_viewer_step
 
-  step "cargo test"
-  run_or_skip "cargo test" test_step
-
-  step "cargo test (all features)"
-  run_or_skip "cargo test --all-features" test_all_features_step
-
-  step "Coverage (tarpaulin)"
-  run_or_skip "cargo tarpaulin" coverage_step
+  step "legacy crates"
+  run_or_skip "legacy workspace" legacy_check_step
 
   step "Conformance (Playwright matrix)"
   run_or_skip "conformance suite" run_conformance_suite

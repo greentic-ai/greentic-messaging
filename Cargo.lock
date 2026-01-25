@@ -433,18 +433,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
 
 [[package]]
-name = "bytemuck"
-version = "1.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fbdf580320f38b612e485521afda1ee26d10cc9884efaaa750d383e13e3c5f4"
-
-[[package]]
-name = "byteorder-lite"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
-
-[[package]]
 name = "bytes"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -950,36 +938,12 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.20.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
-dependencies = [
- "darling_core 0.20.11",
- "darling_macro 0.20.11",
-]
-
-[[package]]
-name = "darling"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
 dependencies = [
- "darling_core 0.21.3",
- "darling_macro 0.21.3",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.20.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim",
- "syn",
+ "darling_core",
+ "darling_macro",
 ]
 
 [[package]]
@@ -998,22 +962,11 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
-version = "0.20.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
-dependencies = [
- "darling_core 0.20.11",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "darling_macro"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
 dependencies = [
- "darling_core 0.21.3",
+ "darling_core",
  "quote",
  "syn",
 ]
@@ -1089,39 +1042,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive_builder"
-version = "0.20.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "507dfb09ea8b7fa618fcf76e953f4f5e192547945816d5358edffe39f6f94947"
-dependencies = [
- "derive_builder_macro",
-]
-
-[[package]]
-name = "derive_builder_core"
-version = "0.20.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d5bcf7b024d6835cfb3d473887cd966994907effbe9227e8c8219824d06c4e8"
-dependencies = [
- "darling 0.20.11",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "derive_builder_macro"
-version = "0.20.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab63b0e2bf4d5928aff72e83a7dace85d7bba5fe12dcc3c5a572d78caffd3f3c"
-dependencies = [
- "derive_builder_core",
- "syn",
-]
-
-[[package]]
 name = "dev-viewer"
-version = "0.4.43"
+version = "0.4.44"
 dependencies = [
  "anyhow",
  "axum",
@@ -1130,10 +1052,13 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "serde_yaml_bw",
+ "tempfile",
  "tokio",
  "tower",
  "tracing",
  "tracing-subscriber",
+ "zip",
 ]
 
 [[package]]
@@ -1210,12 +1135,6 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[package]]
-name = "dotenvy"
-version = "0.15.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dunce"
@@ -1378,15 +1297,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
-name = "fdeflate"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
-dependencies = [
- "simd-adler32",
-]
-
-[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1497,7 +1407,6 @@ checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
 dependencies = [
  "futures-channel",
  "futures-core",
- "futures-executor",
  "futures-io",
  "futures-sink",
  "futures-task",
@@ -1682,7 +1591,6 @@ checksum = "86e9e7bcb2689b0bf29d4d5d347343fccbf9dcbca7bef5f6cc77f75000b79b6e"
 dependencies = [
  "anyhow",
  "async-trait",
- "clap",
  "dirs-next",
  "greentic-config-types",
  "greentic-interfaces-guest",
@@ -1709,7 +1617,7 @@ dependencies = [
  "greentic-distributor-client",
  "greentic-interfaces",
  "greentic-types",
- "handlebars 5.1.2",
+ "handlebars",
  "indexmap 2.12.1",
  "jsonschema 0.38.1",
  "lazy_static",
@@ -1785,7 +1693,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging"
-version = "0.4.43"
+version = "0.4.44"
 dependencies = [
  "anyhow",
  "clap",
@@ -1807,89 +1715,10 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging-pack-validator"
-version = "0.4.43"
+version = "0.4.44"
 dependencies = [
  "greentic-types",
  "wit-bindgen",
-]
-
-[[package]]
-name = "greentic-messaging-security"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "greentic-types",
- "gsm-core",
- "hex",
- "jsonwebtoken",
- "once_cell",
- "rand 0.8.5",
- "rsa",
- "serde",
- "serde_json",
- "sha2",
- "time",
- "tokio",
- "tower",
- "tracing",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
-name = "greentic-messaging-test"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "blake3",
- "clap",
- "futures",
- "greentic-distributor-client",
- "greentic-flow",
- "greentic-messaging-validate",
- "greentic-pack-lib",
- "greentic-secrets-core",
- "greentic-types",
- "gsm-bus",
- "gsm-core",
- "gsm-egress",
- "gsm-gateway",
- "gsm-runner",
- "gsm-session",
- "gsm-telemetry",
- "gsm-translator",
- "handlebars 6.4.0",
- "hmac",
- "indexmap 2.12.1",
- "rand 0.9.2",
- "regex",
- "semver",
- "serde",
- "serde_json",
- "serde_yaml_bw",
- "sha2",
- "tempfile",
- "time",
- "tokio",
- "tracing-subscriber",
- "zip",
-]
-
-[[package]]
-name = "greentic-messaging-validate"
-version = "0.4.43"
-dependencies = [
- "greentic-types",
- "semver",
- "serde_json",
 ]
 
 [[package]]
@@ -1993,20 +1822,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "greentic-session"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52acc23bcf042da8aa80136df7724cb5b806b932cedec744259616763c424b56"
-dependencies = [
- "greentic-types",
- "hex",
- "parking_lot",
- "serde_json",
- "sha2",
- "uuid",
-]
-
-[[package]]
 name = "greentic-telemetry"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2067,23 +1882,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "greentic-webchat-conformance"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "greentic-secrets-core",
- "greentic-secrets-spec",
- "greentic-types",
- "gsm-core",
- "http",
- "reqwest 0.12.28",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2095,55 +1893,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "gsm-backpressure"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "greentic-types",
- "gsm-telemetry",
- "once_cell",
- "serde",
- "serde_json",
- "time",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "gsm-bus"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "gsm-cli-dlq"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "clap",
- "greentic-types",
- "gsm-core",
- "gsm-dlq",
- "gsm-telemetry",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "gsm-core"
-version = "0.4.43"
+version = "0.4.44"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2194,273 +1945,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "gsm-dlq"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "futures",
- "greentic-types",
- "gsm-telemetry",
- "nanoid",
- "serde",
- "serde_json",
- "time",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "gsm-egress"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "axum",
- "futures",
- "greentic-config",
- "greentic-config-types",
- "greentic-types",
- "gsm-bus",
- "gsm-core",
- "gsm-gateway",
- "metrics",
- "semver",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "zip",
-]
-
-[[package]]
-name = "gsm-egress-common"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "greentic-types",
- "gsm-backpressure",
- "gsm-core",
- "gsm-telemetry",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "gsm-gateway"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "greentic-config",
- "greentic-config-types",
- "greentic-types",
- "gsm-bus",
- "gsm-core",
- "gsm-telemetry",
- "hmac",
- "hyper",
- "metrics",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "gsm-idempotency"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "greentic-types",
- "gsm-telemetry",
- "once_cell",
- "serde",
- "serde_json",
- "time",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "gsm-ingress-common"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "axum",
- "base64 0.22.1",
- "greentic-types",
- "gsm-core",
- "gsm-idempotency",
- "gsm-session",
- "gsm-telemetry",
- "hmac",
- "http",
- "http-body-util",
- "hyper",
- "rand 0.9.2",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tower",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "gsm-runner"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "clap",
- "futures",
- "greentic-config",
- "greentic-config-types",
- "greentic-pack-lib",
- "greentic-types",
- "gsm-backpressure",
- "gsm-core",
- "gsm-dlq",
- "gsm-idempotency",
- "gsm-session",
- "gsm-telemetry",
- "handlebars 6.4.0",
- "rand 0.9.2",
- "regex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "serde_yaml_bw",
- "time",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "gsm-session"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "greentic-session",
- "greentic-types",
-]
-
-[[package]]
-name = "gsm-slack-oauth"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "greentic-types",
- "gsm-core",
- "gsm-telemetry",
- "http-body-util",
- "rand 0.9.2",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tokio",
- "tower",
- "tracing",
- "urlencoding",
-]
-
-[[package]]
-name = "gsm-subscriptions-teams"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "greentic-config",
- "greentic-config-types",
- "greentic-pack-lib",
- "greentic-types",
- "gsm-core",
- "indexmap 2.12.1",
- "semver",
- "serde",
- "serde_json",
- "tempfile",
- "time",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "zip",
-]
-
-[[package]]
 name = "gsm-telemetry"
-version = "0.4.43"
+version = "0.4.44"
 dependencies = [
  "anyhow",
  "greentic-telemetry",
  "greentic-types",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "gsm-testutil"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "dotenvy",
- "greentic-secrets-core",
- "gsm-core",
- "image",
- "jsonschema 0.40.0",
- "once_cell",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "serde_yaml_bw",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "gsm-translator"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "greentic-messaging-security",
- "greentic-types",
- "gsm-core",
- "gsm-telemetry",
- "gsm-testutil",
- "insta",
- "once_cell",
- "serde",
- "serde_json",
- "time",
- "tracing",
- "unicode-segmentation",
- "urlencoding",
- "uuid",
 ]
 
 [[package]]
@@ -2511,22 +2003,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "handlebars"
-version = "6.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b3f9296c208515b87bd915a2f5d1163d4b3f863ba83337d7713cf478055948e"
-dependencies = [
- "derive_builder",
- "log",
- "num-order",
- "pest",
- "pest_derive",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2893,21 +2369,6 @@ dependencies = [
  "sized-chunks",
  "typenum",
  "version_check",
-]
-
-[[package]]
-name = "image"
-version = "0.25.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
-dependencies = [
- "bytemuck",
- "byteorder-lite",
- "moxcms",
- "num-traits",
- "png",
- "zune-core",
- "zune-jpeg",
 ]
 
 [[package]]
@@ -3294,15 +2755,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "messaging-tenants"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "clap",
- "tokio",
-]
-
-[[package]]
 name = "metrics"
 version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3343,55 +2795,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mock-weather-tool"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "greentic-types",
- "gsm-telemetry",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "moxcms"
-version = "0.7.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac9557c559cd6fc9867e122e20d2cbefc9ca29d80d027a8e39310920ed2f0a97"
-dependencies = [
- "num-traits",
- "pxfm",
-]
-
-[[package]]
-name = "nanoid"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ffa00dec017b5b1a8b7cf5e2c008bfda1aa7e0697ac1508b491fdf2622fb4d8"
-dependencies = [
- "rand 0.8.5",
-]
-
-[[package]]
-name = "nats-demo"
-version = "0.4.43"
-dependencies = [
- "anyhow",
- "async-nats",
- "futures",
- "greentic-types",
- "gsm-core",
- "gsm-telemetry",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -3516,21 +2919,6 @@ dependencies = [
  "autocfg",
  "num-integer",
  "num-traits",
-]
-
-[[package]]
-name = "num-modular"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17bb261bf36fa7d83f4c294f834e91256769097b3cb505d44831e0a179ac647f"
-
-[[package]]
-name = "num-order"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "537b596b97c40fcf8056d153049eb22f481c17ebce72a513ec9286e4986d1bb6"
-dependencies = [
- "num-modular",
 ]
 
 [[package]]
@@ -3924,19 +3312,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
-name = "png"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97baced388464909d42d89643fe4361939af9b7ce7a31ee32a168f832a70f2a0"
-dependencies = [
- "bitflags",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide",
-]
-
-[[package]]
 name = "portable-atomic"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4075,15 +3450,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "pxfm"
-version = "0.1.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7186d3822593aa4393561d186d1393b3923e9d6163d3fbfd6e825e3e6cf3e6a8"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
@@ -5000,7 +4366,7 @@ version = "3.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52a8e3ca0ca629121f70ab50f95249e5a6f925cc0f6ffe8256c45b728875706c"
 dependencies = [
- "darling 0.21.3",
+ "darling",
  "proc-macro2",
  "quote",
  "syn",
@@ -5832,12 +5198,6 @@ checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
 dependencies = [
  "tinyvec",
 ]
-
-[[package]]
-name = "unicode-segmentation"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 
 [[package]]
 name = "unicode-width"
@@ -7180,19 +6540,4 @@ checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
 dependencies = [
  "cc",
  "pkg-config",
-]
-
-[[package]]
-name = "zune-core"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb8a0807f7c01457d0379ba880ba6322660448ddebc890ce29bb64da71fb40f9"
-
-[[package]]
-name = "zune-jpeg"
-version = "0.5.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2959ca473aae96a14ecedf501d20b3608d2825ba280d5adb57d651721885b0c2"
-dependencies = [
- "zune-core",
 ]

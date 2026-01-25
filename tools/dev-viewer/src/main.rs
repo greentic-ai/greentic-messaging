@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::{Path as AxumPath, State};
@@ -25,6 +25,12 @@ use tokio::signal;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
+mod pack_io;
+mod provider_ext;
+mod provider_registry;
+
+use provider_registry::{ProviderInfo, ProviderRegistry};
+
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Preview MessageCards across platforms", long_about = None)]
 struct Opts {
@@ -35,15 +41,25 @@ struct Opts {
     /// Directory containing MessageCard fixtures
     #[arg(long, default_value = "libs/core/tests/fixtures/cards")]
     fixtures: PathBuf,
+
+    /// Additional provider packs to load (.gtpack files)
+    #[arg(long, value_name = "PATH")]
+    provider_pack: Vec<PathBuf>,
+
+    /// Directory containing .gtpack bundles to enumerate
+    #[arg(long, value_name = "DIR")]
+    packs_dir: Option<PathBuf>,
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct AppState {
     engine: Arc<MessageCardEngine>,
     fixtures_dir: Arc<PathBuf>,
     platforms: Vec<String>,
     tenant_ctx: Arc<TenantCtx>,
     oauth_client: Option<Arc<OauthClient<ReqwestTransport>>>,
+    provider_registry: Arc<ProviderRegistry>,
 }
 
 #[tokio::main]
@@ -76,12 +92,31 @@ async fn main() -> anyhow::Result<()> {
     if oauth_client.is_none() {
         info!("OAUTH_BASE_URL not set or invalid; OAuth preview disabled");
     }
+
+    verify_pack_paths(&opts.provider_pack)?;
+    let packs_dir = opts.packs_dir.clone().or_else(default_provider_packs_dir);
+    if let Some(dir) = packs_dir.as_ref() {
+        info!(packs_dir = %dir.display(), "loading provider packs");
+    }
+    let packs_dir = verify_packs_dir(packs_dir.as_deref())?;
+    let pack_paths = pack_io::discover_packs(&opts.provider_pack, packs_dir.as_deref())?;
+    let provider_registry = if pack_paths.is_empty() {
+        ProviderRegistry::empty()
+    } else {
+        let registry = ProviderRegistry::from_pack_paths(&pack_paths)?;
+        info!(
+            count = registry.entries().len(),
+            "loaded messaging providers from packs"
+        );
+        registry
+    };
     let state = AppState {
         engine: Arc::new(engine),
         fixtures_dir: Arc::new(fixtures_dir),
         platforms,
         tenant_ctx,
         oauth_client,
+        provider_registry: Arc::new(provider_registry),
     };
 
     let app = Router::new()
@@ -90,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/fixtures", get(list_fixtures))
         .route("/fixtures/{name}", get(load_fixture))
         .route("/render", post(render_card))
+        .route("/providers", get(list_providers))
         .with_state(state);
 
     info!(addr = %opts.listen, "dev viewer listening");
@@ -210,6 +246,9 @@ async fn render_card(
         RenderSpec::Auth(auth) => (None, Some(auth.clone())),
     };
 
+    let selected_provider =
+        resolve_selected_provider(&state.provider_registry, request.provider_id.as_deref())?;
+
     let mut platforms = BTreeMap::new();
     for platform in &state.platforms {
         if let Some(snapshot) = engine.render_snapshot(platform, &spec) {
@@ -248,7 +287,41 @@ async fn render_card(
         ir: ir_spec,
         auth: auth_spec,
         platforms,
+        selected_provider: selected_provider.as_ref().map(selected_provider_response),
     }))
+}
+
+async fn list_providers(State(state): State<AppState>) -> Json<Vec<ProviderInfo>> {
+    Json(state.provider_registry.entries().to_vec())
+}
+
+fn resolve_selected_provider(
+    registry: &ProviderRegistry,
+    provider_id: Option<&str>,
+) -> Result<Option<ProviderInfo>, (StatusCode, String)> {
+    if registry.is_empty() {
+        return Ok(None);
+    }
+    let provider_id = provider_id.ok_or((
+        StatusCode::BAD_REQUEST,
+        "provider_id is required when provider packs are loaded".into(),
+    ))?;
+    registry.get(provider_id).cloned().map(Some).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("provider {provider_id} not found"),
+        )
+    })
+}
+
+fn selected_provider_response(info: &ProviderInfo) -> SelectedProviderResponse {
+    SelectedProviderResponse {
+        provider_id: info.id.clone(),
+        runtime_component: info.runtime.component_ref.clone(),
+        runtime_world: info.runtime.world.clone(),
+        pack_path: info.pack_spec.display().to_string(),
+        pack_root: info.pack_root.display().to_string(),
+    }
 }
 
 fn sanitize_name(input: &str) -> Option<&str> {
@@ -256,6 +329,60 @@ fn sanitize_name(input: &str) -> Option<&str> {
         return None;
     }
     Some(input)
+}
+
+fn verify_pack_paths(paths: &[PathBuf]) -> anyhow::Result<()> {
+    for path in paths {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !canonical.exists() {
+            anyhow::bail!("provider pack {:?} does not exist", path);
+        }
+        if canonical.is_dir() {
+            continue;
+        }
+        if canonical
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("gtpack"))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        anyhow::bail!(
+            "provider pack {:?} must be a .gtpack file or directory",
+            path
+        );
+    }
+    Ok(())
+}
+
+fn verify_packs_dir(dir: Option<&Path>) -> anyhow::Result<Option<PathBuf>> {
+    if let Some(path) = dir {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !canonical.exists() {
+            anyhow::bail!("packs dir {:?} does not exist", path);
+        }
+        if !canonical.is_dir() {
+            anyhow::bail!("packs dir {:?} is not a directory", path);
+        }
+        Ok(Some(canonical))
+    } else {
+        Ok(None)
+    }
+}
+
+fn default_provider_packs_dir() -> Option<PathBuf> {
+    const FALLBACKS: &[&str] = &[
+        "../greentic-messaging-providers/dist/packs",
+        "../../greentic-messaging-providers/dist/packs",
+    ];
+    for relative in FALLBACKS {
+        let candidate = Path::new(relative);
+        if candidate.is_dir() {
+            return candidate.canonicalize().ok();
+        }
+    }
+    None
 }
 
 const DEFAULT_ADAPTIVE_CARD_VERSION: &str = "1.6";
@@ -637,6 +764,7 @@ fn internal_error<E: ToString>(err: E) -> (StatusCode, String) {
 #[derive(Deserialize)]
 struct RenderRequest {
     card: Value,
+    provider_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -645,6 +773,16 @@ struct RenderResponse {
     ir: Option<MessageCardIr>,
     auth: Option<AuthRenderSpec>,
     platforms: BTreeMap<String, PlatformPreview>,
+    selected_provider: Option<SelectedProviderResponse>,
+}
+
+#[derive(Serialize)]
+struct SelectedProviderResponse {
+    provider_id: String,
+    runtime_component: String,
+    runtime_world: String,
+    pack_path: String,
+    pack_root: String,
 }
 
 #[derive(Serialize)]

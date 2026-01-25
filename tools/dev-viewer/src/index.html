@@ -163,6 +163,12 @@
         <button id="renderCard" class="secondary">Render</button>
       </div>
       <div>
+        <label for="providerSelect">Provider</label>
+        <select id="providerSelect"></select>
+      </div>
+      <div class="status" id="providerStatus"></div>
+      <div class="status" id="providerDetails"></div>
+      <div>
         <label for="cardInput">MessageCard JSON</label>
         <textarea id="cardInput" spellcheck="false"></textarea>
       </div>
@@ -186,9 +192,16 @@
       const statusEl = document.getElementById('status');
       const irOutput = document.getElementById('irOutput');
       const platformGrid = document.getElementById('platformGrid');
+      const providerSelect = document.getElementById('providerSelect');
+      const providerStatus = document.getElementById('providerStatus');
+      const providerDetails = document.getElementById('providerDetails');
 
       let debounceHandle = null;
       let fixtures = [];
+      let providers = [];
+      providerSelect.disabled = true;
+      providerStatus.textContent = 'Providers not loaded';
+      providerDetails.textContent = 'Provide `--provider-pack` or `--packs-dir` to load providers';
 
       async function bootstrap() {
         try {
@@ -204,9 +217,65 @@
           if (fixtures.length) {
             await loadFixture(fixtures[0]);
           }
+          await loadProviders();
         } catch (err) {
           statusEl.textContent = err.message || err;
         }
+      }
+
+      async function loadProviders() {
+        providerStatus.textContent = 'Loading providers…';
+        try {
+          providers = await fetchJSON('/providers');
+          providerSelect.replaceChildren(
+            ...providers.map((provider) => {
+              const opt = document.createElement('option');
+              opt.value = provider.id;
+              opt.textContent = `${provider.id} (${provider.pack_path})`;
+              return opt;
+            }),
+          );
+          if (providers.length > 0) {
+            const initial = providers[0];
+            providerStatus.textContent = `Selected provider ${initial.id}`;
+            providerSelect.disabled = false;
+            renderProviderDetails(providers[0]);
+            providerSelect.value = providers[0].id;
+          } else {
+            providerStatus.textContent = 'No providers loaded from packs';
+            providerSelect.disabled = true;
+            providerDetails.textContent = 'Use --provider-pack/--packs-dir to load providers';
+          }
+        } catch (err) {
+          providerStatus.textContent = err.message || err;
+          providerSelect.disabled = true;
+          providerDetails.textContent = 'Unable to load providers';
+        }
+      }
+
+      function renderProviderDetails(provider) {
+        if (!provider) {
+          providerDetails.textContent = 'No provider selected';
+          return;
+        }
+        providerDetails.innerHTML = `
+          <div><strong>Provider ID:</strong> ${provider.id}</div>
+          <div><strong>Pack:</strong> ${provider.pack_path}</div>
+          <div><strong>Pack Root:</strong> ${provider.pack_root}</div>
+          <div><strong>Runtime:</strong> ${provider.runtime.component_ref} (${provider.runtime.world})</div>
+          <div><strong>Capabilities:</strong> ${formatCapabilities(provider.capabilities)}</div>
+        `;
+      }
+
+      function formatCapabilities(capabilities) {
+        const parts = [];
+        if (capabilities.supports_webhook_validation) {
+          parts.push('webhook-validation');
+        }
+        if (capabilities.content_types && capabilities.content_types.length) {
+          parts.push(`content-types: ${capabilities.content_types.join(', ')}`);
+        }
+        return parts.join(' | ') || 'none';
       }
 
       async function loadFixture(name) {
@@ -228,10 +297,14 @@
         try {
           const payload = JSON.parse(cardInput.value);
           statusEl.textContent = 'Rendering…';
+          const requestBody = { card: payload };
+          if (!providerSelect.disabled && providerSelect.value) {
+            requestBody.provider_id = providerSelect.value;
+          }
           const data = await fetchJSON('/render', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ card: payload }),
+            body: JSON.stringify(requestBody),
           });
           const specPayload =
             data.intent === 'auth' ? data.auth : data.ir;
@@ -240,6 +313,9 @@
             : '// spec unavailable';
           renderPlatforms(data.platforms);
           statusEl.textContent = 'Rendered';
+          if (data.selected_provider) {
+            providerStatus.textContent = `Using provider ${data.selected_provider.provider_id}`;
+          }
         } catch (err) {
           statusEl.textContent = err.message || err;
         }
@@ -315,6 +391,14 @@
         if (name) {
           loadFixture(name);
         }
+      });
+
+      providerSelect.addEventListener('change', () => {
+        const provider = providers.find((candidate) => candidate.id === providerSelect.value);
+        renderProviderDetails(provider);
+        providerStatus.textContent = provider
+          ? `Selected provider ${provider.id}`
+          : 'No provider selected';
       });
 
       renderBtn.addEventListener('click', () => renderCard());

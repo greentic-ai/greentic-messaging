@@ -35,7 +35,7 @@ jobs:
       - name: fmt
         run: cargo fmt --all -- --check
       - name: clippy
-        run: cargo clippy --workspace --bins --tests --exclude dev-viewer -- -D warnings
+        run: cargo clippy --workspace --bins --tests -- -D warnings
 
   test:
     name: test (${{ matrix.name }})
@@ -77,10 +77,14 @@ jobs:
         run: |
           chmod +x .greentic-tools/bin/*
           echo "${{ github.workspace }}/.greentic-tools/bin" >> "$GITHUB_PATH"
-      - name: build
-        run: cargo build --workspace --all-targets --exclude dev-viewer ${{ matrix.cargo_args }}
       - name: test
-        run: cargo test --workspace --all-targets --exclude dev-viewer ${{ matrix.cargo_args }}
+        run: cargo test --workspace --all-targets --locked ${{ matrix.cargo_args }}
+
+      - name: build dev-viewer
+        run: cargo build -p dev-viewer --locked
+
+      - name: dev-viewer --help
+        run: cargo run -p dev-viewer -- --help
 
   providers-new:
     name: providers (new backend)

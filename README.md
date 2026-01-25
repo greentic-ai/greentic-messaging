@@ -69,6 +69,12 @@ greentic-messaging serve ingress webchat \
 
 Refer to [docs/README.md](docs/README.md) for the full CLI reference and pack notes.
 
+## Core vs Legacy
+
+- Running `cargo test --workspace` now exercises the core runtime (the `greentic-messaging` CLI, its shared libs, and `greentic-messaging-pack-validator`). Legacy helpers (apps, translators, dev viewers, the old harness, etc.) are excluded from the default workspace to keep day-to-day builds fast.
+- If you still need the legacy pieces, run `LOCAL_CHECK_LEGACY=1 ci/local_check.sh` or `./ci/legacy_check.sh`. Set `LEGACY_RUN_MESSAGING_TEST=1` to include the `greentic-messaging-test` harness in that run.
+- The operator runtime contract is documented in `docs/MESSAGING_RUNTIME_CONTRACT.md`, which lists the flags and environment variables that `greentic-operator` still relies on from `greentic-messaging serve`.
+
 ## Design Docs
 
 - [Messaging stack overview](docs/README.md)

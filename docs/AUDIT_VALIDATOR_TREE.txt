@@ -1,0 +1,154 @@
+greentic-messaging-pack-validator v0.4.43 (/projects/ai/greentic-ng/greentic-messaging/crates/greentic-messaging-pack-validator)
+├── greentic-types v0.4.39
+│   ├── anyhow v1.0.100
+│   ├── chrono v0.4.43
+│   │   ├── num-traits v0.2.19
+│   │   │   [build-dependencies]
+│   │   │   └── autocfg v1.5.0
+│   │   └── serde v1.0.228
+│   │       ├── serde_core v1.0.228
+│   │       └── serde_derive v1.0.228 (proc-macro)
+│   │           ├── proc-macro2 v1.0.105
+│   │           │   └── unicode-ident v1.0.22
+│   │           ├── quote v1.0.43
+│   │           │   └── proc-macro2 v1.0.105 (*)
+│   │           └── syn v2.0.114
+│   │               ├── proc-macro2 v1.0.105 (*)
+│   │               ├── quote v1.0.43 (*)
+│   │               └── unicode-ident v1.0.22
+│   ├── ciborium v0.2.2
+│   │   ├── ciborium-io v0.2.2
+│   │   ├── ciborium-ll v0.2.2
+│   │   │   ├── ciborium-io v0.2.2
+│   │   │   └── half v2.7.1
+│   │   │       ├── cfg-if v1.0.4
+│   │   │       └── zerocopy v0.8.33
+│   │   │           └── zerocopy-derive v0.8.33 (proc-macro)
+│   │   │               ├── proc-macro2 v1.0.105 (*)
+│   │   │               ├── quote v1.0.43 (*)
+│   │   │               └── syn v2.0.114 (*)
+│   │   └── serde v1.0.228 (*)
+│   ├── fnv v1.0.7
+│   ├── indexmap v2.12.1
+│   │   ├── equivalent v1.0.2
+│   │   ├── hashbrown v0.16.1
+│   │   └── serde_core v1.0.228
+│   ├── semver v1.0.27
+│   │   └── serde_core v1.0.228
+│   ├── serde v1.0.228 (*)
+│   ├── serde_json v1.0.149
+│   │   ├── itoa v1.0.17
+│   │   ├── memchr v2.7.6
+│   │   ├── serde_core v1.0.228
+│   │   └── zmij v1.0.16
+│   ├── serde_with v3.16.1
+│   │   ├── base64 v0.22.1
+│   │   ├── serde_core v1.0.228
+│   │   └── serde_with_macros v3.16.1 (proc-macro)
+│   │       ├── darling v0.21.3
+│   │       │   ├── darling_core v0.21.3
+│   │       │   │   ├── fnv v1.0.7
+│   │       │   │   ├── ident_case v1.0.1
+│   │       │   │   ├── proc-macro2 v1.0.105 (*)
+│   │       │   │   ├── quote v1.0.43 (*)
+│   │       │   │   ├── strsim v0.11.1
+│   │       │   │   └── syn v2.0.114 (*)
+│   │       │   └── darling_macro v0.21.3 (proc-macro)
+│   │       │       ├── darling_core v0.21.3 (*)
+│   │       │       ├── quote v1.0.43 (*)
+│   │       │       └── syn v2.0.114 (*)
+│   │       ├── proc-macro2 v1.0.105 (*)
+│   │       ├── quote v1.0.43 (*)
+│   │       └── syn v2.0.114 (*)
+│   ├── sha2 v0.10.9
+│   │   ├── cfg-if v1.0.4
+│   │   ├── cpufeatures v0.2.17
+│   │   └── digest v0.10.7
+│   │       ├── block-buffer v0.10.4
+│   │       │   └── generic-array v0.14.7
+│   │       │       └── typenum v1.19.0
+│   │       │       [build-dependencies]
+│   │       │       └── version_check v0.9.5
+│   │       └── crypto-common v0.1.7
+│   │           ├── generic-array v0.14.7 (*)
+│   │           └── typenum v1.19.0
+│   ├── thiserror v2.0.18
+│   │   └── thiserror-impl v2.0.18 (proc-macro)
+│   │       ├── proc-macro2 v1.0.105 (*)
+│   │       ├── quote v1.0.43 (*)
+│   │       └── syn v2.0.114 (*)
+│   └── time v0.3.45
+│       ├── deranged v0.5.5
+│       │   ├── powerfmt v0.2.0
+│       │   └── serde_core v1.0.228
+│       ├── itoa v1.0.17
+│       ├── num-conv v0.1.0
+│       ├── powerfmt v0.2.0
+│       ├── serde_core v1.0.228
+│       ├── time-core v0.1.7
+│       └── time-macros v0.2.25 (proc-macro)
+│           ├── num-conv v0.1.0
+│           └── time-core v0.1.7
+└── wit-bindgen v0.51.0
+    ├── bitflags v2.10.0
+    └── wit-bindgen-rust-macro v0.51.0 (proc-macro)
+        ├── anyhow v1.0.100
+        ├── prettyplease v0.2.37
+        │   ├── proc-macro2 v1.0.105 (*)
+        │   └── syn v2.0.114 (*)
+        ├── proc-macro2 v1.0.105 (*)
+        ├── quote v1.0.43 (*)
+        ├── syn v2.0.114 (*)
+        ├── wit-bindgen-core v0.51.0
+        │   ├── anyhow v1.0.100
+        │   ├── heck v0.5.0
+        │   └── wit-parser v0.244.0
+        │       ├── anyhow v1.0.100
+        │       ├── id-arena v2.3.0
+        │       ├── indexmap v2.12.1
+        │       │   ├── equivalent v1.0.2
+        │       │   ├── hashbrown v0.16.1
+        │       │   └── serde_core v1.0.228
+        │       ├── log v0.4.29
+        │       ├── semver v1.0.27
+        │       ├── serde v1.0.228
+        │       │   └── serde_core v1.0.228
+        │       ├── serde_derive v1.0.228 (proc-macro) (*)
+        │       ├── serde_json v1.0.149
+        │       │   ├── itoa v1.0.17
+        │       │   ├── memchr v2.7.6
+        │       │   ├── serde_core v1.0.228
+        │       │   └── zmij v1.0.16
+        │       ├── unicode-xid v0.2.6
+        │       └── wasmparser v0.244.0
+        │           ├── bitflags v2.10.0
+        │           ├── hashbrown v0.15.5
+        │           │   └── foldhash v0.1.5
+        │           ├── indexmap v2.12.1 (*)
+        │           └── semver v1.0.27
+        └── wit-bindgen-rust v0.51.0
+            ├── anyhow v1.0.100
+            ├── heck v0.5.0
+            ├── indexmap v2.12.1 (*)
+            ├── prettyplease v0.2.37 (*)
+            ├── syn v2.0.114 (*)
+            ├── wasm-metadata v0.244.0
+            │   ├── anyhow v1.0.100
+            │   ├── indexmap v2.12.1 (*)
+            │   ├── wasm-encoder v0.244.0
+            │   │   ├── leb128fmt v0.1.0
+            │   │   └── wasmparser v0.244.0 (*)
+            │   └── wasmparser v0.244.0 (*)
+            ├── wit-bindgen-core v0.51.0 (*)
+            └── wit-component v0.244.0
+                ├── anyhow v1.0.100
+                ├── bitflags v2.10.0
+                ├── indexmap v2.12.1 (*)
+                ├── log v0.4.29
+                ├── serde v1.0.228 (*)
+                ├── serde_derive v1.0.228 (proc-macro) (*)
+                ├── serde_json v1.0.149 (*)
+                ├── wasm-encoder v0.244.0 (*)
+                ├── wasm-metadata v0.244.0 (*)
+                ├── wasmparser v0.244.0 (*)
+                └── wit-parser v0.244.0 (*)

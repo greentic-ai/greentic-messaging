@@ -1,39 +1,34 @@
 [workspace]
 members = [
-  "apps/runner",
-  "apps/ingress-common",
-  "apps/egress-common",
-  "apps/messaging-egress",
-  "apps/messaging-gateway",
-  "apps/messaging-tenants",
-  "apps/subscriptions-teams",
+  "crates/greentic-messaging-cli",
+  "crates/greentic-messaging-pack-validator",
   "libs/core",
-  "libs/session",
-  "libs/translator",
-  "libs/security",
   "libs/telemetry",
-  "libs/testutil",
-  "libs/idempotency",
+  "tools/dev-viewer",
+]
+exclude = [
+  "apps/*",
   "libs/backpressure",
   "libs/dlq",
-  "tools/nats-demo",
-  "tools/mock-weather-tool",
-  "apps/cli-dlq",
-  "apps/slack_oauth",
-  "conformance/webchat",
-  "tools/dev-viewer",
-  "crates/greentic-messaging-cli",
-  "crates/greentic-messaging-validate",
-  "crates/greentic-messaging-pack-validator",
-  "crates/messaging-test",
+  "libs/idempotency",
+  "libs/security",
+  "libs/session",
+  "libs/testutil",
+  "libs/translator",
   "crates/gsm-bus",
+  "crates/greentic-messaging-validate",
+  "crates/messaging-test",
+  "tools/mock-weather-tool",
+  "tools/nats-demo",
+  "conformance",
+  "legacy",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.4.43"
+version = "0.4.44"
 authors = ["Greentic AI"]
 repository = "https://github.com/greentic-ai/greentic-messaging"
 
