@@ -205,7 +205,7 @@ impl MessageCardEngine {
             });
         }
 
-        let reason = if renderer.platform() == "teams" || renderer.platform() == "bf_webchat" {
+        let reason = if renderer.platform() == "teams" || renderer.platform() == "webchat" {
             if auth.connection_name.is_none() {
                 "missing connection name"
             } else {

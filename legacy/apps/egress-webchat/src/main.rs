@@ -376,7 +376,7 @@ async fn render_webchat_card(
         .render_spec(&working)
         .map_err(|err| anyhow!("message card normalization failed: {err}"))?;
     let snapshot = engine
-        .render_snapshot_tracked("bf_webchat", &spec)
+        .render_snapshot_tracked("webchat", &spec)
         .ok_or_else(|| anyhow!("webchat renderer unavailable"))?;
 
     if matches!(spec, RenderSpec::Auth(_))

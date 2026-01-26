@@ -90,9 +90,10 @@
       }
 
       .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        display: flex;
+        flex-direction: column;
         gap: 16px;
+        width: 100%;
       }
 
       .card {
@@ -166,12 +167,34 @@
         <label for="providerSelect">Provider</label>
         <select id="providerSelect"></select>
       </div>
-      <div class="status" id="providerStatus"></div>
-      <div class="status" id="providerDetails"></div>
       <div>
         <label for="cardInput">MessageCard JSON</label>
         <textarea id="cardInput" spellcheck="false"></textarea>
       </div>
+      <div>
+        <label for="operatorTenant">Tenant</label>
+        <input id="operatorTenant" type="text" value="demo" />
+      </div>
+      <div>
+        <label for="operatorTeam">Team</label>
+        <input id="operatorTeam" type="text" value="default" />
+      </div>
+      <div>
+        <label for="operatorText">Text (optional)</label>
+        <input id="operatorText" type="text" placeholder="free-form text" />
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+        <input type="checkbox" id="providerPlatformFilter" checked />
+        <label for="providerPlatformFilter">Only show platforms for selected provider</label>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+        <input type="checkbox" id="dryRunToggle" />
+        <label for="dryRunToggle">Dry run (show command only)</label>
+      </div>
+      <div class="status" id="providerStatus"></div>
+      <div class="status" id="providerDetails"></div>
+      <div class="status" id="providerSummary"></div>
+      <div class="status" id="providerErrors"></div>
       <div class="status" id="status"></div>
     </aside>
     <main>
@@ -180,7 +203,7 @@
         <pre id="irOutput"></pre>
       </section>
       <section>
-        <h2>Platform Previews</h2>
+        <h2 id="previewHeading">Platform Preview</h2>
         <div class="grid" id="platformGrid"></div>
       </section>
     </main>
@@ -192,16 +215,29 @@
       const statusEl = document.getElementById('status');
       const irOutput = document.getElementById('irOutput');
       const platformGrid = document.getElementById('platformGrid');
+      const previewHeading = document.getElementById('previewHeading');
       const providerSelect = document.getElementById('providerSelect');
       const providerStatus = document.getElementById('providerStatus');
       const providerDetails = document.getElementById('providerDetails');
+      const providerSummary = document.getElementById('providerSummary');
+      const providerErrors = document.getElementById('providerErrors');
+      const operatorTenant = document.getElementById('operatorTenant');
+      const operatorTeam = document.getElementById('operatorTeam');
+      const operatorText = document.getElementById('operatorText');
+      const dryRunToggle = document.getElementById('dryRunToggle');
+      const providerPlatformFilter = document.getElementById('providerPlatformFilter');
 
       let debounceHandle = null;
       let fixtures = [];
       let providers = [];
+      let platformPreviews = [];
+      let sendResults = new Map();
+      let sendInProgress = new Set();
+      let isDevMode = false;
       providerSelect.disabled = true;
       providerStatus.textContent = 'Providers not loaded';
       providerDetails.textContent = 'Provide `--provider-pack` or `--packs-dir` to load providers';
+      providerSummary.style.display = 'none';
 
       async function bootstrap() {
         try {
@@ -225,31 +261,114 @@
 
       async function loadProviders() {
         providerStatus.textContent = 'Loading providers…';
+        providerSummary.textContent = '';
+        providerErrors.textContent = '';
+        providerSelect.disabled = true;
         try {
-          providers = await fetchJSON('/providers');
-          providerSelect.replaceChildren(
-            ...providers.map((provider) => {
-              const opt = document.createElement('option');
+          const data = await fetchJSON('/providers');
+          isDevMode = data.dev_mode;
+          if (isDevMode) {
+            console.log('dev-viewer running in dev mode');
+          }
+          providers = data.providers;
+        providerSelect.replaceChildren(
+          ...providers.map((provider) => {
+            const opt = document.createElement('option');
               opt.value = provider.id;
               opt.textContent = `${provider.id} (${provider.pack_path})`;
               return opt;
             }),
           );
+          if (isDevMode) {
+            providerSummary.style.display = '';
+            renderProviderSummary(data.summary, providers.length);
+          } else {
+            providerSummary.style.display = 'none';
+            providerSummary.textContent = '';
+          }
+          renderProviderErrors(data.summary);
           if (providers.length > 0) {
+            providerSelect.disabled = false;
             const initial = providers[0];
             providerStatus.textContent = `Selected provider ${initial.id}`;
-            providerSelect.disabled = false;
-            renderProviderDetails(providers[0]);
-            providerSelect.value = providers[0].id;
+            renderProviderDetails(initial);
+            providerSelect.value = initial.id;
+            updatePreviewHeading(initial);
           } else {
-            providerStatus.textContent = 'No providers loaded from packs';
-            providerSelect.disabled = true;
-            providerDetails.textContent = 'Use --provider-pack/--packs-dir to load providers';
+            providerDetails.textContent = data.summary.strict_mode
+              ? 'Provider packs were requested but no providers could be loaded'
+              : 'Use --provider-pack/--packs-dir to load providers';
+            providerStatus.textContent = data.summary.strict_mode
+              ? 'No providers available from requested packs'
+              : 'Providers not configured';
+            updatePreviewHeading(null);
           }
         } catch (err) {
           providerStatus.textContent = err.message || err;
-          providerSelect.disabled = true;
           providerDetails.textContent = 'Unable to load providers';
+          providerSummary.textContent = '';
+          providerErrors.textContent = '';
+        }
+      }
+
+      function renderProviderSummary(summary, providerCount) {
+        providerSummary.replaceChildren();
+        const base = document.createElement('div');
+        base.textContent = describeSummary(summary, providerCount);
+        providerSummary.appendChild(base);
+        if (summary.requested_packs.length) {
+          const requested = document.createElement('div');
+          requested.textContent = `Requested packs: ${summary.requested_packs.join(', ')}`;
+          providerSummary.appendChild(requested);
+        }
+        if (summary.searched_dirs.length) {
+          const searched = document.createElement('div');
+          searched.textContent = `Searched directories: ${summary.searched_dirs.join(', ')}`;
+          providerSummary.appendChild(searched);
+        }
+      }
+
+      function describeSummary(summary, providerCount) {
+        if (summary.pack_count > 0) {
+          return `Loaded ${providerCount} provider(s) from ${summary.pack_count} pack(s).`;
+        }
+        if (summary.strict_mode) {
+          return 'Provider packs were requested but no providers were available.';
+        }
+        return 'Provider packs not configured; supply --provider-pack or --packs-dir.';
+      }
+
+      function renderProviderErrors(summary) {
+        providerErrors.replaceChildren();
+        let emitted = false;
+        if (summary.errors.length) {
+          emitted = true;
+          const title = document.createElement('div');
+          title.textContent = 'Pack load errors:';
+          providerErrors.appendChild(title);
+          const list = document.createElement('ul');
+          summary.errors.forEach((error) => {
+            const li = document.createElement('li');
+            li.textContent = `${error.path}: ${error.reason}`;
+            list.appendChild(li);
+          });
+          providerErrors.appendChild(list);
+        }
+        if (summary.platform_errors.length) {
+          emitted = true;
+          const title = document.createElement('div');
+          title.textContent = 'Platform discovery warnings:';
+          providerErrors.appendChild(title);
+          const list = document.createElement('ul');
+          summary.platform_errors.forEach((error) => {
+            const li = document.createElement('li');
+            li.textContent = error;
+            list.appendChild(li);
+          });
+          providerErrors.appendChild(list);
+        }
+        if (!emitted) {
+          providerErrors.textContent = '';
         }
       }
 
@@ -260,6 +379,8 @@
         }
         providerDetails.innerHTML = `
           <div><strong>Provider ID:</strong> ${provider.id}</div>
+          <div><strong>Provider Type:</strong> ${provider.provider_type}</div>
+          <div><strong>Pack ID:</strong> ${provider.pack_id}</div>
           <div><strong>Pack:</strong> ${provider.pack_path}</div>
           <div><strong>Pack Root:</strong> ${provider.pack_root}</div>
           <div><strong>Runtime:</strong> ${provider.runtime.component_ref} (${provider.runtime.world})</div>
@@ -268,14 +389,28 @@
       }
 
       function formatCapabilities(capabilities) {
-        const parts = [];
-        if (capabilities.supports_webhook_validation) {
-          parts.push('webhook-validation');
+        if (!capabilities || !capabilities.length) {
+          return 'none';
         }
-        if (capabilities.content_types && capabilities.content_types.length) {
-          parts.push(`content-types: ${capabilities.content_types.join(', ')}`);
+        return capabilities.join(' | ');
+      }
+
+      function formatProviderDisplayName(id) {
+        if (!id) {
+          return 'Platform';
         }
-        return parts.join(' | ') || 'none';
+        const token = id.split('.').pop() || id;
+        return token
+          .split(/[^a-zA-Z0-9]+/)
+          .filter((segment) => segment.length)
+          .map((segment) => segment[0].toUpperCase() + segment.slice(1))
+          .join(' ');
+      }
+
+      function updatePreviewHeading(provider) {
+        previewHeading.textContent = provider
+          ? `${formatProviderDisplayName(provider.id)} Preview`
+          : 'Platform Preview';
       }
 
       async function loadFixture(name) {
@@ -311,70 +446,206 @@
           irOutput.textContent = specPayload
             ? JSON.stringify(specPayload, null, 2)
             : '// spec unavailable';
-          renderPlatforms(data.platforms);
+          platformPreviews = data.platforms;
+          renderPlatforms();
           statusEl.textContent = 'Rendered';
           if (data.selected_provider) {
             providerStatus.textContent = `Using provider ${data.selected_provider.provider_id}`;
+            const matched = providers.find(
+              (candidate) => candidate.id === data.selected_provider.provider_id
+            );
+            updatePreviewHeading(matched);
           }
         } catch (err) {
           statusEl.textContent = err.message || err;
         }
       }
 
-      function renderPlatforms(map) {
+      function renderPlatforms() {
         platformGrid.replaceChildren();
-        Object.entries(map).forEach(([name, details]) => {
+        if (!platformPreviews.length) {
+          const notice = document.createElement('div');
+          notice.textContent =
+            'No platform previews configured; load provider packs to enable platform conversions.';
+          platformGrid.appendChild(notice);
+          return;
+        }
+
+        const filterByProvider =
+          providerPlatformFilter.checked && !providerSelect.disabled && providerSelect.value;
+        let rendered = 0;
+        platformPreviews.forEach((entry) => {
+          if (filterByProvider && entry.descriptor.provider_id !== providerSelect.value) {
+            return;
+          }
+          rendered += 1;
+
           const card = document.createElement('div');
           card.className = 'card';
 
           const header = document.createElement('h3');
-          header.textContent = name;
-          const tierBadge = document.createElement('span');
-          tierBadge.className = 'badge';
-          tierBadge.textContent = details.tier;
-          header.appendChild(tierBadge);
-          if (details.downgraded) {
-            const downgraded = document.createElement('span');
-            downgraded.className = 'badge';
-            downgraded.style.background = '#fef3c7';
-            downgraded.style.color = '#92400e';
-            downgraded.textContent = 'DOWNGRADED';
-            header.appendChild(downgraded);
-          }
+          header.textContent = entry.descriptor.label;
 
-          const meta = document.createElement('div');
-          meta.className = 'meta';
-          [
-            ['target', details.target_tier],
-            ['modal', details.used_modal],
-            ['warnings', details.warnings.length],
-            ['limit', details.limit_exceeded],
-            ['sanitized', details.sanitized_count],
-            ['urls blocked', details.url_blocked_count],
-          ].forEach(([label, value]) => {
-            const span = document.createElement('span');
-            span.textContent = `${label}: ${value}`;
-            meta.appendChild(span);
-          });
-
-          const warningsList = document.createElement('ul');
-          (details.warnings || []).forEach((w) => {
-            const li = document.createElement('li');
-            li.textContent = w;
-            warningsList.appendChild(li);
-          });
-
-          const pre = document.createElement('pre');
-          pre.textContent = JSON.stringify(details.payload, null, 2);
+          const platformBadge = document.createElement('span');
+          platformBadge.className = 'badge';
+          platformBadge.textContent = entry.descriptor.platform_key;
+          header.appendChild(platformBadge);
 
           card.appendChild(header);
-          card.appendChild(meta);
-          if (warningsList.childElementCount > 0) {
-            card.appendChild(warningsList);
+
+          const info = document.createElement('div');
+          info.className = 'meta';
+          info.appendChild(createMetaSpan('Provider', entry.descriptor.provider_id));
+          info.appendChild(createMetaSpan('Pack ID', entry.descriptor.pack_id));
+          info.appendChild(createMetaSpan('Pack', entry.descriptor.pack_path));
+          info.appendChild(
+            createMetaSpan(
+              'Runtime',
+              `${entry.descriptor.runtime_component} (${entry.descriptor.runtime_world})`
+            )
+          );
+          info.appendChild(
+            createMetaSpan('Capabilities', formatCapabilities(entry.descriptor.capabilities))
+          );
+          card.appendChild(info);
+          const sendSection = document.createElement('div');
+          sendSection.className = 'meta';
+          const sendButton = document.createElement('button');
+          const sending = sendInProgress.has(entry.descriptor.id);
+          sendButton.textContent = sending ? 'Sending…' : 'Send Test';
+          sendButton.disabled = sending || !entry.preview;
+          sendButton.addEventListener('click', () => {
+            sendTest(entry);
+          });
+          sendSection.appendChild(sendButton);
+          const statusLine = document.createElement('span');
+          const cached = sendResults.get(entry.descriptor.id);
+          if (cached) {
+            statusLine.textContent = formatSendStatus(cached);
           }
-          card.appendChild(pre);
+          sendSection.appendChild(statusLine);
+          card.appendChild(sendSection);
+          if (cached) {
+            const log = document.createElement('pre');
+            log.textContent = formatSendLogs(cached);
+            card.appendChild(log);
+          }
+
+          if (entry.error) {
+            const error = document.createElement('div');
+            error.textContent = entry.error;
+            error.style.color = '#b54708';
+            card.appendChild(error);
+          } else if (entry.preview) {
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            [
+              ['tier', entry.preview.tier],
+              ['target', entry.preview.target_tier],
+              ['warnings', entry.preview.warnings.length],
+              ['limit', entry.preview.limit_exceeded],
+              ['modal', entry.preview.used_modal],
+              ['sanitized', entry.preview.sanitized_count],
+              ['urls blocked', entry.preview.url_blocked_count],
+            ].forEach(([label, value]) => {
+              const span = document.createElement('span');
+              span.textContent = `${label}: ${value}`;
+              meta.appendChild(span);
+            });
+
+            const warningsList = document.createElement('ul');
+            (entry.preview.warnings || []).forEach((warning) => {
+              const li = document.createElement('li');
+              li.textContent = warning;
+              warningsList.appendChild(li);
+            });
+
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(entry.preview.payload, null, 2);
+
+            card.appendChild(meta);
+            if (warningsList.childElementCount > 0) {
+              card.appendChild(warningsList);
+            }
+            card.appendChild(pre);
+          }
+
           platformGrid.appendChild(card);
         });
+
+        if (rendered === 0) {
+      const notice = document.createElement('div');
+      notice.textContent = filterByProvider
+        ? 'No platform previews are available for the selected provider.'
+        : 'No platform previews are available.';
+      platformGrid.appendChild(notice);
+    }
+  }
+
+      async function sendTest(entry) {
+        if (!entry.preview) {
+          return;
+        }
+          const requestBody = {
+            provider_id: entry.descriptor.provider_id,
+            provider_type: entry.descriptor.provider_type,
+            pack_root: entry.descriptor.pack_root,
+            tenant: operatorTenant.value || 'demo',
+            team: operatorTeam.value || 'default',
+            text: operatorText.value || null,
+            payload: JSON.stringify(entry.preview.payload),
+            dry_run: dryRunToggle.checked,
+          extra_args: [],
+        };
+        sendInProgress.add(entry.descriptor.id);
+        renderPlatforms();
+        try {
+          const result = await fetchJSON('/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+          });
+          sendResults.set(entry.descriptor.id, result);
+        } catch (err) {
+          sendResults.set(entry.descriptor.id, {
+            ok: false,
+            exit_code: null,
+            stdout: '',
+            stderr: err.message || err,
+            command: [],
+          });
+        } finally {
+          sendInProgress.delete(entry.descriptor.id);
+          renderPlatforms();
+        }
+      }
+
+      function formatSendStatus(result) {
+        if (result.ok) {
+          return `Sent ✓ (exit ${result.exit_code ?? 0})`;
+        }
+        const code = result.exit_code ?? 'unknown';
+        return `Send failed (exit ${code})`;
+      }
+
+      function formatSendLogs(result) {
+        const lines = [];
+        if (result.command.length) {
+          lines.push(`command: ${result.command.join(' ')}`);
+        }
+        if (result.stdout) {
+          lines.push(`stdout:\n${result.stdout}`);
+        }
+        if (result.stderr) {
+          lines.push(`stderr:\n${result.stderr}`);
+        }
+        return lines.join('\n\n');
+      }
+
+  function createMetaSpan(label, value) {
+        const element = document.createElement('span');
+        element.textContent = `${label}: ${value}`;
+        return element;
       }
 
       async function fetchJSON(url, init) {
@@ -399,8 +670,13 @@
         providerStatus.textContent = provider
           ? `Selected provider ${provider.id}`
           : 'No provider selected';
+        renderPlatforms();
+        updatePreviewHeading(provider);
       });
 
+      dryRunToggle.addEventListener('change', renderPlatforms);
+
+      providerPlatformFilter.addEventListener('change', renderPlatforms);
       renderBtn.addEventListener('click', () => renderCard());
       cardInput.addEventListener('input', () => triggerRender());
 

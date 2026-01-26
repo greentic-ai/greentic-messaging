@@ -89,10 +89,7 @@ fn webchat_renders_native_oauth_card() {
     let rendered = renderer
         .render_auth(&auth)
         .expect("webchat supports oauth card");
-    assert_eq!(
-        rendered.payload,
-        load_fixture("bf_webchat/oauth_native.json")
-    );
+    assert_eq!(rendered.payload, load_fixture("webchat/oauth_native.json"));
 }
 
 fn load_fixture(path: &str) -> Value {

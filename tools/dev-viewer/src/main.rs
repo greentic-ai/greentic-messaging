@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
 use std::env;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path as AxumPath, State};
@@ -11,25 +10,34 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Parser;
 use gsm_core::messaging_card::adaptive::validator::validate_ac_json;
-use gsm_core::messaging_card::ir::{MessageCardIr, Meta};
+use gsm_core::messaging_card::ir::MessageCardIr;
 use gsm_core::messaging_card::{
-    AuthRenderSpec, MessageCard, MessageCardEngine, MessageCardKind, RenderIntent, RenderSnapshot,
-    RenderSpec, ensure_oauth_start_url,
+    AuthRenderSpec, MessageCard, MessageCardEngine, MessageCardKind, RenderIntent, RenderSpec,
+    ensure_oauth_start_url,
 };
 use gsm_core::oauth::{OauthClient, ReqwestTransport};
-use gsm_core::{TenantCtx, Tier, make_tenant_ctx};
+use gsm_core::{TenantCtx, make_tenant_ctx};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tokio::signal;
+use tokio::{signal, task};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
+mod convert;
+mod operator_send;
 mod pack_io;
+mod pack_loader;
+mod platforms;
 mod provider_ext;
-mod provider_registry;
+mod providers;
 
-use provider_registry::{ProviderInfo, ProviderRegistry};
+use crate::convert::PlatformPreview;
+use crate::operator_send::{OperatorSendRequest, OperatorSendResult, run_operator_send};
+use crate::platforms::{PlatformDescriptorResponse, PlatformRegistry};
+
+use pack_loader::{PackLoadError, discover_pack_paths, load_packs};
+use providers::{ProviderInfo, ProviderRegistry};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Preview MessageCards across platforms", long_about = None)]
@@ -48,7 +56,14 @@ struct Opts {
 
     /// Directory containing .gtpack bundles to enumerate
     #[arg(long, value_name = "DIR")]
-    packs_dir: Option<PathBuf>,
+    packs_dir: Vec<PathBuf>,
+
+    /// Path to the greentic-operator binary
+    #[arg(long, value_name = "PATH")]
+    operator: Option<PathBuf>,
+    /// Print debug info to stdout
+    #[arg(long)]
+    dev: bool,
 }
 
 #[derive(Clone)]
@@ -56,10 +71,21 @@ struct Opts {
 struct AppState {
     engine: Arc<MessageCardEngine>,
     fixtures_dir: Arc<PathBuf>,
-    platforms: Vec<String>,
     tenant_ctx: Arc<TenantCtx>,
     oauth_client: Option<Arc<OauthClient<ReqwestTransport>>>,
     provider_registry: Arc<ProviderRegistry>,
+    provider_load_state: ProviderLoadState,
+    platform_registry: Arc<PlatformRegistry>,
+    operator_bin: PathBuf,
+    dev_mode: bool,
+}
+
+#[derive(Clone)]
+struct ProviderLoadState {
+    requested_packs: Vec<PathBuf>,
+    searched_dirs: Vec<PathBuf>,
+    errors: Vec<PackLoadError>,
+    strict_mode: bool,
 }
 
 #[tokio::main]
@@ -78,7 +104,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let engine = MessageCardEngine::bootstrap();
-    let platforms = engine.registry().platforms();
     let tenant_ctx = Arc::new(make_tenant_ctx(
         "dev-viewer".into(),
         Some("demo".into()),
@@ -94,33 +119,72 @@ async fn main() -> anyhow::Result<()> {
     }
 
     verify_pack_paths(&opts.provider_pack)?;
-    let packs_dir = opts.packs_dir.clone().or_else(default_provider_packs_dir);
-    if let Some(dir) = packs_dir.as_ref() {
-        info!(packs_dir = %dir.display(), "loading provider packs");
+    let canonical_dirs = verify_packs_dirs(&opts.packs_dir)?;
+    let packs_requested = !opts.provider_pack.is_empty() || !canonical_dirs.is_empty();
+    if !canonical_dirs.is_empty() {
+        let list = canonical_dirs
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        info!(packs_dir = %list, "searching provider packs");
     }
-    let packs_dir = verify_packs_dir(packs_dir.as_deref())?;
-    let pack_paths = pack_io::discover_packs(&opts.provider_pack, packs_dir.as_deref())?;
-    let provider_registry = if pack_paths.is_empty() {
-        ProviderRegistry::empty()
+    let pack_paths = if packs_requested {
+        discover_pack_paths(&opts.provider_pack, &canonical_dirs)?
     } else {
-        let registry = ProviderRegistry::from_pack_paths(&pack_paths)?;
-        info!(
-            count = registry.entries().len(),
-            "loaded messaging providers from packs"
+        Vec::new()
+    };
+    let (loaded_packs, pack_errors) = if pack_paths.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        load_packs(&pack_paths)
+    };
+    for error in &pack_errors {
+        warn!(
+            pack = %error.path.display(),
+            reason = %error.reason,
+            "provider pack failed to load"
         );
-        registry
+    }
+    let provider_registry = ProviderRegistry::from_loaded_packs(loaded_packs);
+    let platform_registry = PlatformRegistry::from_provider_registry(&provider_registry);
+    info!(
+        provider_count = provider_registry.entries().len(),
+        packs = pack_paths.len(),
+        errors = pack_errors.len(),
+        "provider pack evaluation complete"
+    );
+    ensure_provider_requirements(
+        packs_requested,
+        provider_registry.entries().len(),
+        &pack_paths,
+        &canonical_dirs,
+        &pack_errors,
+    )?;
+    let provider_load_state = ProviderLoadState {
+        requested_packs: pack_paths.clone(),
+        searched_dirs: canonical_dirs.clone(),
+        errors: pack_errors.clone(),
+        strict_mode: packs_requested,
     };
     let state = AppState {
         engine: Arc::new(engine),
         fixtures_dir: Arc::new(fixtures_dir),
-        platforms,
         tenant_ctx,
         oauth_client,
         provider_registry: Arc::new(provider_registry),
+        provider_load_state,
+        platform_registry: Arc::new(platform_registry),
+        operator_bin: opts
+            .operator
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("greentic-operator")),
+        dev_mode: opts.dev,
     };
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/send", post(send_test))
         .route("/healthz", get(healthz))
         .route("/fixtures", get(list_fixtures))
         .route("/fixtures/{name}", get(load_fixture))
@@ -131,6 +195,8 @@ async fn main() -> anyhow::Result<()> {
     info!(addr = %opts.listen, "dev viewer listening");
 
     let listener = tokio::net::TcpListener::bind(opts.listen).await?;
+    let listen_url = format!("http://{}", opts.listen);
+    println!("dev-viewer listening at {}", listen_url);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -249,38 +315,26 @@ async fn render_card(
     let selected_provider =
         resolve_selected_provider(&state.provider_registry, request.provider_id.as_deref())?;
 
-    let mut platforms = BTreeMap::new();
-    for platform in &state.platforms {
-        if let Some(snapshot) = engine.render_snapshot(platform, &spec) {
-            let RenderSnapshot {
-                output,
-                ir,
-                tier,
-                target_tier,
-                downgraded,
-            } = snapshot;
-            let (warnings, meta) = if let Some(ir) = ir {
-                (ir.meta.warnings.clone(), ir.meta)
-            } else {
-                (output.warnings.clone(), Meta::default())
-            };
-            platforms.insert(
-                platform.clone(),
-                PlatformPreview {
-                    payload: output.payload,
-                    warnings,
-                    tier,
-                    target_tier,
-                    downgraded,
-                    used_modal: output.used_modal,
-                    limit_exceeded: output.limit_exceeded,
-                    sanitized_count: output.sanitized_count,
-                    url_blocked_count: output.url_blocked_count,
-                    meta,
+    let platforms = state
+        .platform_registry
+        .descriptors()
+        .iter()
+        .map(|descriptor| {
+            let descriptor_response = descriptor.to_response();
+            match convert::render_platform(&state.engine, &spec, &descriptor.platform_key) {
+                Ok(preview) => PlatformPreviewResponse {
+                    descriptor: descriptor_response,
+                    preview: Some(preview),
+                    error: None,
                 },
-            );
-        }
-    }
+                Err(err) => PlatformPreviewResponse {
+                    descriptor: descriptor_response,
+                    preview: None,
+                    error: Some(err),
+                },
+            }
+        })
+        .collect::<Vec<_>>();
 
     Ok(Json(RenderResponse {
         intent: spec.intent(),
@@ -291,8 +345,136 @@ async fn render_card(
     }))
 }
 
-async fn list_providers(State(state): State<AppState>) -> Json<Vec<ProviderInfo>> {
-    Json(state.provider_registry.entries().to_vec())
+async fn send_test(
+    State(state): State<AppState>,
+    Json(request): Json<OperatorSendRequest>,
+) -> Result<Json<OperatorSendResult>, (StatusCode, String)> {
+    let provider_pack_id = request.provider_id.clone();
+    let tenant = request.tenant.clone();
+    let team = request.team.clone();
+    let request = request.clone();
+
+    let bin = state.operator_bin.clone();
+    if state.dev_mode {
+        println!(
+            "dev-viewer payload for provider {} (pack {}): {}",
+            request.provider_type, provider_pack_id, request.payload
+        );
+    }
+    println!(
+        "dev-viewer send test: provider {} (pack {}), tenant {} team {}",
+        request.provider_type, provider_pack_id, tenant, team
+    );
+    let result = task::spawn_blocking(move || run_operator_send(&bin, &request))
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("send interrupted: {err}"),
+            )
+        })?;
+
+    match result {
+        Ok(output) => {
+            println!(
+                "dev-viewer delivery status: success (exit {}); tenant {} team {} (pack {})",
+                output.exit_code.unwrap_or(0),
+                tenant,
+                team,
+                provider_pack_id
+            );
+            Ok(Json(output))
+        }
+        Err(err) => {
+            println!(
+                "dev-viewer delivery status: error: {err}; tenant {} team {} (pack {})",
+                tenant, team, provider_pack_id
+            );
+            Err((StatusCode::INTERNAL_SERVER_ERROR, err))
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ProviderSummary {
+    requested_packs: Vec<PathBuf>,
+    searched_dirs: Vec<PathBuf>,
+    pack_count: usize,
+    errors: Vec<PackLoadError>,
+    platform_errors: Vec<String>,
+    strict_mode: bool,
+}
+
+#[derive(Serialize)]
+struct ProvidersResponse {
+    providers: Vec<ProviderInfo>,
+    summary: ProviderSummary,
+    dev_mode: bool,
+}
+
+async fn list_providers(State(state): State<AppState>) -> Json<ProvidersResponse> {
+    let provider_count = state.provider_registry.entries().len();
+    let summary = ProviderSummary {
+        requested_packs: state.provider_load_state.requested_packs.clone(),
+        searched_dirs: state.provider_load_state.searched_dirs.clone(),
+        pack_count: state.provider_load_state.requested_packs.len(),
+        errors: state.provider_load_state.errors.clone(),
+        platform_errors: state.platform_registry.errors().to_vec(),
+        strict_mode: state.provider_load_state.strict_mode,
+    };
+    if state.dev_mode {
+        print_provider_summary(&summary, provider_count);
+    }
+    Json(ProvidersResponse {
+        providers: state.provider_registry.entries().to_vec(),
+        summary,
+        dev_mode: state.dev_mode,
+    })
+}
+
+fn print_provider_summary(summary: &ProviderSummary, provider_count: usize) {
+    for line in format_provider_summary_lines(summary, provider_count) {
+        println!("{line}");
+    }
+}
+
+fn format_provider_summary_lines(summary: &ProviderSummary, provider_count: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(describe_summary_line(summary, provider_count));
+    if !summary.requested_packs.is_empty() {
+        lines.push(format!(
+            "Requested packs: {}",
+            join_paths(&summary.requested_packs)
+        ));
+    }
+    if !summary.searched_dirs.is_empty() {
+        lines.push(format!(
+            "Searched directories: {}",
+            join_paths(&summary.searched_dirs)
+        ));
+    }
+    lines
+}
+
+fn describe_summary_line(summary: &ProviderSummary, provider_count: usize) -> String {
+    if summary.pack_count > 0 {
+        format!(
+            "Loaded {} provider(s) from {} pack(s).",
+            provider_count, summary.pack_count
+        )
+    } else if summary.strict_mode {
+        "Provider packs were requested but no providers were available.".to_string()
+    } else {
+        "Provider packs not configured; supply --provider-pack or --packs-dir.".to_string()
+    }
+}
+
+fn join_paths(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn resolve_selected_provider(
@@ -356,33 +538,56 @@ fn verify_pack_paths(paths: &[PathBuf]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn verify_packs_dir(dir: Option<&Path>) -> anyhow::Result<Option<PathBuf>> {
-    if let Some(path) = dir {
-        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        if !canonical.exists() {
+fn verify_packs_dirs(paths: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
+    let mut canonical = Vec::new();
+    for path in paths {
+        let dir = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !dir.exists() {
             anyhow::bail!("packs dir {:?} does not exist", path);
         }
-        if !canonical.is_dir() {
+        if !dir.is_dir() {
             anyhow::bail!("packs dir {:?} is not a directory", path);
         }
-        Ok(Some(canonical))
-    } else {
-        Ok(None)
+        canonical.push(dir);
     }
+    Ok(canonical)
 }
 
-fn default_provider_packs_dir() -> Option<PathBuf> {
-    const FALLBACKS: &[&str] = &[
-        "../greentic-messaging-providers/dist/packs",
-        "../../greentic-messaging-providers/dist/packs",
-    ];
-    for relative in FALLBACKS {
-        let candidate = Path::new(relative);
-        if candidate.is_dir() {
-            return candidate.canonicalize().ok();
+fn ensure_provider_requirements(
+    strict_mode: bool,
+    provider_count: usize,
+    requested_packs: &[PathBuf],
+    searched_dirs: &[PathBuf],
+    errors: &[PackLoadError],
+) -> anyhow::Result<()> {
+    if !strict_mode || provider_count > 0 {
+        return Ok(());
+    }
+    let mut message =
+        String::from("provider pack loading requested but no providers were available");
+    if !requested_packs.is_empty() {
+        let paths = requested_packs
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        message.push_str(&format!("\nrequested packs: {paths}"));
+    }
+    if !searched_dirs.is_empty() {
+        let dirs = searched_dirs
+            .iter()
+            .map(|dir| dir.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        message.push_str(&format!("\nsearched directories: {dirs}"));
+    }
+    if !errors.is_empty() {
+        message.push_str("\nerrors:");
+        for error in errors {
+            message.push_str(&format!("\n  {error}"));
         }
     }
-    None
+    anyhow::bail!(message);
 }
 
 const DEFAULT_ADAPTIVE_CARD_VERSION: &str = "1.6";
@@ -553,9 +758,12 @@ fn collect_column_items(column_set: &Map<String, Value>) -> Vec<Value> {
 mod tests {
     use super::{
         DEFAULT_ADAPTIVE_CARD_VERSION, ensure_adaptive_card_versions, ensure_column_types,
-        flatten_column_sets, normalize_card_actions, sanitize_name, wrap_adaptive_payload,
+        ensure_provider_requirements, flatten_column_sets, normalize_card_actions, sanitize_name,
+        wrap_adaptive_payload,
     };
+    use crate::pack_loader::PackLoadError;
     use serde_json::json;
+    use std::path::PathBuf;
 
     #[test]
     fn sanitize_name_accepts_plain_filename() {
@@ -755,6 +963,25 @@ mod tests {
         assert_eq!(body[0]["text"], "A");
         assert_eq!(body[1]["text"], "B");
     }
+
+    #[test]
+    fn strict_mode_reports_missing_providers() {
+        let err = ensure_provider_requirements(
+            true,
+            0,
+            &[PathBuf::from("missing.gtpack")],
+            &[PathBuf::from("packs")],
+            &[PackLoadError {
+                path: PathBuf::from("missing.gtpack"),
+                reason: "invalid manifest".into(),
+            }],
+        )
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("missing.gtpack"));
+        assert!(text.contains("packs"));
+        assert!(text.contains("invalid manifest"));
+    }
 }
 
 fn internal_error<E: ToString>(err: E) -> (StatusCode, String) {
@@ -772,8 +999,15 @@ struct RenderResponse {
     intent: RenderIntent,
     ir: Option<MessageCardIr>,
     auth: Option<AuthRenderSpec>,
-    platforms: BTreeMap<String, PlatformPreview>,
+    platforms: Vec<PlatformPreviewResponse>,
     selected_provider: Option<SelectedProviderResponse>,
+}
+
+#[derive(Serialize)]
+struct PlatformPreviewResponse {
+    descriptor: PlatformDescriptorResponse,
+    preview: Option<PlatformPreview>,
+    error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -783,20 +1017,6 @@ struct SelectedProviderResponse {
     runtime_world: String,
     pack_path: String,
     pack_root: String,
-}
-
-#[derive(Serialize)]
-struct PlatformPreview {
-    payload: Value,
-    warnings: Vec<String>,
-    tier: Tier,
-    target_tier: Tier,
-    downgraded: bool,
-    used_modal: bool,
-    limit_exceeded: bool,
-    sanitized_count: usize,
-    url_blocked_count: usize,
-    meta: Meta,
 }
 
 const INDEX_HTML: &str = include_str!("index.html");

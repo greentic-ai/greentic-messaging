@@ -11,41 +11,6 @@ pub struct ExtractedPack {
     pub temp_dir: TempDir,
     pub root: PathBuf,
 }
-
-fn normalize_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-pub fn discover_packs(explicit: &[PathBuf], packs_dir: Option<&Path>) -> Result<Vec<PathBuf>> {
-    let mut discovered = Vec::new();
-
-    for path in explicit {
-        let canonical = normalize_path(path);
-        discovered.push(canonical);
-    }
-
-    if let Some(dir) = packs_dir {
-        for entry in std::fs::read_dir(dir)
-            .with_context(|| format!("failed to read packs directory {}", dir.display()))?
-        {
-            let entry = entry?;
-            let path = entry.path();
-            if path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("gtpack"))
-                .unwrap_or(false)
-            {
-                discovered.push(normalize_path(&path));
-            }
-        }
-    }
-
-    discovered.sort();
-    discovered.dedup();
-    Ok(discovered)
-}
-
 pub fn extract_pack_to_temp(gtpack: &Path) -> Result<ExtractedPack> {
     let temp_dir = tempdir().context("failed to create temp dir for pack extraction")?;
     let root = temp_dir.path().to_path_buf();
@@ -87,17 +52,6 @@ mod tests {
         writer.start_file("contents/data.txt", options)?;
         writer.write_all(b"value")?;
         writer.finish()?;
-        Ok(())
-    }
-
-    #[test]
-    fn discover_explicit_and_dir() -> Result<()> {
-        let dir = tempfile::tempdir()?;
-        let pack = dir.path().join("sample.gtpack");
-        create_gtpack(&pack)?;
-        let found = discover_packs(std::slice::from_ref(&pack), Some(dir.path()))?;
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0], pack);
         Ok(())
     }
 

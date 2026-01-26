@@ -10,7 +10,7 @@ pub struct WebChatRenderer;
 
 impl PlatformRenderer for WebChatRenderer {
     fn platform(&self) -> &'static str {
-        "bf_webchat"
+        "webchat"
     }
 
     fn target_tier(&self) -> Tier {

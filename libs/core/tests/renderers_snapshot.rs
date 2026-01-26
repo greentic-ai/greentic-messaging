@@ -23,7 +23,7 @@ mod adaptive_snapshots {
         let mut ir = sample_ir();
         ir.meta.adaptive_payload = None;
         let rendered = renderer.render(&ir);
-        assert_eq!(rendered.payload, load_fixture("bf_webchat/basic.json"));
+        assert_eq!(rendered.payload, load_fixture("webchat/basic.json"));
     }
 
     #[test]

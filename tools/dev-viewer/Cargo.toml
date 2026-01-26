@@ -19,3 +19,4 @@ reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 tempfile = { workspace = true }
 zip = { workspace = true }
 serde_yaml = { workspace = true }
+greentic-types = { workspace = true }

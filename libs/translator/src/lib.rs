@@ -298,7 +298,7 @@ impl Default for WebChatTranslator {
 impl Translator for WebChatTranslator {
     fn to_platform(&self, out: &OutMessage) -> Result<Vec<Value>> {
         translate_with_span(out, "webchat", || {
-            if let Some(payload) = crate::render_via_engine(out, "bf_webchat") {
+            if let Some(payload) = crate::render_via_engine(out, "webchat") {
                 return Ok(vec![payload]);
             }
 

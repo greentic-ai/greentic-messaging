@@ -1043,11 +1043,12 @@ dependencies = [
 
 [[package]]
 name = "dev-viewer"
-version = "0.4.44"
+version = "0.4.45"
 dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "greentic-types",
  "gsm-core",
  "reqwest 0.12.28",
  "serde",
@@ -1693,7 +1694,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging"
-version = "0.4.44"
+version = "0.4.45"
 dependencies = [
  "anyhow",
  "clap",
@@ -1715,7 +1716,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-messaging-pack-validator"
-version = "0.4.44"
+version = "0.4.45"
 dependencies = [
  "greentic-types",
  "wit-bindgen",
@@ -1894,7 +1895,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-core"
-version = "0.4.44"
+version = "0.4.45"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1946,7 +1947,7 @@ dependencies = [
 
 [[package]]
 name = "gsm-telemetry"
-version = "0.4.44"
+version = "0.4.45"
 dependencies = [
  "anyhow",
  "greentic-telemetry",

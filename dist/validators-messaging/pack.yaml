@@ -1,10 +1,10 @@
 pack_id: greentic.validators.messaging
-version: 0.4.43
+version: 0.4.44
 kind: library
 publisher: Greentic
 components:
   - id: greentic.validators.messaging
-    version: 0.4.43
+    version: 0.4.44
     world: greentic:pack-validate/pack-validator@0.1.0
     supports: []
     profiles:
@@ -14,11 +14,11 @@ components:
     capabilities:
       wasi: {}
       host: {}
-    wasm: components/greentic.validators.messaging@0.4.43/component.wasm
+    wasm: components/greentic.validators.messaging@0.4.44/component.wasm
 dependencies: []
 flows: []
 assets:
-  - path: components/greentic.validators.messaging@0.4.43/component.wasm
+  - path: components/greentic.validators.messaging@0.4.44/component.wasm
 extensions:
   greentic.messaging.validators.v1:
     kind: greentic.messaging.validators.v1
@@ -27,4 +27,4 @@ extensions:
       validators:
       - id: greentic.validators.messaging
         world: greentic:pack-validate/pack-validator@0.1.0
-        component_ref: ghcr.io/greentic-ai/validators/messaging:0.4.43
+        component_ref: ghcr.io/greentic-ai/validators/messaging:0.4.44
