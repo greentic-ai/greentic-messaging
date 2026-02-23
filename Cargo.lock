@@ -1075,6 +1075,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "directline-server"
+version = "0.4.45"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "greentic-secrets-core",
+ "greentic-secrets-spec",
+ "greentic-types",
+ "gsm-core",
+ "http",
+ "serde_json",
+ "time",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "directories"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
