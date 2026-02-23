@@ -99,44 +99,157 @@ impl EventBus for EchoBus {
     }
 }
 
-fn build_ac_reply(user_text: &str) -> serde_json::Value {
+fn build_ac_reply(_user_text: &str) -> serde_json::Value {
     serde_json::json!({
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.3",
         "body": [
             {
-                "type": "TextBlock",
-                "text": "Greentic Bot",
-                "weight": "Bolder",
-                "size": "Medium"
+                "type": "Container",
+                "style": "emphasis",
+                "items": [{
+                    "type": "ColumnSet",
+                    "columns": [
+                        {
+                            "type": "Column",
+                            "width": "auto",
+                            "items": [{
+                                "type": "Image",
+                                "url": "https://cdn-icons-png.flaticon.com/128/3125/3125713.png",
+                                "size": "Small",
+                                "width": "40px"
+                            }]
+                        },
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "verticalContentAlignment": "Center",
+                            "items": [
+                                { "type": "TextBlock", "text": "Greentic Airlines", "size": "Large", "weight": "Bolder", "color": "Accent" },
+                                { "type": "TextBlock", "text": "Booking Confirmed", "spacing": "None", "isSubtle": true }
+                            ]
+                        }
+                    ]
+                }]
             },
             {
-                "type": "TextBlock",
-                "text": format!("You said: \"{user_text}\""),
-                "wrap": true
+                "type": "Container",
+                "items": [
+                    { "type": "TextBlock", "text": "BOOKING REFERENCE", "size": "Small", "weight": "Bolder", "color": "Accent" },
+                    { "type": "TextBlock", "text": "GTA-2026-XK7B9", "size": "ExtraLarge", "weight": "Bolder", "spacing": "None" }
+                ]
             },
             {
-                "type": "TextBlock",
-                "text": "This Adaptive Card is rendered natively via the Rust Direct Line server.",
-                "wrap": true,
-                "isSubtle": true
+                "type": "Container",
+                "separator": true,
+                "items": [
+                    { "type": "TextBlock", "text": "OUTBOUND FLIGHT \u{2014} Mon, 24 Feb 2026", "weight": "Bolder", "size": "Small", "color": "Good" },
+                    {
+                        "type": "ColumnSet",
+                        "columns": [
+                            {
+                                "type": "Column", "width": "1",
+                                "items": [
+                                    { "type": "TextBlock", "text": "CGK", "size": "ExtraLarge", "weight": "Bolder" },
+                                    { "type": "TextBlock", "text": "Jakarta", "spacing": "None", "isSubtle": true },
+                                    { "type": "TextBlock", "text": "08:30", "spacing": "None", "size": "Medium", "weight": "Bolder" }
+                                ]
+                            },
+                            {
+                                "type": "Column", "width": "auto", "verticalContentAlignment": "Center",
+                                "items": [
+                                    { "type": "TextBlock", "text": "\u{2014}\u{2014}\u{2014}\u{2708}\u{2014}\u{2014}\u{2014}", "horizontalAlignment": "Center", "size": "Medium", "color": "Accent" },
+                                    { "type": "TextBlock", "text": "GT-801 \u{00B7} 2h 05m", "horizontalAlignment": "Center", "size": "Small", "isSubtle": true, "spacing": "None" }
+                                ]
+                            },
+                            {
+                                "type": "Column", "width": "1",
+                                "items": [
+                                    { "type": "TextBlock", "text": "SIN", "size": "ExtraLarge", "weight": "Bolder", "horizontalAlignment": "Right" },
+                                    { "type": "TextBlock", "text": "Singapore", "spacing": "None", "isSubtle": true, "horizontalAlignment": "Right" },
+                                    { "type": "TextBlock", "text": "11:35", "spacing": "None", "size": "Medium", "weight": "Bolder", "horizontalAlignment": "Right" }
+                                ]
+                            }
+                        ]
+                    }
+                ]
             },
             {
-                "type": "FactSet",
-                "facts": [
-                    {"title": "Provider", "value": "WebChat"},
-                    {"title": "AC Version", "value": "1.3"},
-                    {"title": "Tier", "value": "A (Premium)"},
-                    {"title": "Server", "value": "directline-server (Rust)"}
+                "type": "Container",
+                "separator": true,
+                "items": [
+                    { "type": "TextBlock", "text": "RETURN FLIGHT \u{2014} Thu, 27 Feb 2026", "weight": "Bolder", "size": "Small", "color": "Warning" },
+                    {
+                        "type": "ColumnSet",
+                        "columns": [
+                            {
+                                "type": "Column", "width": "1",
+                                "items": [
+                                    { "type": "TextBlock", "text": "SIN", "size": "ExtraLarge", "weight": "Bolder" },
+                                    { "type": "TextBlock", "text": "Singapore", "spacing": "None", "isSubtle": true },
+                                    { "type": "TextBlock", "text": "16:20", "spacing": "None", "size": "Medium", "weight": "Bolder" }
+                                ]
+                            },
+                            {
+                                "type": "Column", "width": "auto", "verticalContentAlignment": "Center",
+                                "items": [
+                                    { "type": "TextBlock", "text": "\u{2014}\u{2014}\u{2014}\u{2708}\u{2014}\u{2014}\u{2014}", "horizontalAlignment": "Center", "size": "Medium", "color": "Accent" },
+                                    { "type": "TextBlock", "text": "GT-802 \u{00B7} 2h 10m", "horizontalAlignment": "Center", "size": "Small", "isSubtle": true, "spacing": "None" }
+                                ]
+                            },
+                            {
+                                "type": "Column", "width": "1",
+                                "items": [
+                                    { "type": "TextBlock", "text": "CGK", "size": "ExtraLarge", "weight": "Bolder", "horizontalAlignment": "Right" },
+                                    { "type": "TextBlock", "text": "Jakarta", "spacing": "None", "isSubtle": true, "horizontalAlignment": "Right" },
+                                    { "type": "TextBlock", "text": "17:30", "spacing": "None", "size": "Medium", "weight": "Bolder", "horizontalAlignment": "Right" }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "Container",
+                "separator": true,
+                "items": [
+                    { "type": "TextBlock", "text": "PASSENGER DETAILS", "weight": "Bolder", "size": "Small", "color": "Accent" },
+                    {
+                        "type": "FactSet",
+                        "facts": [
+                            { "title": "Passenger", "value": "Bima Pangestu" },
+                            { "title": "Class", "value": "Business" },
+                            { "title": "Seat (Outbound)", "value": "2A \u{2014} Window" },
+                            { "title": "Seat (Return)", "value": "3A \u{2014} Window" },
+                            { "title": "Baggage", "value": "30 kg checked + 7 kg cabin" },
+                            { "title": "Meal", "value": "Asian Vegetarian" }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "Container",
+                "separator": true,
+                "items": [
+                    { "type": "TextBlock", "text": "PAYMENT SUMMARY", "weight": "Bolder", "size": "Small", "color": "Accent" },
+                    {
+                        "type": "FactSet",
+                        "facts": [
+                            { "title": "Base Fare", "value": "IDR 4,250,000" },
+                            { "title": "Taxes & Fees", "value": "IDR 850,000" },
+                            { "title": "Travel Insurance", "value": "IDR 150,000" },
+                            { "title": "Total", "value": "**IDR 5,250,000**" }
+                        ]
+                    },
+                    { "type": "TextBlock", "text": "Paid via BCA Virtual Account \u{2022}\u{2022}\u{2022}\u{2022}7821", "isSubtle": true, "size": "Small" }
                 ]
             }
         ],
         "actions": [
-            {
-                "type": "Action.OpenUrl",
-                "title": "Greentic AI",
-                "url": "https://greentic.ai"
-            }
+            { "type": "Action.Submit", "title": "Online Check-in", "style": "positive", "data": { "action": "checkin", "booking_ref": "GTA-2026-XK7B9" } },
+            { "type": "Action.Submit", "title": "Change Flight", "data": { "action": "change_flight", "booking_ref": "GTA-2026-XK7B9" } },
+            { "type": "Action.OpenUrl", "title": "Download E-Ticket", "url": "https://greentic.ai/tickets/GTA-2026-XK7B9" }
         ]
     })
 }
