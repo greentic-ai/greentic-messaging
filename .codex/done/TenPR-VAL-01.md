@@ -1,6 +1,6 @@
 # TenPR-MSG-VAL-01 — Messaging domain pack validators (provider packs)
 
-REPO: greentic-ai/greentic-messaging
+REPO: greenticai/greentic-messaging
 
 GOAL
 Add messaging-domain pack validators (for provider packs like messaging-telegram, messaging-slack, etc.) that:
@@ -93,3 +93,4 @@ ACCEPTANCE
 - `cargo test` passes
 - crate exposes `messaging_validators()`
 - only uses greentic-types validation model (no local duplicate Diagnostic types)
+

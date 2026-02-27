@@ -5,8 +5,8 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Bus client trait with NATS and in-memory implementations for Greentic messaging."
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 readme = "../../README.md"
 
 [dependencies]
@@ -17,3 +17,4 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
+

@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 description = "Greentic messaging subscriptions worker."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 
 [lib]
 name = "gsm_subscriptions_teams"
@@ -35,3 +35,4 @@ indexmap = { workspace = true }
 semver = { workspace = true }
 tempfile = { workspace = true }
 zip = { workspace = true }
+

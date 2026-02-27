@@ -100,7 +100,7 @@ jobs:
       - name: Checkout greentic-messaging-providers
         uses: actions/checkout@v4
         with:
-          repository: greentic-ai/greentic-messaging-providers
+          repository: greenticai/greentic-messaging-providers
           path: greentic-messaging-providers
       - name: Free disk space
         run: |
@@ -138,3 +138,4 @@ jobs:
         run: cargo test -p gsm-core --features "adaptive-cards directline_standalone" --test renderers_oauth -- --nocapture
       - name: OAuth builder helpers
         run: cargo test -p gsm-core --features "adaptive-cards directline_standalone" ensure_oauth_start_url -- --nocapture
+

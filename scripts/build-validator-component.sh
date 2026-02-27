@@ -35,7 +35,7 @@ fi
 cp "${wasm_path}" "${OUT_DIR}/messaging-pack-validator.wasm"
 
 digest="$(sha256sum "${wasm_path}" | awk '{print $1}')"
-ref="ghcr.io/greentic-ai/validators/messaging:${VERSION}"
+ref="ghcr.io/greenticai/validators/messaging:${VERSION}"
 digests_json="${OUT_DIR}/digests.json"
 echo "[]" > "${digests_json}"
 
@@ -50,3 +50,4 @@ jq --arg id "greentic.validators.messaging" \
 mv "${tmp}" "${digests_json}"
 
 echo "::notice::Validator digest written to ${digests_json}"
+

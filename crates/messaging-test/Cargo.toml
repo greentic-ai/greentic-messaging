@@ -6,7 +6,7 @@ description = "Interactive tool to run MessageCard fixtures across Teams/Webex/S
 license = "MIT"
 
 [package.metadata.binstall]
-pkg-url = "https://github.com/greentic-ai/greentic-messaging/releases/download/v{ version }/greentic-messaging-test-{ target }.{ archive-format }"
+pkg-url = "https://github.com/greenticai/greentic-messaging/releases/download/v{ version }/greentic-messaging-test-{ target }.{ archive-format }"
 pkg-fmt = "tgz"
 pkg-fmt-windows = "zip"
 targets = [
@@ -57,3 +57,4 @@ async-nats = { workspace = true }
 [dev-dependencies]
 indexmap = "2"
 tempfile = { workspace = true }
+

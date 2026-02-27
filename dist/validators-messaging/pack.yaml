@@ -27,4 +27,5 @@ extensions:
       validators:
       - id: greentic.validators.messaging
         world: greentic:pack-validate/pack-validator@0.1.0
-        component_ref: ghcr.io/greentic-ai/validators/messaging:0.4.44
+        component_ref: ghcr.io/greenticai/validators/messaging:0.4.44
+

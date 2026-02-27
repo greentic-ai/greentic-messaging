@@ -23,7 +23,7 @@ edition = "2024"
 license = "MIT"
 version = "0.4.26"
 authors = ["Greentic AI"]
-repository = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -87,3 +87,4 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 rusqlite = { version = "0.38", features = ["bundled"] }
 url = "2.5"
 gsm-core = { version = "0.4", path = "../libs/core" }
+

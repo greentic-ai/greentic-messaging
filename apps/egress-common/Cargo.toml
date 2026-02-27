@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 description = "Greentic messaging package: egress common."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 publish = false
 
 [dependencies]
@@ -22,3 +22,4 @@ url = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true }
 anyhow = { workspace = true }
+

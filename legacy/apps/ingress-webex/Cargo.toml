@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 description = "Greentic messaging package: ingress webex."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 publish = false
 
 [features]
@@ -46,3 +46,4 @@ rand = { workspace = true }
 axum = { workspace = true, features = ["macros"] }
 tower = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
+

@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 description = "Greentic messaging egress worker: consumes normalized envelopes and delivers platform-specific payloads."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -38,3 +38,4 @@ tempfile = { workspace = true }
 zip = { workspace = true }
 semver = "1"
 time = { workspace = true }
+
