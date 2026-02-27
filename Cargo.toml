@@ -30,7 +30,7 @@ edition = "2024"
 license = "MIT"
 version = "0.4.45"
 authors = ["Greentic AI"]
-repository = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -114,3 +114,4 @@ gsm-translator = { version = "0.4", path = "libs/translator" }
 gsm-bus = { path = "crates/gsm-bus", version = "0.4" }
 gsm-gateway = { path = "apps/messaging-gateway", version = "0.4" }
 gsm-testutil = { version = "0.4", path = "libs/testutil" }
+

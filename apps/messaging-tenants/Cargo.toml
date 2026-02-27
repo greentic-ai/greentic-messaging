@@ -5,10 +5,11 @@ edition = "2024"
 license.workspace = true
 description = "Greentic messaging package: messaging tenants."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "macros", "process"] }
+

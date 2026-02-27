@@ -1,6 +1,6 @@
 # GM-PR-01 — Messaging conformance runner (requirements → setup → ingress → egress → subscriptions)
 
-REPO: greentic-ai/greentic-messaging
+REPO: greenticai/greentic-messaging
 
 IMPORTANT CONTEXT
 - Provider packs already exist and are validated structurally.
@@ -178,7 +178,7 @@ Copy code
 ```md
 # GM-PR-02 — Provider installation records + runtime routing
 
-REPO: greentic-ai/greentic-messaging
+REPO: greenticai/greentic-messaging
 
 IMPORTANT CONTEXT
 - Provider setup produces outputs (config/secrets/webhooks/subscriptions).
@@ -244,7 +244,7 @@ md
 Copy code
 # GM-PR-03 — Subscriptions worker integration for messaging providers
 
-REPO: greentic-ai/greentic-messaging
+REPO: greenticai/greentic-messaging
 
 IMPORTANT CONTEXT
 - Some providers (Teams, etc.) require long-lived subscriptions.
@@ -298,7 +298,7 @@ md
 Copy code
 # GM-PR-04 — Dev UX: cloudflared by default + dev setup + dev logs
 
-REPO: greentic-ai/greentic-messaging
+REPO: greenticai/greentic-messaging
 
 GOAL
 Make local, single-tenant provider testing trivial.
@@ -349,7 +349,7 @@ md
 Copy code
 # GM-PR-05 — Enforce config/secrets discipline in messaging runtime (TenPR-07)
 
-REPO: greentic-ai/greentic-messaging
+REPO: greenticai/greentic-messaging
 
 IMPORTANT CONTEXT
 - Runtime must not read secrets/config from env vars.

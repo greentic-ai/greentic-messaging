@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 description = "Greentic messaging package: ingress webchat."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 publish = false
 
 [features]
@@ -35,3 +35,4 @@ include_dir = { workspace = true }
 security = { workspace = true }
 gsm-telemetry = { workspace = true }
 metrics = { workspace = true }
+

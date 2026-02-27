@@ -261,7 +261,7 @@ fn packs_resolves_oci_component_via_distributor_client() {
     let pack_path = ensure_fixture_pack_with_component(
         "messaging-oci",
         "smoke",
-        "greentic-ai.components.component-template",
+        "greenticai.components.component-template",
     );
     let temp = tempfile::tempdir().expect("tempdir");
     let out = run_cli_with_env(
@@ -285,3 +285,4 @@ fn packs_resolves_oci_component_via_distributor_client() {
         "expected pack validation to succeed with OCI component resolved:\n{out}"
     );
 }
+

@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 description = "Greentic messaging package: slack_oauth."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 publish = false
 
 [dependencies]
@@ -28,3 +28,4 @@ gsm-core = { path = "../../libs/core" }
 [dev-dependencies]
 tower = { workspace = true }
 http-body-util = { workspace = true }
+

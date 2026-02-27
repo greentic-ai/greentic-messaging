@@ -9,7 +9,7 @@ messaging validator.
 
 ## Distribution references
 
-- OCI component: `ghcr.io/greentic-ai/validators/messaging:<version>`
+- OCI component: `ghcr.io/greenticai/validators/messaging:<version>`
 - Pack bundle: `dist/validators-messaging.gtpack`
 
 ## Canonical extension declaration
@@ -25,13 +25,14 @@ extensions:
       validators:
         - id: greentic.validators.messaging
           world: "greentic:pack-validate/pack-validator@0.1.0"
-          component_ref: ghcr.io/greentic-ai/validators/messaging:__PACK_VERSION__
+          component_ref: ghcr.io/greenticai/validators/messaging:__PACK_VERSION__
 ```
 
 ## Strict mode / pinning
 
 For production, prefer digest pins once they are available:
 
-`ghcr.io/greentic-ai/validators/messaging@sha256:<digest>`
+`ghcr.io/greenticai/validators/messaging@sha256:<digest>`
 
 This avoids surprises when a tag is moved or republished.
+

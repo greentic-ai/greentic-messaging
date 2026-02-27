@@ -1134,7 +1134,7 @@ fn handle_dev_setup(
         "--format".to_string(),
         "json".to_string(),
         "--validator-pack".to_string(),
-        "oci://ghcr.io/greentic-ai/validators/messaging:latest".to_string(),
+        "oci://ghcr.io/greenticai/validators/messaging:latest".to_string(),
         "--allow-oci-tags".to_string(),
         "--pack".to_string(),
         pack_path.display().to_string(),
@@ -2730,3 +2730,4 @@ fn extract_provider_flow_hints(
     }
     if out.is_empty() { None } else { Some(out) }
 }
+

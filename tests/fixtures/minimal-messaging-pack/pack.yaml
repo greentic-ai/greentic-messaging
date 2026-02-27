@@ -21,5 +21,6 @@ extensions:
           config_schema_ref: assets/schemas/messaging/fixture-minimal/config.schema.json
           runtime:
             world: greentic:provider/schema-core@1.0.0
-            component_ref: ghcr.io/greentic-ai/components/messaging.fixture-minimal:0.1.0
+            component_ref: ghcr.io/greenticai/components/messaging.fixture-minimal:0.1.0
             export: schema-core-api
+

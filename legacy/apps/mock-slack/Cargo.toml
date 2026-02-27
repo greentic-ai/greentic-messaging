@@ -5,8 +5,8 @@ edition.workspace = true
 license.workspace = true
 description = "Greentic messaging package: mock slack."
 readme = "../../README.md"
-repository = "https://github.com/greentic-ai/greentic-messaging"
-homepage = "https://github.com/greentic-ai/greentic-messaging"
+repository = "https://github.com/greenticai/greentic-messaging"
+homepage = "https://github.com/greenticai/greentic-messaging"
 publish = false
 
 [features]
@@ -26,3 +26,4 @@ greentic-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 gsm-telemetry = { workspace = true }
+
